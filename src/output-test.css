@@ -33,6 +33,7 @@ body {
 }
 
 /* Typography Overhaul */
+
 h1,
 h2,
 h3,
@@ -60,6 +61,7 @@ h4 {
 }
 
 /* Alignment System */
+
 .container {
   max-width: var(--container-max);
   margin: 0 auto;
@@ -83,6 +85,7 @@ h4 {
 }
 
 /* Premium Components */
+
 .glass {
   background: var(--glass-bg);
   backdrop-filter: blur(24px);
@@ -145,6 +148,7 @@ h4 {
 }
 
 /* Particles & Glow */
+
 .bg-glow {
   position: fixed;
   inset: 0;
@@ -183,6 +187,7 @@ h4 {
 }
 
 /* Utilities */
+
 .text-8xl {
   font-size: clamp(48px, 8vw, 120px);
 }
