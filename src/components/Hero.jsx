@@ -1,62 +1,103 @@
 import { motion } from 'framer-motion';
 import { ArrowRight, ChevronDown } from 'lucide-react';
-import heroBg from '../assets/hero-bg.png';
 
 const Hero = ({ onOpenDApp }) => {
   return (
-    <section className="relative h-screen flex items-center justify-center overflow-hidden">
-      {/* Background with slow parallax-style zoom */}
-      <motion.div
-        initial={{ scale: 1.2, opacity: 0 }}
-        animate={{ scale: 1, opacity: 0.35 }}
-        transition={{ duration: 3, ease: "easeOut" }}
-        className="absolute inset-0 z-0"
-      >
-        <img src={heroBg} alt="Phantom Interface" className="w-full h-full object-cover blur-[2px]" />
-        <div className="absolute inset-0 bg-gradient-to-b from-bg-color via-transparent to-bg-color" />
-      </motion.div>
+    <section className="relative min-h-[95vh] flex items-center justify-center overflow-hidden py-24">
+      {/* Visual background element */}
+      <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none">
+        <div className="absolute top-[20%] left-[-10%] w-[600px] h-[600px] bg-primary-color/10 rounded-full blur-[120px] animate-pulse" />
+        <div className="absolute bottom-[10%] right-[-5%] w-[500px] h-[500px] bg-secondary-color/10 rounded-full blur-[120px]" />
+        <div className="absolute top-[50%] left-1/2 -translate-x-1/2 -translate-y-1/2 w-[1000px] h-[1000px] bg-primary-color/[0.03] rounded-full blur-[150px]" />
+      </div>
 
-      <div className="container relative z-10 text-center">
-        <motion.div
-          initial={{ opacity: 0, y: 40 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 1.2, ease: "circOut" }}
-        >
-          <div className="inline-block mono px-5 py-2 glass rounded-full mb-10 text-primary-color border-primary-color/10">
-            THE PRIVACY LAYER FOR DEFI
-          </div>
+      <div className="container relative z-10">
+        <div className="mx-auto text-center">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.8 }}
+            className="inline-flex items-center gap-2 mono px-4 py-2 glass-panel mb-10 text-primary-color border-primary-color/20"
+          >
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary-color opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-primary-color"></span>
+            </span>
+            THE PRIVACY BACKBONE FOR DEFI
+          </motion.div>
 
-          <h1 className="text-8xl md:text-[160px] mb-8 font-extrabold tracking-tightest leading-[0.9]">
-            DEFI <br className="hidden md:block" />
-            <span className="gradient-text">SHIELDED.</span>
-          </h1>
+          <motion.h1
+            initial={{ opacity: 0, y: 30 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.8, delay: 0.2 }}
+            className="text-7xl md:text-[140px] mb-8 tracking-tightest leading-[0.8] font-display uppercase font-black"
+          >
+            <div className="relative inline-block glitch-hover cursor-default">
+              PHANTOM
+            </div>
+            <br />
+            <span className="gradient-text italic relative inline-block glitch-hover cursor-default">
+              PROTOCOL
+            </span>
+          </motion.h1>
 
-          <p className="text-secondary text-xl md:text-2xl max-w-2xl mx-auto mb-16 font-light tracking-tight">
-            Advanced dark pool architecture for high-stakes finance.
-            Trade and transfer with absolute mathematical privacy.
-          </p>
+          <motion.p
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 1, delay: 0.5 }}
+            className="text-secondary text-xl md:text-2xl max-w-3xl mx-auto mb-16 font-light tracking-tight leading-relaxed font-mono"
+          >
+            {"> "} Institutional-grade dark pool architecture for the modern financial stack.
+            Trade, swap, and transfer with absolute mathematical privacy.
+            <span className="animate-pulse">_</span>
+          </motion.p>
 
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-6">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.8, delay: 0.6 }}
+            className="flex flex-col sm:flex-row items-center justify-center gap-6"
+          >
             <button
               onClick={onOpenDApp}
-              className="btn-dapp px-12 py-5 text-base"
+              className="btn-primary"
             >
-              LAUNCH DAPP
+              LAUNCH TERMINAL
               <ArrowRight size={20} />
             </button>
-            <a href="#protocol" className="btn-outline px-12 py-5 text-base border-white/5 hover:border-white">
+            <a href="#protocol" className="btn-secondary">
               EXPLORE PROTOCOL
             </a>
-          </div>
-        </motion.div>
+          </motion.div>
+
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 0.5 }}
+            transition={{ delay: 1.2, duration: 1 }}
+            className="mt-24 pt-12 border-t border-white/5 grid grid-cols-2 md:grid-cols-4 gap-8 opacity-40 grayscale hover:grayscale-0 transition-all font-mono"
+          >
+            <div className="text-[10px] flex items-center justify-center gap-2 mono-tag">
+              <span>[ ZK-PROOFS ]</span>
+            </div>
+            <div className="text-[10px] flex items-center justify-center gap-2 mono-tag">
+              <span>[ MEV-SHIELD ]</span>
+            </div>
+            <div className="text-[10px] flex items-center justify-center gap-2 mono-tag">
+              <span>[ FHE-MATCH ]</span>
+            </div>
+            <div className="text-[10px] flex items-center justify-center gap-2 mono-tag">
+              <span>[ DARK-POOL ]</span>
+            </div>
+          </motion.div>
+        </div>
       </div>
 
       <motion.div
-        animate={{ y: [0, 15, 0] }}
-        transition={{ repeat: Infinity, duration: 2.5, ease: "easeInOut" }}
-        className="absolute bottom-12 left-1/2 -translate-x-1/2 text-muted/40"
+        animate={{ y: [0, 10, 0] }}
+        transition={{ repeat: Infinity, duration: 3, ease: "easeInOut" }}
+        className="absolute bottom-10 left-1/2 -translate-x-1/2 text-muted"
       >
-        <ChevronDown size={40} />
+        <ChevronDown size={32} strokeWidth={1.5} className="opacity-30" />
       </motion.div>
     </section>
   );

@@ -2,57 +2,68 @@ import { motion } from 'framer-motion';
 import { Check, ShieldCheck } from 'lucide-react';
 
 const comparisonData = [
-    { feature: "Shielded Matching", phantom: true, others: false },
-    { feature: "Frontrun Protection", phantom: true, others: false },
-    { feature: "Institutional Tools", phantom: true, others: false },
-    { feature: "Privacy Bridges", phantom: true, others: false },
+    { feature: "SHIELDED MATCHING engine", phantom: true },
+    { feature: "NATIVE FRONTRUN PROTECTION", phantom: true },
+    { feature: "INSTITUTIONAL COMPLIANCE SDK", phantom: true },
+    { feature: "CROSS-CHAIN PRIVACY BRIDGES", phantom: true },
+    { feature: "ZERO MEMPOOL EXPOSURE", phantom: true },
 ];
 
 const ComparisonTable = () => {
     return (
-        <section className="section-padding relative">
-            <div className="container max-w-4xl">
-                <div className="text-center mb-24">
+        <section className="section-padding relative overflow-hidden">
+            <div className="container">
+                <div className="text-center mb-32">
                     <motion.div
                         initial={{ opacity: 0 }}
                         whileInView={{ opacity: 1 }}
-                        className="mono text-primary-color mb-6"
+                        className="mono text-primary-color mb-8 flex items-center justify-center gap-3"
                     >
-                        Competitive Edge
+                        <span className="w-8 h-[1px] bg-primary-color/40" />
+                        COMPETITIVE ADVANTAGE
+                        <span className="w-8 h-[1px] bg-primary-color/40" />
                     </motion.div>
-                    <h2 className="text-5xl font-extrabold mb-6 font-display tracking-tightest">THE <span className="gradient-text">GAP.</span></h2>
-                    <p className="text-secondary text-sm font-light">How Phantom Protocol renders traditional mixers obsolete.</p>
+                    <h2 className="text-6xl md:text-7xl tracking-tightest leading-tight font-display uppercase">THE <span className="gradient-text">PRIVACY GAP.</span></h2>
+                    <p className="text-secondary text-lg mt-8 font-light max-w-2xl mx-auto">
+                        Phantom Protocol renders traditional link-analysis and predatory MEV attacks mathematically impossible.
+                    </p>
                 </div>
 
-                <div className="glass-card overflow-hidden border-white/5 shadow-2xl">
-                    <div className="grid grid-cols-2 p-10 border-b border-white/5 bg-white/[0.01]">
-                        <div className="mono text-[11px] text-muted tracking-widest">Protocol Matrix</div>
-                        <div className="flex items-center gap-3 font-bold text-primary-color justify-center font-display text-sm tracking-tight">
-                            <ShieldCheck size={18} />
-                            PHANTOM
+                <div className="glass-panel overflow-hidden border-primary-color/10 shadow-3xl bg-black/40 backdrop-blur-xl">
+                    <div className="grid grid-cols-2 p-10 border-b border-primary-color/10 bg-primary-color/5">
+                        <div className="mono text-[10px] text-primary-color/60 tracking-[0.3em] font-black">SYSTEM_CAPABILITY</div>
+                        <div className="flex items-center gap-3 font-black text-primary-color justify-center font-display text-sm tracking-widest uppercase italic">
+                            <ShieldCheck size={18} strokeWidth={2.5} />
+                            PHANTOM_CORE
                         </div>
                     </div>
 
                     {comparisonData.map((row, idx) => (
                         <motion.div
                             key={idx}
-                            initial={{ opacity: 0, scale: 0.98 }}
-                            whileInView={{ opacity: 1, scale: 1 }}
+                            initial={{ opacity: 0, x: -10 }}
+                            whileInView={{ opacity: 1, x: 0 }}
+                            viewport={{ once: true }}
                             transition={{ delay: idx * 0.1 }}
-                            className="grid grid-cols-2 p-10 border-b border-white/[0.02] hover:bg-white/[0.01] transition-colors items-center"
+                            className="grid grid-cols-2 p-8 border-b border-white/5 hover:bg-primary-color/5 transition-all items-center group"
                         >
-                            <div className="text-base font-bold tracking-tight text-white">{row.feature}</div>
+                            <div className="text-xs md:text-sm font-bold tracking-widest text-secondary group-hover:text-white transition-colors uppercase font-mono">
+                                [ {row.feature} ]
+                            </div>
                             <div className="flex justify-center">
-                                <Check size={24} className="text-primary-color" />
+                                <div className="w-8 h-8 rounded-lg bg-primary-color/10 flex items-center justify-center border border-primary-color/20 group-hover:border-primary-color/50 transition-all">
+                                    <Check size={16} className="text-primary-color" strokeWidth={3} />
+                                </div>
                             </div>
                         </motion.div>
                     ))}
 
-                    <div className="p-12 text-center bg-white/[0.01]">
-                        <p className="text-[10px] mono text-muted uppercase tracking-[0.4em] mb-6">Strategic Dominance</p>
-                        <p className="text-sm italic text-secondary leading-relaxed max-w-lg mx-auto">
-                            "Phantom's dark-pool architecture renders traditional link-analysis and predatory MEV attacks mathematically impossible."
-                        </p>
+                    <div className="p-16 text-center bg-black/60 relative overflow-hidden">
+                        <div className="absolute inset-0 bg-primary-color/[0.03] pointer-events-none" />
+                        <p className="text-[10px] mono text-primary-color/40 uppercase tracking-[0.5em] mb-8 font-black">// PROTOCOL_STATUS: DOMINANT</p>
+                        <blockquote className="text-xl italic text-secondary leading-relaxed max-w-2xl mx-auto font-medium font-mono">
+                            "The industry's first dark-pool native layer designed for institutional liquidity and absolute user discretion."
+                        </blockquote>
                     </div>
                 </div>
             </div>
