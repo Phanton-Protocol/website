@@ -1,104 +1,124 @@
 import { motion } from 'framer-motion';
-import { ArrowRight, ChevronDown } from 'lucide-react';
 
-const Hero = ({ onOpenDApp }) => {
+const stats = [
+  { value: '5,000', label: 'MAX STAKERS / NODE' },
+  { value: '66%', label: 'CONSENSUS THRESHOLD' },
+  { value: '1M+', label: 'MERKLE TREE CAPACITY' },
+  { value: '3s', label: 'COMMIT-REVEAL DELAY' },
+];
+
+const Hero = () => {
+  const fade = (delay = 0) => ({
+    initial: { opacity: 0, y: 24 },
+    animate: { opacity: 1, y: 0 },
+    transition: { duration: 0.9, delay, ease: [0.16, 1, 0.3, 1] },
+  });
+
   return (
-    <section className="relative min-h-[95vh] flex items-center justify-center overflow-hidden py-24">
-      {/* Visual background element */}
-      <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-[20%] left-[-10%] w-[600px] h-[600px] bg-primary-color/10 rounded-full blur-[120px] animate-pulse" />
-        <div className="absolute bottom-[10%] right-[-5%] w-[500px] h-[500px] bg-secondary-color/10 rounded-full blur-[120px]" />
-        <div className="absolute top-[50%] left-1/2 -translate-x-1/2 -translate-y-1/2 w-[1000px] h-[1000px] bg-primary-color/[0.03] rounded-full blur-[150px]" />
-      </div>
+    <section
+      style={{
+        minHeight: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        paddingTop: '8rem',
+        paddingBottom: '6rem',
+        position: 'relative',
+      }}
+    >
+      <div className="container" style={{ width: '100%' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '4rem', alignItems: 'center' }}>
 
-      <div className="container relative z-10">
-        <div className="mx-auto text-center">
+          {/* Left: Headline */}
+          <div>
+            <motion.div {...fade(0.1)} className="section-label">
+              Dark-pool native privacy layer for DeFi
+            </motion.div>
+
+            <motion.h1 {...fade(0.25)} className="display-xl" style={{ marginBottom: '2.5rem', maxWidth: '820px' }}>
+              Trade in the{' '}
+              <br />
+              <em>shadows.</em>
+              <br />
+              Comply in the{' '}
+              <br />
+              open.
+            </motion.h1>
+
+            <motion.p {...fade(0.4)} style={{
+              maxWidth: '520px',
+              color: 'var(--text-secondary)',
+              fontSize: '0.95rem',
+              lineHeight: 1.75,
+              marginBottom: '3rem',
+            }}>
+              Phantom Protocol combines ZK-SNARKs, Fully Homomorphic Encryption,
+              and a decentralized validator network to deliver institutional-grade
+              dark pool trading with native compliance primitives.
+            </motion.p>
+
+            <motion.div {...fade(0.5)} style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+              <a href="#architecture" className="btn-outline-cyan btn-outline">
+                Explore Architecture
+              </a>
+              <a href="#" className="btn-outline">
+                Read Whitepaper
+              </a>
+            </motion.div>
+          </div>
+
+          {/* Right: Stats */}
           <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.8 }}
-            className="inline-flex items-center gap-2 mono px-4 py-2 glass-panel mb-10 text-primary-color border-primary-color/20"
-          >
-            <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary-color opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-primary-color"></span>
-            </span>
-            THE PRIVACY BACKBONE FOR DEFI
-          </motion.div>
-
-          <motion.h1
-            initial={{ opacity: 0, y: 30 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8, delay: 0.2 }}
-            className="text-7xl md:text-[140px] mb-8 tracking-tightest leading-[0.8] font-display uppercase font-black"
-          >
-            <div className="relative inline-block glitch-hover cursor-default">
-              PHANTOM
-            </div>
-            <br />
-            <span className="gradient-text italic relative inline-block glitch-hover cursor-default">
-              PROTOCOL
-            </span>
-          </motion.h1>
-
-          <motion.p
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            transition={{ duration: 1, delay: 0.5 }}
-            className="text-secondary text-xl md:text-2xl max-w-3xl mx-auto mb-16 font-light tracking-tight leading-relaxed font-mono"
+            transition={{ delay: 0.6, duration: 1 }}
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '2.5rem',
+              minWidth: '160px',
+              alignSelf: 'flex-end',
+              paddingBottom: '1rem',
+            }}
           >
-            {"> "} Institutional-grade dark pool architecture for the modern financial stack.
-            Trade, swap, and transfer with absolute mathematical privacy.
-            <span className="animate-pulse">_</span>
-          </motion.p>
-
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8, delay: 0.6 }}
-            className="flex flex-col sm:flex-row items-center justify-center gap-6"
-          >
-            <button
-              onClick={onOpenDApp}
-              className="btn-primary"
-            >
-              LAUNCH TERMINAL
-              <ArrowRight size={20} />
-            </button>
-            <a href="#protocol" className="btn-secondary">
-              EXPLORE PROTOCOL
-            </a>
+            {stats.map((s, i) => (
+              <motion.div
+                key={i}
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: 0.7 + i * 0.1, duration: 0.6 }}
+                style={{ textAlign: 'right' }}
+              >
+                <div className="stat-value">{s.value}</div>
+                <div className="stat-label">{s.label}</div>
+              </motion.div>
+            ))}
           </motion.div>
 
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 0.5 }}
-            transition={{ delay: 1.2, duration: 1 }}
-            className="mt-24 pt-12 border-t border-white/5 grid grid-cols-2 md:grid-cols-4 gap-8 opacity-40 grayscale hover:grayscale-0 transition-all font-mono"
-          >
-            <div className="text-[10px] flex items-center justify-center gap-2 mono-tag">
-              <span>[ ZK-PROOFS ]</span>
-            </div>
-            <div className="text-[10px] flex items-center justify-center gap-2 mono-tag">
-              <span>[ MEV-SHIELD ]</span>
-            </div>
-            <div className="text-[10px] flex items-center justify-center gap-2 mono-tag">
-              <span>[ FHE-MATCH ]</span>
-            </div>
-            <div className="text-[10px] flex items-center justify-center gap-2 mono-tag">
-              <span>[ DARK-POOL ]</span>
-            </div>
-          </motion.div>
         </div>
       </div>
 
-      <motion.div
-        animate={{ y: [0, 10, 0] }}
-        transition={{ repeat: Infinity, duration: 3, ease: "easeInOut" }}
-        className="absolute bottom-10 left-1/2 -translate-x-1/2 text-muted"
-      >
-        <ChevronDown size={32} strokeWidth={1.5} className="opacity-30" />
-      </motion.div>
+      {/* Bottom gradient fade */}
+      <div style={{
+        position: 'absolute',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        height: '120px',
+        background: 'linear-gradient(to bottom, transparent, rgba(10,10,10,0.6))',
+        pointerEvents: 'none',
+      }} />
+
+      {/* Responsive: hide stats on small screens */}
+      <style>{`
+        @media (max-width: 768px) {
+          section > .container > div {
+            grid-template-columns: 1fr !important;
+          }
+          section > .container > div > div:last-child {
+            display: none !important;
+          }
+        }
+      `}</style>
     </section>
   );
 };

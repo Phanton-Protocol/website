@@ -1,76 +1,111 @@
 import { motion } from 'framer-motion';
-import { EyeOff, Zap, Globe, ShieldCheck } from 'lucide-react';
 
-const benefitList = [
+const benefits = [
     {
-        icon: <EyeOff size={32} strokeWidth={1.5} />,
-        title: "PRIVATE EXECUTION",
-        desc: "Trades are processed within a shielded internal pool. Zero mempool exposure, zero frontrunning bots."
+        num: '01',
+        title: 'Zero Trace Maturity',
+        body: 'Mathematical guarantees that sender, receiver, and execution payloads remain completely obscured from validators and observers.',
+        tag: 'CORE LAYER',
     },
     {
-        icon: <Zap size={32} strokeWidth={1.5} />,
-        title: "INSTANT SETTLEMENT",
-        desc: "Proprietary order books match trades internally before they touch fragmented public liquidity."
+        num: '02',
+        title: 'MEV Immunity Core',
+        body: 'By encrypting order flow pre-execution, Phantom removes the possibility of sandwich attacks, front-running, and toxic arbitrage.',
+        tag: 'PROTECTION',
     },
     {
-        icon: <Globe size={32} strokeWidth={1.5} />,
-        title: "OMNICHAIN FLUX",
-        desc: "Unified privacy layer starting on BSC, with native bridges to Ethereum and emerging Layer 2s."
+        num: '03',
+        title: 'Institutional Scale',
+        body: 'Designed for high-throughput, low-latency execution required by institutional liquidity providers and heavy algorithmic traders.',
+        tag: 'PERFORMANCE',
     },
     {
-        icon: <ShieldCheck size={32} strokeWidth={1.5} />,
-        title: "COMPLIANCE FRAMEWORK",
-        desc: "Uncompromising privacy for users, with selective viewing keys for institutional reporting needs."
-    }
+        num: '04',
+        title: 'Cross-Chain Fluidity',
+        body: 'Seamlessly shift liquidity across Ethereum, BSC, and L2s without leaving a breadcrumb trail of origin or destination.',
+        tag: 'INTEROP',
+    },
 ];
 
-const Benefits = () => {
-    return (
-        <section id="protocol" className="section-padding relative border-y border-white/5 bg-white/[0.01]">
-            <div className="container">
-                <div className="mb-24 flex flex-col md:flex-row md:items-end justify-between gap-8">
-                    <div>
-
-                        <motion.div
-                            initial={{ opacity: 0, x: -20 }}
-                            whileInView={{ opacity: 1, x: 0 }}
-                            className="mono text-primary-color mb-6 flex items-center gap-3"
-                        >
-                            <span className="w-8 h-[1px] bg-primary-color" />
-                            CORE CAPABILITIES
-                        </motion.div>
-                        <h2 className="text-5xl md:text-7xl tracking-tighter uppercase leading-tight font-display font-black">
-                            TERMINAL <span className="gradient-text italic">POWER.</span>
-                        </h2>
-                    </div>
-                    <div className="md:mb-4 text-muted mono text-xs tracking-widest max-w-[200px]">
-                        ENGINEERED FOR SUPREME DISCRETION
-                    </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
-                    {benefitList.map((item, idx) => (
-                        <motion.div
-                            key={idx}
-                            initial={{ opacity: 0, y: 20 }}
-                            whileInView={{ opacity: 1, y: 0 }}
-                            viewport={{ once: true }}
-                            transition={{ delay: idx * 0.1, duration: 0.5 }}
-                            className="glass-card p-10 group flex flex-col border-white/5 hover:border-primary-color/20 transition-all duration-500 bg-black/40 backdrop-blur-xl rounded-2xl"
-                        >
-                            <div className="mb-10 text-primary-color group-hover:scale-110 group-hover:text-white transition-all duration-500 origin-left">
-                                {item.icon}
-                            </div>
-                            <h3 className="text-xl font-black mb-4 font-display tracking-tight text-white uppercase italic">{item.title}</h3>
-                            <p className="text-secondary text-xs leading-relaxed font-medium font-mono opacity-80">
-                                {item.desc}
-                            </p>
-                        </motion.div>
-                    ))}
-                </div>
+const Benefits = () => (
+    <section className="section" id="features">
+        <div className="container">
+            <div style={{ marginBottom: '4rem' }}>
+                <div className="section-label">Capability Matrix</div>
+                <h2 className="display-lg">
+                    Privacy built on<br /><em>mathematics,</em> not policy.
+                </h2>
             </div>
-        </section>
-    );
-};
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '1px', background: 'var(--border)' }}>
+                {benefits.map((b, i) => (
+                    <motion.div
+                        key={i}
+                        className="card"
+                        initial={{ opacity: 0, y: 20 }}
+                        whileInView={{ opacity: 1, y: 0 }}
+                        viewport={{ once: true }}
+                        transition={{ delay: i * 0.1, duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
+                        style={{ borderRadius: 0, border: 'none' }}
+                    >
+                        {/* Icon placeholder */}
+                        <div style={{ marginBottom: '1.5rem' }}>
+                            <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+                                <rect x="1" y="1" width="20" height="20" stroke="var(--cyan)" strokeWidth="1.2" />
+                                <rect x="7" y="7" width="8" height="8" fill="var(--cyan)" opacity="0.3" />
+                            </svg>
+                        </div>
+
+                        <div style={{
+                            fontSize: '2.5rem',
+                            fontFamily: 'var(--font-display)',
+                            color: 'var(--text-tertiary)',
+                            position: 'absolute',
+                            top: '1.5rem',
+                            right: '2rem',
+                        }}>
+                            {b.num}
+                        </div>
+
+                        <h3 style={{
+                            fontFamily: 'var(--font-body)',
+                            fontWeight: 600,
+                            fontSize: '1.1rem',
+                            color: '#fff',
+                            marginBottom: '1rem',
+                        }}>
+                            {b.title}
+                        </h3>
+
+                        <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', lineHeight: 1.75, marginBottom: '2rem' }}>
+                            {b.body}
+                        </p>
+
+                        <span style={{
+                            display: 'inline-block',
+                            fontFamily: 'var(--font-mono)',
+                            fontSize: '0.6rem',
+                            letterSpacing: '0.15em',
+                            textTransform: 'uppercase',
+                            border: '1px solid var(--border)',
+                            padding: '0.3rem 0.75rem',
+                            color: 'var(--text-secondary)',
+                        }}>
+                            {b.tag}
+                        </span>
+                    </motion.div>
+                ))}
+            </div>
+        </div>
+
+        <style>{`
+      @media (max-width: 640px) {
+        #features .container > div:last-child {
+          grid-template-columns: 1fr !important;
+        }
+      }
+    `}</style>
+    </section>
+);
 
 export default Benefits;
