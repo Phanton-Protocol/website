@@ -2,22 +2,26 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useState } from 'react';
 
 const faqs = [
-    {
-        q: "How does Phantom obscure liquidity?",
-        a: "Phantom leverages a specialized implementation of Fully Homomorphic Encryption (FHE) combined with ZK-SNARKs. This allows the network nodes to continuously compute trade matching algorithms on ciphertexts without ever decrypting the underlying order values or sender identities."
-    },
-    {
-        q: "Is the network vulnerable to MEV?",
-        a: "No. By design, mempool data is entirely opaque to validators. There is zero informational asymmetry to exploit, rendering traditional MEV strategies (sandwiching, front-running) impossible."
-    },
-    {
-        q: "What chains are supported?",
-        a: "The v1 architecture natively bridges Ethereum Mainnet and Binance Smart Chain, utilizing a synchronized state-relay model. Future phases will integrate Polygon, Arbitrum, and custom app-chains."
-    },
-    {
-        q: "How can institutions audit the pool?",
-        a: "Phantom introduces 'Selective Disclosure Keys' (SDKs). These cryptographic viewing keys permit authorized entities (e.g., regulators, internal auditors) to decrypt specific historical transaction flows without compromising global network anonymity."
-    }
+  {
+    q: "Is Phantom a mixer?",
+    a: "No. Phantom is a multi‑asset shielded pool with per‑wallet reporting keys and optional sanctions screening. It is designed for ongoing payroll, treasury, and payout flows, not one‑off anonymization."
+  },
+  {
+    q: "Who controls the funds?",
+    a: "Funds are held in smart contracts on BNB Chain. You control your keys. Relayers cannot move your assets without a valid zero‑knowledge proof generated from your notes."
+  },
+  {
+    q: "How can employees or accountants see history?",
+    a: "Each wallet can generate one or more reporting keys. Sharing a key lets an accountant, lawyer, or tax tool see that wallet’s full transaction history, without revealing other users or internal pool details. Keys can be revoked at any time."
+  },
+  {
+    q: "How does payroll work on Phantom?",
+    a: "A company deposits into the shielded pool, creates a payroll run listing recipients and amounts, and then uses the Withdraw flow to send funds from the pool. The public chain only sees pool interactions, while employees can still export their own histories for taxes."
+  },
+  {
+    q: "What chains are planned?",
+    a: "The current implementation targets BNB Chain. The architecture is EVM‑compatible and can be extended to other chains in future iterations."
+  }
 ];
 
 const FAQ = () => {

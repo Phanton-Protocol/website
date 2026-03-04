@@ -1,23 +1,23 @@
 import { motion } from 'framer-motion';
 
 const TechCards = () => {
-    const cards = [
-        {
-            title: "SNARK Prover",
-            subtitle: "CRYPTOGRAPHIC PROOF",
-            desc: "Ultra-fast zero-knowledge state transitions. Prove transaction validity without revealing the underlying data points to the consensus layer."
-        },
-        {
-            title: "F.H.E. Engine",
-            subtitle: "HOMOMORPHIC COMPUTE",
-            desc: "Perform complex operations on perpetually encrypted dark pool orders. Decryption is never required for matching execution."
-        },
-        {
-            title: "Ghost Net",
-            subtitle: "P2P OBFUSCATION",
-            desc: "Network-level traffic spoofing and localized mixing to prevent IP correlation and timing analysis by sophisticated adversaries."
-        }
-    ];
+  const cards = [
+    {
+      title: "SNARK Prover",
+      subtitle: "CRYPTOGRAPHIC PROOF",
+      desc: "Groth16 proofs for deposits, swaps, withdrawals, and payroll. Prove that balances and Merkle paths are valid without revealing who owns which note.",
+    },
+    {
+      title: "Backend Prover",
+      subtitle: "RAPIDSNARK + SNARKJS",
+      desc: "A backend‑first proving layer that uses Rapidsnark where available and snarkjs as a fallback, so heavy proofs don’t freeze the browser.",
+    },
+    {
+      title: "Reporting Keys",
+      subtitle: "SELECTIVE DISCLOSURE",
+      desc: "Per‑wallet reporting keys for accountants, lawyers, and regulators. Share exactly the flows you need to, and nothing more.",
+    },
+  ];
 
     return (
         <section className="section" id="technology">

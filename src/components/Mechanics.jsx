@@ -23,24 +23,24 @@ const Mechanics = () => {
                         <div style={{ display: 'flex', gap: '2rem', alignItems: 'flex-start' }}>
                             <div style={{ color: 'var(--cyan)' }}>01</div>
                             <div style={{ flexGrow: 1, paddingBottom: '3rem', borderBottom: '1px solid var(--border)' }}>
-                                <div style={{ color: '#fff', marginBottom: '0.5rem', fontWeight: 500 }}>Commitment insertion.</div>
-                                <div style={{ textTransform: 'none', fontFamily: 'var(--font-body)', lineHeight: 1.6 }}>The relayer submits a Pedersen commitment — a sealed cryptographic representation of the deposit amount — into the shielded pool's Merkle tree. The commitment is publicly verifiable as existing in the tree, but carries no information about its value.</div>
+                                <div style={{ color: '#fff', marginBottom: '0.5rem', fontWeight: 500 }}>Deposit into the shielded pool.</div>
+                                <div style={{ textTransform: 'none', fontFamily: 'var(--font-body)', lineHeight: 1.6 }}>A company or user deposits assets from a public wallet into the Phantom pool. On-chain you only see a single deposit; inside Phantom it becomes a private note that tracks balance, asset and owner, without linking to the public address.</div>
                             </div>
                         </div>
 
                         <div style={{ display: 'flex', gap: '2rem', alignItems: 'flex-start' }}>
                             <div style={{ color: 'var(--cyan)' }}>02</div>
                             <div style={{ flexGrow: 1, paddingBottom: '3rem', borderBottom: '1px solid var(--border)' }}>
-                                <div style={{ color: '#fff', marginBottom: '0.5rem', fontWeight: 500 }}>Encrypted note issuance.</div>
-                                <div style={{ textTransform: 'none', fontFamily: 'var(--font-body)', lineHeight: 1.6 }}>The pool generates and returns a private receipt — an encrypted note containing asset type, amount, blinding factor, and viewing key. This note is the sole instrument of ownership. Only the depositor can decrypt it.</div>
+                                <div style={{ color: '#fff', marginBottom: '0.5rem', fontWeight: 500 }}>Generate proofs, not traces.</div>
+                                <div style={{ textTransform: 'none', fontFamily: 'var(--font-body)', lineHeight: 1.6 }}>When you swap, withdraw, or run payroll, Phantom generates a Groth16 proof that your balances and Merkle path are valid. Validators can verify the math, but never see who you paid, how much you swapped, or what your total balance is.</div>
                             </div>
                         </div>
 
                         <div style={{ display: 'flex', gap: '2rem', alignItems: 'flex-start' }}>
                             <div style={{ color: 'var(--cyan)' }}>03</div>
                             <div style={{ flexGrow: 1 }}>
-                                <div style={{ color: '#fff', marginBottom: '0.5rem', fontWeight: 500 }}>Gas refund execution.</div>
-                                <div style={{ textTransform: 'none', fontFamily: 'var(--font-body)', lineHeight: 1.6 }}>The relayer's gas costs are automatically reimbursed from the pool balance. Relayers operate at zero economic loss, ensuring consistent availability and preventing fee-based censorship of transactions.</div>
+                                <div style={{ color: '#fff', marginBottom: '0.5rem', fontWeight: 500 }}>Distribute to wallets or banks.</div>
+                                <div style={{ textTransform: 'none', fontFamily: 'var(--font-body)', lineHeight: 1.6 }}>For payroll or payouts, Phantom can send directly to employee wallets or route flows toward off‑ramp partners. Each employee can generate their own reporting key, so HR and accountants can see history without exposing the rest of your books.</div>
                             </div>
                         </div>
                     </motion.div>

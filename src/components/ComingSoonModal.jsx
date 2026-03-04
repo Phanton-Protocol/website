@@ -49,7 +49,7 @@ const ComingSoonModal = ({ isOpen, onClose }) => {
                                 TERMINAL <span className="text-secondary italic">LOCKED.</span>
                             </h3>
                             <p className="text-secondary font-light text-sm leading-relaxed mb-8">
-                                The mainnet dark pool is currently restricted to whitelisted institutional liquidity providers. General access will open in Phase 02.
+                                Mainnet access is being rolled out in phases. Early integrations are onboarded first; broader availability will follow once audits and infrastructure milestones are complete.
                             </p>
 
                             <form onSubmit={handleSubmit} className="space-y-6">

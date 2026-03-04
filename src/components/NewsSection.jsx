@@ -3,22 +3,22 @@ import { motion } from 'framer-motion';
 const NewsSection = () => {
     const newsItems = [
         {
-            title: "Phantom V1 Alfa Live on Testnet",
+            title: "Phantom shielded pool live on BNB Testnet",
             date: "FEB 24, 2026",
             category: "ANNOUNCEMENT",
-            excerpt: "The first iteration of our dark pool matching engine is now open for rigorous stress testing by whitelisted institutional actors."
+            excerpt: "The first public deployment of the Phantom shielded pool and relayer is now available on BNB Chain testnet for early users and integration partners."
         },
         {
-            title: "Strategic Partnership with Nexus Privacy",
+            title: "Per‑wallet reporting keys for tax and audit",
             date: "FEB 20, 2026",
-            category: "ECOSYSTEM",
-            excerpt: "Integrating massive FHE-powered oracle solutions to completely eradicate cross-chain data latency."
+            category: "PRODUCT",
+            excerpt: "Users and companies can now generate revocable keys that expose only one wallet’s history — ideal for accountants, lawyers, and compliance teams."
         },
         {
-            title: "Redefining MEV Resistance",
+            title: "Payroll runs from the shielded pool",
             date: "FEB 15, 2026",
-            category: "RESEARCH",
-            excerpt: "Our latest research paper on utilizing ZK-SNARK constructs to entirely excise toxic order flow from the liquidity pool."
+            category: "USE CASE",
+            excerpt: "Phantom introduces a wallet‑only payroll flow: fund once, create a run, and send out salaries from the pool while keeping public salary data off‑chain."
         }
     ];
 

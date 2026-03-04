@@ -2,10 +2,10 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const navLinks = [
-    { name: 'Architecture', href: '#architecture' },
-    { name: 'Technology', href: '#technology' },
-    { name: 'MEV Shield', href: '#security' },
-    { name: 'Roadmap', href: '#roadmap' },
+  { name: 'Architecture', href: '#architecture' },
+  { name: 'Technology', href: '#technology' },
+  { name: 'Privacy & keys', href: '#security' },
+  { name: 'Roadmap', href: '#roadmap' },
 ];
 
 const Navbar = () => {

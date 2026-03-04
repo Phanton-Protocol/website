@@ -1,10 +1,10 @@
 import { motion } from 'framer-motion';
 
 const stats = [
-  { value: '5,000', label: 'MAX STAKERS / NODE' },
-  { value: '66%', label: 'CONSENSUS THRESHOLD' },
-  { value: '1M+', label: 'MERKLE TREE CAPACITY' },
-  { value: '3s', label: 'COMMIT-REVEAL DELAY' },
+  { value: '1', label: 'SHIELDED POOL FOR MANY USES' },
+  { value: '3+', label: 'PRIMARY PAYROLL / TREASURY FLOWS' },
+  { value: 'ZK', label: 'PRIVACY WITH AUDIT TRAILS' },
+  { value: 'API', label: 'BACKEND-FIRST PROVER LAYER' },
 ];
 
 const Hero = () => {
@@ -31,37 +31,42 @@ const Hero = () => {
           {/* Left: Headline */}
           <div>
             <motion.div {...fade(0.1)} className="section-label">
-              Dark-pool native privacy layer for DeFi
+              Private, compliant rails for on‑chain money
             </motion.div>
 
-            <motion.h1 {...fade(0.25)} className="display-xl" style={{ marginBottom: '2.5rem', maxWidth: '820px' }}>
-              Trade in the{' '}
+            <motion.h1
+              {...fade(0.25)}
+              className="display-xl"
+              style={{ marginBottom: '2.5rem', maxWidth: '820px' }}
+            >
+              Privacy for teams,
               <br />
-              <em>shadows.</em>
+              treasuries, <em>traders</em>
               <br />
-              Comply in the{' '}
-              <br />
-              open.
+              and payouts.
             </motion.h1>
 
-            <motion.p {...fade(0.4)} style={{
-              maxWidth: '520px',
-              color: 'var(--text-secondary)',
-              fontSize: '0.95rem',
-              lineHeight: 1.75,
-              marginBottom: '3rem',
-            }}>
-              Phantom Protocol combines ZK-SNARKs, Fully Homomorphic Encryption,
-              and a decentralized validator network to deliver institutional-grade
-              dark pool trading with native compliance primitives.
+            <motion.p
+              {...fade(0.4)}
+              style={{
+                maxWidth: '520px',
+                color: 'var(--text-secondary)',
+                fontSize: '0.95rem',
+                lineHeight: 1.75,
+                marginBottom: '3rem',
+              }}
+            >
+              Phantom Protocol is a shielded pool and relayer network on BNB Chain
+              that lets you run payroll, manage treasury, and swap assets privately —
+              with per‑wallet reporting keys for auditors, lawyers, and tax tools.
             </motion.p>
 
             <motion.div {...fade(0.5)} style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
               <a href="#architecture" className="btn-outline-cyan btn-outline">
-                Explore Architecture
+                Explore how it works
               </a>
-              <a href="#" className="btn-outline">
-                Read Whitepaper
+              <a href="#features" className="btn-outline">
+                See what you can do
               </a>
             </motion.div>
           </div>

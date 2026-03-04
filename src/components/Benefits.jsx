@@ -1,30 +1,30 @@
 import { motion } from 'framer-motion';
 
 const benefits = [
-    {
-        num: '01',
-        title: 'Zero Trace Maturity',
-        body: 'Mathematical guarantees that sender, receiver, and execution payloads remain completely obscured from validators and observers.',
-        tag: 'CORE LAYER',
-    },
-    {
-        num: '02',
-        title: 'MEV Immunity Core',
-        body: 'By encrypting order flow pre-execution, Phantom removes the possibility of sandwich attacks, front-running, and toxic arbitrage.',
-        tag: 'PROTECTION',
-    },
-    {
-        num: '03',
-        title: 'Institutional Scale',
-        body: 'Designed for high-throughput, low-latency execution required by institutional liquidity providers and heavy algorithmic traders.',
-        tag: 'PERFORMANCE',
-    },
-    {
-        num: '04',
-        title: 'Cross-Chain Fluidity',
-        body: 'Seamlessly shift liquidity across Ethereum, BSC, and L2s without leaving a breadcrumb trail of origin or destination.',
-        tag: 'INTEROP',
-    },
+  {
+    num: '01',
+    title: 'Private payroll out of the box',
+    body: 'Fund a company account once and distribute salaries from the shielded pool. Teammates get paid without exposing who earns what on a public block explorer.',
+    tag: 'PAYROLL',
+  },
+  {
+    num: '02',
+    title: 'Treasury moves that stay off‑radar',
+    body: 'Swap and rebalance treasuries inside Phantom, so strategies and positions are not broadcast to competitors and copy‑traders in real time.',
+    tag: 'TREASURY',
+  },
+  {
+    num: '03',
+    title: 'Per‑wallet keys for auditors',
+    body: 'Issue reporting keys on a per‑wallet basis. Lawyers, accountants, or regulators can see exactly what they need — and nothing else.',
+    tag: 'COMPLIANCE',
+  },
+  {
+    num: '04',
+    title: 'Built for production, not demos',
+    body: 'Backend-first proving with Rapidsnark where available, snarkjs fallback when not. Same API, safer UX, and room to scale to real company flows.',
+    tag: 'ENGINEERING',
+  },
 ];
 
 const Benefits = () => (
