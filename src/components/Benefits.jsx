@@ -69,15 +69,15 @@ const Benefits = () => (
 
                         <h3 style={{
                             fontFamily: 'var(--font-body)',
-                            fontWeight: 700,
-                            fontSize: '1.1rem',
+                            fontWeight: 800,
+                            fontSize: '1.15rem',
                             color: '#fff',
                             marginBottom: '1rem',
                         }}>
                             {b.title}
                         </h3>
 
-                        <p style={{ color: 'rgba(255, 255, 255, 0.72)', fontSize: '0.875rem', lineHeight: 1.75, marginBottom: '2rem' }}>
+                        <p style={{ color: 'rgba(255, 255, 255, 0.85)', fontSize: '0.9rem', lineHeight: 1.75, marginBottom: '2rem' }}>
                             {b.body}
                         </p>
 
