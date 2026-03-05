@@ -1,10 +1,15 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { DAPP_URL } from '../config';
+import logoImg from '../assets/logo.jpg';
 
 const navLinks = [
+  { name: 'Who it\'s for', href: '#who-its-for' },
+  { name: 'Relayers', href: '#relayers' },
   { name: 'Architecture', href: '#architecture' },
   { name: 'Technology', href: '#technology' },
-  { name: 'Privacy & keys', href: '#security' },
+  { name: 'Privacy', href: '#security' },
+  { name: 'Fees', href: '#fees' },
   { name: 'Roadmap', href: '#roadmap' },
 ];
 
@@ -36,34 +41,37 @@ const Navbar = () => {
                 transition: 'all 0.4s ease',
             }}
         >
-            <div className="container" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                {/* Logo Mark */}
+            <div className="container nav-container" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem' }}>
+                {/* Logo */}
                 <a
                     href="/"
-                    style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', textDecoration: 'none' }}
+                    style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', textDecoration: 'none', flexShrink: 0 }}
                     onClick={() => window.scrollTo(0, 0)}
                 >
-                    <div style={{
-                        width: 28, height: 28,
-                        border: '1px solid var(--cyan)',
-                        borderRadius: '50%',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    }}>
-                        <div style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--cyan)' }} />
-                    </div>
+                    <img
+                        src={logoImg}
+                        alt="Phantom Protocol"
+                        style={{
+                            width: 32,
+                            height: 32,
+                            objectFit: 'contain',
+                            borderRadius: '50%',
+                        }}
+                    />
                     <span style={{
                         fontFamily: 'var(--font-mono)',
                         fontSize: '0.75rem',
                         letterSpacing: '0.12em',
                         textTransform: 'uppercase',
                         color: 'var(--text-primary)',
+                        whiteSpace: 'nowrap',
                     }}>
                         PHANTOM<span style={{ color: 'var(--cyan)' }}>.</span>PROTOCOL
                     </span>
                 </a>
 
-                {/* Desktop Links */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '3rem' }} className="hidden-mobile">
+                {/* Desktop Links - tighter so all fit on one line */}
+                <div className="nav-links hidden-mobile" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '1.5rem', flex: '1 1 auto', minWidth: 0 }}>
                     {navLinks.map(link => (
                         <a
                             key={link.name}
@@ -71,12 +79,13 @@ const Navbar = () => {
                             className="hover-underline"
                             style={{
                                 fontFamily: 'var(--font-mono)',
-                                fontSize: '0.65rem',
-                                letterSpacing: '0.12em',
+                                fontSize: '0.6rem',
+                                letterSpacing: '0.1em',
                                 textTransform: 'uppercase',
                                 color: 'var(--text-secondary)',
                                 textDecoration: 'none',
                                 transition: 'color 0.3s',
+                                whiteSpace: 'nowrap',
                             }}
                             onMouseEnter={e => e.target.style.color = '#fff'}
                             onMouseLeave={e => e.target.style.color = 'var(--text-secondary)'}
@@ -86,14 +95,36 @@ const Navbar = () => {
                     ))}
                 </div>
 
-                {/* CTA */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                {/* CTA - don't shrink */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexShrink: 0 }} className="nav-cta">
                     <a
                         href="#"
                         className="btn-outline hidden-mobile"
                         style={{ fontSize: '0.65rem', padding: '0.6rem 1.2rem' }}
                     >
                         Read Whitepaper
+                    </a>
+                    <a
+                        href={DAPP_URL}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="hidden-mobile"
+                        style={{
+                            fontFamily: 'var(--font-mono)',
+                            fontSize: '0.65rem',
+                            letterSpacing: '0.12em',
+                            textTransform: 'uppercase',
+                            background: 'var(--cyan)',
+                            color: '#0a0a0a',
+                            padding: '0.6rem 1.2rem',
+                            textDecoration: 'none',
+                            fontWeight: 600,
+                            transition: 'opacity 0.3s, box-shadow 0.3s',
+                        }}
+                        onMouseEnter={e => { e.target.style.opacity = '0.9'; e.target.style.boxShadow = '0 0 24px rgba(0,229,199,0.35)'; }}
+                        onMouseLeave={e => { e.target.style.opacity = '1'; e.target.style.boxShadow = 'none'; }}
+                    >
+                        Open DApp
                     </a>
                     <button
                         style={{
@@ -148,18 +179,42 @@ const Navbar = () => {
                                     {link.name}
                                 </a>
                             ))}
+                            <a
+                                href={DAPP_URL}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                onClick={() => setOpen(false)}
+                                style={{
+                                    fontFamily: 'var(--font-mono)',
+                                    fontSize: '0.8rem',
+                                    letterSpacing: '0.15em',
+                                    textTransform: 'uppercase',
+                                    color: 'var(--cyan)',
+                                    textDecoration: 'none',
+                                    marginTop: '0.5rem',
+                                }}
+                            >
+                                Open DApp →
+                            </a>
                         </div>
                     </motion.div>
                 )}
             </AnimatePresence>
 
             <style>{`
+        .nav-container { overflow: visible; }
+        .nav-links a { overflow: visible; }
         @media (max-width: 768px) {
           .hidden-mobile { display: none !important; }
           .show-mobile   { display: block !important; }
         }
         @media (min-width: 769px) {
           .show-mobile { display: none !important; }
+        }
+        /* On medium widths, if nav still wraps, show smaller gap */
+        @media (max-width: 1200px) and (min-width: 769px) {
+          .nav-links { gap: 1rem !important; }
+          .nav-links a { font-size: 0.55rem !important; letter-spacing: 0.08em !important; }
         }
       `}</style>
         </motion.nav>

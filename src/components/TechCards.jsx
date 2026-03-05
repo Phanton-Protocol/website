@@ -17,6 +17,11 @@ const TechCards = () => {
       subtitle: "SELECTIVE DISCLOSURE",
       desc: "Per‑wallet reporting keys for accountants, lawyers, and regulators. Share exactly the flows you need to, and nothing more.",
     },
+    {
+      title: "FHE (Research)",
+      subtitle: "FULLY HOMOMORPHIC ENCRYPTION",
+      desc: "FHE is under research for future versions — compute on encrypted data without decrypting. Today Phantom uses ZK‑SNARKs for privacy; FHE could later enhance private matching or compliance checks.",
+    },
   ];
 
     return (

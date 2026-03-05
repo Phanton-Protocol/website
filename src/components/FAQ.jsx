@@ -7,12 +7,24 @@ const faqs = [
     a: "No. Phantom is a multi‑asset shielded pool with per‑wallet reporting keys and optional sanctions screening. It is designed for ongoing payroll, treasury, and payout flows, not one‑off anonymization."
   },
   {
+    q: "Who can use Phantom?",
+    a: "Banks, institutions, traders, and teams. Banks and custodians can offer private settlement; funds and companies can run payroll and treasury; traders can swap with reduced on-chain footprint; teams can pay contractors privately. See the Who it's for section above."
+  },
+  {
     q: "Who controls the funds?",
     a: "Funds are held in smart contracts on BNB Chain. You control your keys. Relayers cannot move your assets without a valid zero‑knowledge proof generated from your notes."
   },
   {
     q: "How can employees or accountants see history?",
     a: "Each wallet can generate one or more reporting keys. Sharing a key lets an accountant, lawyer, or tax tool see that wallet’s full transaction history, without revealing other users or internal pool details. Keys can be revoked at any time."
+  },
+  {
+    q: "What are the fees?",
+    a: "Relayers may charge a small fee to cover gas; swap routing uses a DEX (e.g. PancakeSwap) so you pay normal DEX fees and slippage. There is no protocol fee today. See the Fees section for details."
+  },
+  {
+    q: "What is internal matching?",
+    a: "When two users swap in opposite directions, Phantom can match them inside the pool instead of routing through a public DEX — reducing cost and leakage. Internal matching is on the roadmap; currently swaps go through an external DEX."
   },
   {
     q: "How does payroll work on Phantom?",

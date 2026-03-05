@@ -1,4 +1,5 @@
 import { motion } from 'framer-motion';
+import { DAPP_URL } from '../config';
 
 const stats = [
   { value: '1', label: 'SHIELDED POOL FOR MANY USES' },
@@ -61,7 +62,29 @@ const Hero = () => {
               with per‑wallet reporting keys for auditors, lawyers, and tax tools.
             </motion.p>
 
-            <motion.div {...fade(0.5)} style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+            <motion.div {...fade(0.5)} style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', alignItems: 'center' }}>
+              <a
+                href={DAPP_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: '0.7rem',
+                  letterSpacing: '0.12em',
+                  textTransform: 'uppercase',
+                  background: 'var(--cyan)',
+                  color: '#0a0a0a',
+                  padding: '0.85rem 1.75rem',
+                  textDecoration: 'none',
+                  fontWeight: 600,
+                  transition: 'opacity 0.3s, box-shadow 0.3s',
+                }}
+                className="btn-cyan"
+                onMouseEnter={e => { e.target.style.opacity = '0.9'; e.target.style.boxShadow = '0 0 32px rgba(0,229,199,0.4)'; }}
+                onMouseLeave={e => { e.target.style.opacity = '1'; e.target.style.boxShadow = 'none'; }}
+              >
+                Open DApp
+              </a>
               <a href="#architecture" className="btn-outline-cyan btn-outline">
                 Explore how it works
               </a>
@@ -69,6 +92,20 @@ const Hero = () => {
                 See what you can do
               </a>
             </motion.div>
+
+            <motion.p
+              {...fade(0.6)}
+              style={{
+                marginTop: '2.5rem',
+                fontFamily: 'var(--font-mono)',
+                fontSize: '0.65rem',
+                letterSpacing: '0.2em',
+                textTransform: 'uppercase',
+                color: 'var(--text-secondary)',
+              }}
+            >
+              For banks · institutions · traders · teams
+            </motion.p>
           </div>
 
           {/* Right: Stats */}

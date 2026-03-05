@@ -38,9 +38,17 @@ const Mechanics = () => {
 
                         <div style={{ display: 'flex', gap: '2rem', alignItems: 'flex-start' }}>
                             <div style={{ color: 'var(--cyan)' }}>03</div>
-                            <div style={{ flexGrow: 1 }}>
+                            <div style={{ flexGrow: 1, paddingBottom: '3rem', borderBottom: '1px solid var(--border)' }}>
                                 <div style={{ color: '#fff', marginBottom: '0.5rem', fontWeight: 500 }}>Distribute to wallets or banks.</div>
                                 <div style={{ textTransform: 'none', fontFamily: 'var(--font-body)', lineHeight: 1.6 }}>For payroll or payouts, Phantom can send directly to employee wallets or route flows toward off‑ramp partners. Each employee can generate their own reporting key, so HR and accountants can see history without exposing the rest of your books.</div>
+                            </div>
+                        </div>
+
+                        <div style={{ display: 'flex', gap: '2rem', alignItems: 'flex-start' }}>
+                            <div style={{ color: 'var(--cyan)' }}>04</div>
+                            <div style={{ flexGrow: 1 }}>
+                                <div style={{ color: '#fff', marginBottom: '0.5rem', fontWeight: 500 }}>Internal matching (roadmap).</div>
+                                <div style={{ textTransform: 'none', fontFamily: 'var(--font-body)', lineHeight: 1.6 }}>When two users want to swap in opposite directions (e.g. USDT for BNB), Phantom can match them inside the pool without routing through a public DEX. That reduces cost and leakage. Internal matching is in development; today swaps go through an external DEX.</div>
                             </div>
                         </div>
                     </motion.div>

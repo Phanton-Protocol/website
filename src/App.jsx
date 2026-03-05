@@ -1,17 +1,21 @@
 import { useState } from 'react';
 import Navbar from './components/Navbar';
 import Hero from './components/Hero';
+import WhoCanUseIt from './components/WhoCanUseIt';
 import Benefits from './components/Benefits';
 import ComparisonTable from './components/ComparisonTable';
 import TechCards from './components/TechCards';
 import MetricsVisualizer from './components/MetricsVisualizer';
 import NewsSection from './components/NewsSection';
 import Mechanics from './components/Mechanics';
+import RelayersSection from './components/RelayersSection';
 import PrivacyExplainer from './components/PrivacyExplainer';
+import FeesSection from './components/FeesSection';
 import Roadmap from './components/Roadmap';
 import FAQ from './components/FAQ';
 import GhostChainVisualizer from './components/GhostChainVisualizer';
 import logoUrl from './assets/logo.jpg';
+import { SOCIAL_LINKS } from './config';
 
 function App() {
   const [mousePos, setMousePos] = useState({ x: -999, y: -999 });
@@ -44,13 +48,16 @@ function App() {
         <Navbar />
 
         <Hero />
+        <WhoCanUseIt />
         <Benefits />
         <ComparisonTable />
         <TechCards />
         <MetricsVisualizer />
         <NewsSection />
         <Mechanics />
+        <RelayersSection />
         <PrivacyExplainer />
+        <FeesSection />
         <Roadmap />
         <FAQ />
 
@@ -63,9 +70,19 @@ function App() {
             <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.65rem', color: 'var(--text-secondary)', letterSpacing: '0.1em', textTransform: 'uppercase' }}>
               © 2026 Phantom Protocol — <span style={{ color: 'var(--cyan)' }}>Mathematical Privacy.</span>
             </div>
-            <div style={{ display: 'flex', gap: '2rem' }}>
-              <a href="https://x.com/Phantompro_" target="_blank" rel="noreferrer" className="hover-underline" style={{ fontFamily: 'var(--font-mono)', fontSize: '0.65rem', color: 'var(--text-secondary)', letterSpacing: '0.1em', textTransform: 'uppercase', textDecoration: 'none', transition: 'color 0.3s' }}>X / Twitter</a>
-              <a href="https://github.com/phantomproto" target="_blank" rel="noreferrer" className="hover-underline" style={{ fontFamily: 'var(--font-mono)', fontSize: '0.65rem', color: 'var(--text-secondary)', letterSpacing: '0.1em', textTransform: 'uppercase', textDecoration: 'none', transition: 'color 0.3s' }}>GitHub</a>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1.25rem 2rem', justifyContent: 'flex-end' }}>
+              {SOCIAL_LINKS.map(({ name, href }) => (
+                <a
+                  key={name}
+                  href={href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="hover-underline"
+                  style={{ fontFamily: 'var(--font-mono)', fontSize: '0.65rem', color: 'var(--text-secondary)', letterSpacing: '0.1em', textTransform: 'uppercase', textDecoration: 'none', transition: 'color 0.3s' }}
+                >
+                  {name}
+                </a>
+              ))}
             </div>
           </div>
         </footer>
