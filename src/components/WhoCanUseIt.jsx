@@ -34,7 +34,7 @@ const WhoCanUseIt = () => (
           <br />
           traders, and teams.
         </h2>
-        <p style={{ color: 'var(--text-secondary)', fontSize: '1rem', lineHeight: 1.7, maxWidth: '560px', marginTop: '1.5rem' }}>
+        <p style={{ color: '#fff', fontSize: 'var(--body-size)', fontWeight: 500, lineHeight: 'var(--body-line)', maxWidth: '560px', marginTop: '1.5rem' }}>
           Phantom provides private, compliant rails for on-chain money — whether you're a bank offering custody, a fund running payroll, a trader moving size, or a team paying contractors.
         </p>
       </div>
@@ -62,14 +62,14 @@ const WhoCanUseIt = () => (
             </span>
             <h3 style={{
               fontFamily: 'var(--font-body)',
-              fontWeight: 600,
+              fontWeight: 700,
               fontSize: '1.15rem',
               color: '#fff',
               marginBottom: '0.75rem',
             }}>
               {a.title}
             </h3>
-            <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', lineHeight: 1.7, flexGrow: 1 }}>
+            <p style={{ color: '#fff', fontSize: 'var(--body-size)', fontWeight: 500, lineHeight: 'var(--body-line)', flexGrow: 1 }}>
               {a.body}
             </p>
           </motion.div>

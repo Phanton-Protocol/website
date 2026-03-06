@@ -11,8 +11,8 @@ const Roadmap = () => {
         {
             num: "02",
             title: "Dark Pool Init",
-            desc: "Launching the world's most advanced encrypted matching environment. Real liquidity meets zero-knowledge.",
-            items: ["Internal Matching Kernel", "Testnet Deployment", "Selective Disclosure Keys"]
+            desc: "FHE-based encrypted matching: orders matched on ciphertext so neither side reveals amount or direction. Real liquidity meets zero-knowledge and fully homomorphic encryption.",
+            items: ["FHE Internal Matching (SEAL)", "Testnet Deployment", "Selective Disclosure Keys"]
         },
         {
             num: "03",
@@ -64,9 +64,10 @@ const Roadmap = () => {
                                     {phase.title}
                                 </h3>
                                 <p style={{
-                                    color: 'var(--text-secondary)',
-                                    fontSize: '1rem',
-                                    lineHeight: 1.6,
+                                    color: '#fff',
+                                    fontSize: 'var(--body-size)',
+                                    fontWeight: 500,
+                                    lineHeight: 'var(--body-line)',
                                     maxWidth: '600px',
                                     marginBottom: '2rem'
                                 }}>

@@ -13,7 +13,7 @@ import PrivacyExplainer from './components/PrivacyExplainer';
 import FeesSection from './components/FeesSection';
 import Roadmap from './components/Roadmap';
 import FAQ from './components/FAQ';
-import GhostChainVisualizer from './components/GhostChainVisualizer';
+import NetworkVisualizer from './components/NetworkVisualizer';
 import logoUrl from './assets/logo.jpg';
 import { SOCIAL_LINKS } from './config';
 
@@ -35,8 +35,8 @@ function App() {
       <div className="cursor-dot" style={{ left: mousePos.x, top: mousePos.y }} />
       <div className="cursor-ring" style={{ left: mousePos.x, top: mousePos.y }} />
 
-      {/* Ghost Chain Visualizer — fixed canvas, z:1 */}
-      <GhostChainVisualizer />
+      {/* Network visualizer — fixed canvas behind content */}
+      <NetworkVisualizer />
 
       {/* Logo Watermark — fixed, centered, z:0 */}
       <div className="watermark">
@@ -67,7 +67,7 @@ function App() {
           style={{ paddingTop: '3rem', paddingBottom: '3rem' }}
         >
           <div className="container" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1.5rem' }}>
-            <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.65rem', color: 'var(--text-secondary)', letterSpacing: '0.1em', textTransform: 'uppercase' }}>
+            <div style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--label-size)', fontWeight: 500, color: '#fff', letterSpacing: '0.1em', textTransform: 'uppercase' }}>
               © 2026 Phantom Protocol — <span style={{ color: 'var(--cyan)' }}>Mathematical Privacy.</span>
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1.25rem 2rem', justifyContent: 'flex-end' }}>
@@ -78,7 +78,7 @@ function App() {
                   target="_blank"
                   rel="noopener noreferrer"
                   className="hover-underline"
-                  style={{ fontFamily: 'var(--font-mono)', fontSize: '0.65rem', color: 'var(--text-secondary)', letterSpacing: '0.1em', textTransform: 'uppercase', textDecoration: 'none', transition: 'color 0.3s' }}
+                  style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--label-size)', fontWeight: 500, color: '#fff', letterSpacing: '0.1em', textTransform: 'uppercase', textDecoration: 'none', transition: 'color 0.3s' }}
                 >
                   {name}
                 </a>

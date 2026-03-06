@@ -59,7 +59,7 @@ const Benefits = () => (
                         <div style={{
                             fontSize: '2.5rem',
                             fontFamily: 'var(--font-display)',
-                            color: 'var(--text-tertiary)',
+                            color: 'rgba(255, 255, 255, 0.85)',
                             position: 'absolute',
                             top: '1.5rem',
                             right: '2rem',
@@ -77,7 +77,7 @@ const Benefits = () => (
                             {b.title}
                         </h3>
 
-                        <p style={{ color: 'rgba(255, 255, 255, 0.85)', fontSize: '0.9rem', lineHeight: 1.75, marginBottom: '2rem' }}>
+                        <p style={{ color: '#fff', fontSize: 'var(--body-size)', fontWeight: 500, lineHeight: 'var(--body-line)', marginBottom: '2rem' }}>
                             {b.body}
                         </p>
 
@@ -87,9 +87,9 @@ const Benefits = () => (
                             fontSize: '0.6rem',
                             letterSpacing: '0.15em',
                             textTransform: 'uppercase',
-                            border: '1px solid var(--border)',
+                            border: '1px solid rgba(255,255,255,0.35)',
                             padding: '0.3rem 0.75rem',
-                            color: 'var(--text-secondary)',
+                            color: '#ffffff',
                         }}>
                             {b.tag}
                         </span>

@@ -63,7 +63,8 @@ const Navbar = () => {
                         fontSize: '0.75rem',
                         letterSpacing: '0.12em',
                         textTransform: 'uppercase',
-                        color: 'var(--text-primary)',
+                        color: '#ffffff',
+                        fontWeight: 600,
                         whiteSpace: 'nowrap',
                     }}>
                         PHANTOM<span style={{ color: 'var(--cyan)' }}>.</span>PROTOCOL
@@ -82,13 +83,14 @@ const Navbar = () => {
                                 fontSize: '0.6rem',
                                 letterSpacing: '0.1em',
                                 textTransform: 'uppercase',
-                                color: 'var(--text-secondary)',
+                                color: '#ffffff',
+                                fontWeight: 500,
                                 textDecoration: 'none',
                                 transition: 'color 0.3s',
                                 whiteSpace: 'nowrap',
                             }}
                             onMouseEnter={e => e.target.style.color = '#fff'}
-                            onMouseLeave={e => e.target.style.color = 'var(--text-secondary)'}
+                            onMouseLeave={e => e.target.style.color = '#ffffff'}
                         >
                             {link.name}
                         </a>
@@ -100,7 +102,7 @@ const Navbar = () => {
                     <a
                         href="#"
                         className="btn-outline hidden-mobile"
-                        style={{ fontSize: '0.65rem', padding: '0.6rem 1.2rem' }}
+                        style={{ fontSize: '0.65rem', padding: '0.6rem 1.2rem', color: '#fff', borderColor: 'rgba(255,255,255,0.5)' }}
                     >
                         Read Whitepaper
                     </a>
@@ -172,7 +174,8 @@ const Navbar = () => {
                                         fontSize: '0.8rem',
                                         letterSpacing: '0.15em',
                                         textTransform: 'uppercase',
-                                        color: 'var(--text-secondary)',
+                                        color: 'rgba(255, 255, 255, 0.95)',
+                                        fontWeight: 500,
                                         textDecoration: 'none',
                                     }}
                                 >

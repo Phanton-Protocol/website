@@ -1,12 +1,11 @@
 import { useEffect, useRef } from 'react';
 
 /**
- * GhostChainVisualizer
- * Renders BEHIND all website content (z-index: -1).
- * Shows a network of nodes connected by glowing chain-links.
- * A phantom ghost follows the mouse and breaks nearby links into particle sparks.
+ * NetworkVisualizer
+ * Renders behind main content. Shows a network of nodes and links.
+ * A cursor-follow effect breaks nearby links into particle sparks.
  */
-const GhostChainVisualizer = () => {
+const NetworkVisualizer = () => {
     const canvasRef = useRef(null);
     const mouseRef = useRef({ x: -9999, y: -9999 });
 
@@ -28,20 +27,17 @@ const GhostChainVisualizer = () => {
         };
         window.addEventListener('mousemove', onMouseMove);
 
-        // ── CONFIG ────────────────────────────────────────────────────────────────
         const COLS = 8;
         const ROWS = 5;
-        const GHOST_BREAK_RADIUS = 110;
+        const CURSOR_BREAK_RADIUS = 110;
         const LINK_REGEN_MS = 5000;
         const PARTICLE_COUNT = 12;
         const HEX = '0123456789ABCDEF';
 
-        // colours
         const C_CYAN = '0, 229, 255';
         const C_WHITE = '255, 255, 255';
-        const C_GHOST = '120, 210, 255';
+        const C_FOCUS = '120, 210, 255';
 
-        // ── NODES ─────────────────────────────────────────────────────────────────
         const nodes = [];
 
         function buildGrid() {
@@ -62,7 +58,6 @@ const GhostChainVisualizer = () => {
             }
         }
 
-        // ── LINKS ─────────────────────────────────────────────────────────────────
         const links = [];
 
         function buildLinks() {
@@ -82,12 +77,10 @@ const GhostChainVisualizer = () => {
             return { a, b, broken: false, brokenAt: 0, particles: [] };
         }
 
-        // ── GHOST TRAIL ───────────────────────────────────────────────────────────
         const trail = [];
         const TRAIL_LEN = 28;
-        const ghost = { x: -500, y: -500 };
+        const focus = { x: -500, y: -500 };
 
-        // ── HELPERS ───────────────────────────────────────────────────────────────
         function ptSegDist(px, py, ax, ay, bx, by) {
             const dx = bx - ax, dy = by - ay;
             const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy || 1)));
@@ -108,7 +101,6 @@ const GhostChainVisualizer = () => {
             }));
         }
 
-        // ── MAIN LOOP ─────────────────────────────────────────────────────────────
         let t = 0;
 
         function render() {
@@ -117,26 +109,22 @@ const GhostChainVisualizer = () => {
 
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-            // smooth ghost to mouse
-            ghost.x += (mouseRef.current.x - ghost.x) * 0.07;
-            ghost.y += (mouseRef.current.y - ghost.y) * 0.07;
+            focus.x += (mouseRef.current.x - focus.x) * 0.07;
+            focus.y += (mouseRef.current.y - focus.y) * 0.07;
 
-            trail.unshift({ x: ghost.x, y: ghost.y });
+            trail.unshift({ x: focus.x, y: focus.y });
             if (trail.length > TRAIL_LEN) trail.pop();
 
-            // ── LINKS ──
             links.forEach((link) => {
                 const na = nodes[link.a], nb = nodes[link.b];
 
-                // regen
                 if (link.broken && now - link.brokenAt > LINK_REGEN_MS) {
                     link.broken = false;
                     link.particles = [];
                 }
 
-                // break check
                 if (!link.broken) {
-                    if (ptSegDist(ghost.x, ghost.y, na.x, na.y, nb.x, nb.y) < GHOST_BREAK_RADIUS * 0.55) {
+                    if (ptSegDist(focus.x, focus.y, na.x, na.y, nb.x, nb.y) < CURSOR_BREAK_RADIUS * 0.55) {
                         link.broken = true;
                         link.brokenAt = now;
                         spawnParticles(link);
@@ -144,7 +132,6 @@ const GhostChainVisualizer = () => {
                 }
 
                 if (!link.broken) {
-                    // intact — glowing gradient line
                     const g = ctx.createLinearGradient(na.x, na.y, nb.x, nb.y);
                     g.addColorStop(0, `rgba(${C_CYAN}, 0.05)`);
                     g.addColorStop(0.5, `rgba(${C_CYAN}, 0.20)`);
@@ -158,14 +145,12 @@ const GhostChainVisualizer = () => {
                     ctx.lineWidth = 0.7 + pulse * 0.5;
                     ctx.stroke();
 
-                    // travelling data-packet dot
                     const frac = ((t * 0.35 + link.a * 0.19) % 1);
                     ctx.beginPath();
                     ctx.arc(na.x + (nb.x - na.x) * frac, na.y + (nb.y - na.y) * frac, 1.5, 0, Math.PI * 2);
                     ctx.fillStyle = `rgba(${C_CYAN}, ${0.45 + pulse * 0.45})`;
                     ctx.fill();
                 } else {
-                    // BROKEN — stub fragments
                     const age = Math.min(1, (now - link.brokenAt) / 800);
                     const stub = Math.max(0, 0.22 - age * 0.18);
                     const a = Math.max(0, 0.3 - age * 0.3);
@@ -185,7 +170,6 @@ const GhostChainVisualizer = () => {
                     ctx.stroke();
                     ctx.setLineDash([]);
 
-                    // particle sparks
                     link.particles.forEach((p) => {
                         p.x += p.vx; p.y += p.vy;
                         p.vx *= 0.97; p.vy *= 0.97;
@@ -199,13 +183,11 @@ const GhostChainVisualizer = () => {
                 }
             });
 
-            // ── NODES ──
             nodes.forEach((node) => {
                 node.phase += 0.018;
                 const glow = (Math.sin(node.phase) + 1) / 2;
-                const near = Math.hypot(node.x - ghost.x, node.y - ghost.y) < GHOST_BREAK_RADIUS;
+                const near = Math.hypot(node.x - focus.x, node.y - focus.y) < CURSOR_BREAK_RADIUS;
 
-                // outer pulse ring
                 ctx.beginPath();
                 ctx.arc(node.x, node.y, 5.5 + glow * 2, 0, Math.PI * 2);
                 ctx.strokeStyle = near
@@ -214,7 +196,6 @@ const GhostChainVisualizer = () => {
                 ctx.lineWidth = 0.7;
                 ctx.stroke();
 
-                // inner dot
                 ctx.beginPath();
                 ctx.arc(node.x, node.y, 2.5, 0, Math.PI * 2);
                 ctx.fillStyle = near
@@ -222,39 +203,35 @@ const GhostChainVisualizer = () => {
                     : `rgba(${C_CYAN},  0.55)`;
                 ctx.fill();
 
-                // hex label
                 ctx.font = '7.5px JetBrains Mono';
                 ctx.fillStyle = `rgba(${C_CYAN}, ${0.18 + glow * 0.12})`;
                 ctx.fillText(node.label, node.x + 8, node.y + 3);
             });
 
-            // ── GHOST TRAIL ──
             trail.forEach((pt, i) => {
                 const a = (1 - i / TRAIL_LEN) * 0.07;
                 const r = 3 + (1 - i / TRAIL_LEN) * 7;
                 ctx.beginPath();
                 ctx.arc(pt.x, pt.y, r, 0, Math.PI * 2);
-                ctx.fillStyle = `rgba(${C_GHOST}, ${a})`;
+                ctx.fillStyle = `rgba(${C_FOCUS}, ${a})`;
                 ctx.fill();
             });
 
-            // ── GHOST HALO ──
-            const hR = GHOST_BREAK_RADIUS * (0.8 + Math.sin(t * 1.3) * 0.07);
-            const hGrd = ctx.createRadialGradient(ghost.x, ghost.y, 0, ghost.x, ghost.y, hR);
-            hGrd.addColorStop(0, `rgba(${C_GHOST}, 0.07)`);
-            hGrd.addColorStop(0.5, `rgba(${C_GHOST}, 0.035)`);
-            hGrd.addColorStop(1, `rgba(${C_GHOST}, 0)`);
+            const hR = CURSOR_BREAK_RADIUS * (0.8 + Math.sin(t * 1.3) * 0.07);
+            const hGrd = ctx.createRadialGradient(focus.x, focus.y, 0, focus.x, focus.y, hR);
+            hGrd.addColorStop(0, `rgba(${C_FOCUS}, 0.07)`);
+            hGrd.addColorStop(0.5, `rgba(${C_FOCUS}, 0.035)`);
+            hGrd.addColorStop(1, `rgba(${C_FOCUS}, 0)`);
             ctx.beginPath();
-            ctx.arc(ghost.x, ghost.y, hR, 0, Math.PI * 2);
+            ctx.arc(focus.x, focus.y, hR, 0, Math.PI * 2);
             ctx.fillStyle = hGrd;
             ctx.fill();
 
-            // rotating dashed ring
             ctx.save();
-            ctx.translate(ghost.x, ghost.y);
+            ctx.translate(focus.x, focus.y);
             ctx.rotate(t * 0.5);
             ctx.beginPath();
-            ctx.arc(0, 0, GHOST_BREAK_RADIUS * 0.55, 0, Math.PI * 2);
+            ctx.arc(0, 0, CURSOR_BREAK_RADIUS * 0.55, 0, Math.PI * 2);
             ctx.strokeStyle = `rgba(${C_WHITE}, ${0.04 + Math.sin(t * 2) * 0.02})`;
             ctx.lineWidth = 0.7;
             ctx.setLineDash([5, 12]);
@@ -262,28 +239,25 @@ const GhostChainVisualizer = () => {
             ctx.setLineDash([]);
             ctx.restore();
 
-            // ── GHOST CORE SPHERE ──
-            const cGrd = ctx.createRadialGradient(ghost.x, ghost.y, 0, ghost.x, ghost.y, 20);
+            const cGrd = ctx.createRadialGradient(focus.x, focus.y, 0, focus.x, focus.y, 20);
             cGrd.addColorStop(0, `rgba(${C_WHITE}, 1)`);
-            cGrd.addColorStop(0.4, `rgba(${C_GHOST}, 0.5)`);
-            cGrd.addColorStop(1, `rgba(${C_GHOST}, 0)`);
+            cGrd.addColorStop(0.4, `rgba(${C_FOCUS}, 0.5)`);
+            cGrd.addColorStop(1, `rgba(${C_FOCUS}, 0)`);
             ctx.beginPath();
-            ctx.arc(ghost.x, ghost.y, 20, 0, Math.PI * 2);
+            ctx.arc(focus.x, focus.y, 20, 0, Math.PI * 2);
             ctx.fillStyle = cGrd;
             ctx.fill();
 
-            // label beneath ghost
             ctx.textAlign = 'center';
             ctx.font = '6.5px JetBrains Mono';
             ctx.fillStyle = `rgba(${C_WHITE}, 0.22)`;
-            ctx.fillText('PHANTOM', ghost.x, ghost.y + 32);
-            ctx.fillText('PROTOCOL', ghost.x, ghost.y + 42);
+            ctx.fillText('PHANTOM', focus.x, focus.y + 32);
+            ctx.fillText('PROTOCOL', focus.x, focus.y + 42);
             ctx.textAlign = 'left';
 
             raf = requestAnimationFrame(render);
         }
 
-        // ── INIT ──────────────────────────────────────────────────────────────────
         resize();
         render();
 
@@ -303,11 +277,11 @@ const GhostChainVisualizer = () => {
                 width: '100%',
                 height: '100%',
                 pointerEvents: 'none',
-                zIndex: 1,          // sits above cinematic-void (z:-2) but BELOW content (z:10+)
-                opacity: 0.6,
+                zIndex: 1,
+                opacity: 0.08,
             }}
         />
     );
 };
 
-export default GhostChainVisualizer;
+export default NetworkVisualizer;

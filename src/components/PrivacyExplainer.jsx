@@ -62,7 +62,7 @@ const PrivacyExplainer = () => {
                   }}>
                     {step.title}
                   </h3>
-                  <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', lineHeight: 1.7 }}>
+                  <p style={{ color: '#fff', fontSize: 'var(--body-size)', fontWeight: 500, lineHeight: 'var(--body-line)' }}>
                     {step.desc}
                   </p>
                 </div>

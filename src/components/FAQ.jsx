@@ -24,7 +24,7 @@ const faqs = [
   },
   {
     q: "What is internal matching?",
-    a: "When two users swap in opposite directions, Phantom can match them inside the pool instead of routing through a public DEX — reducing cost and leakage. Internal matching is on the roadmap; currently swaps go through an external DEX."
+    a: "When two users swap in opposite directions, Phantom can match them inside the pool using FHE (fully homomorphic encryption): orders are encrypted and matched on ciphertext so amounts and direction stay private. FHE-based internal matching is in development; when no match is found, swaps route through an external DEX."
   },
   {
     q: "How does payroll work on Phantom?",
@@ -98,9 +98,10 @@ const FAQ = () => {
                                         >
                                             <div style={{
                                                 paddingBottom: '2.5rem',
-                                                color: 'var(--text-secondary)',
-                                                fontSize: '0.95rem',
-                                                lineHeight: 1.7,
+                                                color: '#fff',
+                                                fontSize: 'var(--body-size)',
+                                                fontWeight: 500,
+                                                lineHeight: 'var(--body-line)',
                                                 maxWidth: '650px'
                                             }}>
                                                 {faq.a}

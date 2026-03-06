@@ -51,9 +51,10 @@ const Hero = () => {
               {...fade(0.4)}
               style={{
                 maxWidth: '520px',
-                color: 'var(--text-secondary)',
-                fontSize: '0.95rem',
-                lineHeight: 1.75,
+                color: '#ffffff',
+                fontSize: 'var(--body-size)',
+                fontWeight: 500,
+                lineHeight: 'var(--body-line)',
                 marginBottom: '3rem',
               }}
             >
@@ -98,10 +99,11 @@ const Hero = () => {
               style={{
                 marginTop: '2.5rem',
                 fontFamily: 'var(--font-mono)',
-                fontSize: '0.65rem',
-                letterSpacing: '0.2em',
+                fontSize: 'var(--label-size)',
+                fontWeight: 500,
+                letterSpacing: '0.18em',
                 textTransform: 'uppercase',
-                color: 'var(--text-secondary)',
+                color: '#ffffff',
               }}
             >
               For banks · institutions · traders · teams

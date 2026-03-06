@@ -18,9 +18,9 @@ const TechCards = () => {
       desc: "Per‑wallet reporting keys for accountants, lawyers, and regulators. Share exactly the flows you need to, and nothing more.",
     },
     {
-      title: "FHE (Research)",
+      title: "FHE matching",
       subtitle: "FULLY HOMOMORPHIC ENCRYPTION",
-      desc: "FHE is under research for future versions — compute on encrypted data without decrypting. Today Phantom uses ZK‑SNARKs for privacy; FHE could later enhance private matching or compliance checks.",
+      desc: "Phantom uses FHE (Microsoft SEAL) for encrypted order matching: two users can be matched inside the pool without either revealing amounts or direction. The FHECoprocessor and backend FHE service run matching on ciphertexts; internal matching is in development alongside the existing ZK‑SNARK flows.",
     },
   ];
 
@@ -64,9 +64,10 @@ const TechCards = () => {
                                 {card.title}
                             </h3>
                             <p style={{
-                                color: 'var(--text-secondary)',
-                                fontSize: '0.9rem',
-                                lineHeight: 1.7,
+                                color: '#fff',
+                                fontSize: 'var(--body-size)',
+                                fontWeight: 500,
+                                lineHeight: 'var(--body-line)',
                                 flexGrow: 1
                             }}>
                                 {card.desc}

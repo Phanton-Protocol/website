@@ -24,7 +24,7 @@ const Mechanics = () => {
                             <div style={{ color: 'var(--cyan)' }}>01</div>
                             <div style={{ flexGrow: 1, paddingBottom: '3rem', borderBottom: '1px solid var(--border)' }}>
                                 <div style={{ color: '#fff', marginBottom: '0.5rem', fontWeight: 500 }}>Deposit into the shielded pool.</div>
-                                <div style={{ textTransform: 'none', fontFamily: 'var(--font-body)', lineHeight: 1.6 }}>A company or user deposits assets from a public wallet into the Phantom pool. On-chain you only see a single deposit; inside Phantom it becomes a private note that tracks balance, asset and owner, without linking to the public address.</div>
+                                <div style={{ textTransform: 'none', fontFamily: 'var(--font-body)', fontSize: 'var(--body-size)', fontWeight: 500, lineHeight: 'var(--body-line)' }}>A company or user deposits assets from a public wallet into the shielded pool. On-chain you only see a single deposit; inside Phantom it becomes a private note that tracks balance, asset and owner, without linking to the public address.</div>
                             </div>
                         </div>
 
@@ -32,7 +32,7 @@ const Mechanics = () => {
                             <div style={{ color: 'var(--cyan)' }}>02</div>
                             <div style={{ flexGrow: 1, paddingBottom: '3rem', borderBottom: '1px solid var(--border)' }}>
                                 <div style={{ color: '#fff', marginBottom: '0.5rem', fontWeight: 500 }}>Generate proofs, not traces.</div>
-                                <div style={{ textTransform: 'none', fontFamily: 'var(--font-body)', lineHeight: 1.6 }}>When you swap, withdraw, or run payroll, Phantom generates a Groth16 proof that your balances and Merkle path are valid. Validators can verify the math, but never see who you paid, how much you swapped, or what your total balance is.</div>
+                                <div style={{ textTransform: 'none', fontFamily: 'var(--font-body)', fontSize: 'var(--body-size)', fontWeight: 500, lineHeight: 'var(--body-line)' }}>When you swap, withdraw, or run payroll, Phantom generates a Groth16 proof that your balances and Merkle path are valid. Validators can verify the math, but never see who you paid, how much you swapped, or what your total balance is.</div>
                             </div>
                         </div>
 
@@ -40,15 +40,15 @@ const Mechanics = () => {
                             <div style={{ color: 'var(--cyan)' }}>03</div>
                             <div style={{ flexGrow: 1, paddingBottom: '3rem', borderBottom: '1px solid var(--border)' }}>
                                 <div style={{ color: '#fff', marginBottom: '0.5rem', fontWeight: 500 }}>Distribute to wallets or banks.</div>
-                                <div style={{ textTransform: 'none', fontFamily: 'var(--font-body)', lineHeight: 1.6 }}>For payroll or payouts, Phantom can send directly to employee wallets or route flows toward off‑ramp partners. Each employee can generate their own reporting key, so HR and accountants can see history without exposing the rest of your books.</div>
+                                <div style={{ textTransform: 'none', fontFamily: 'var(--font-body)', fontSize: 'var(--body-size)', fontWeight: 500, lineHeight: 'var(--body-line)' }}>For payroll or payouts, Phantom can send directly to employee wallets or route flows toward off‑ramp partners. Each employee can generate their own reporting key, so HR and accountants can see history without exposing the rest of your books.</div>
                             </div>
                         </div>
 
                         <div style={{ display: 'flex', gap: '2rem', alignItems: 'flex-start' }}>
                             <div style={{ color: 'var(--cyan)' }}>04</div>
                             <div style={{ flexGrow: 1 }}>
-                                <div style={{ color: '#fff', marginBottom: '0.5rem', fontWeight: 500 }}>Internal matching (roadmap).</div>
-                                <div style={{ textTransform: 'none', fontFamily: 'var(--font-body)', lineHeight: 1.6 }}>When two users want to swap in opposite directions (e.g. USDT for BNB), Phantom can match them inside the pool without routing through a public DEX. That reduces cost and leakage. Internal matching is in development; today swaps go through an external DEX.</div>
+                                <div style={{ color: '#fff', marginBottom: '0.5rem', fontWeight: 500 }}>FHE-based internal matching (in development).</div>
+                                <div style={{ textTransform: 'none', fontFamily: 'var(--font-body)', fontSize: 'var(--body-size)', fontWeight: 500, lineHeight: 'var(--body-line)' }}>When two users want to swap in opposite directions (e.g. USDT for BNB), Phantom matches them inside the pool using fully homomorphic encryption (FHE): orders are encrypted and matched on ciphertext so neither side reveals size or direction. The FHECoprocessor and backend FHE service handle this; when no match exists, swaps fall back to an external DEX.</div>
                             </div>
                         </div>
                     </motion.div>

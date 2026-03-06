@@ -6,6 +6,7 @@ const features = [
   { name: 'Sanctions / risk checks', phantom: 'Chainalysis‑ready', standard: 'Usually off‑chain, ad‑hoc' },
   { name: 'Proof generation', phantom: 'Backend Rapidsnark (ZK) + fallback', standard: 'Browser or none' },
   { name: 'Treasury move visibility', phantom: 'Aggregate only', standard: 'Every move visible' },
+  { name: 'Private order matching', phantom: 'FHE-based (in development)', standard: 'Public DEX only' },
 ];
 
 const ComparisonTable = () => (
@@ -42,12 +43,12 @@ const ComparisonTable = () => (
                     onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.02)'}
                     onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                 >
-                    <div style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>{f.name}</div>
+                    <div style={{ color: '#fff', fontSize: 'var(--body-size)', fontWeight: 500 }}>{f.name}</div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
                         <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--cyan)', flexShrink: 0 }} />
                         <span style={{ fontWeight: 600, color: '#fff', fontSize: '0.875rem' }}>{f.phantom}</span>
                     </div>
-                    <div style={{ color: 'var(--text-tertiary)', fontSize: '0.875rem' }}>{f.standard}</div>
+                    <div style={{ color: 'var(--text-tertiary)', fontSize: 'var(--body-size)', fontWeight: 500 }}>{f.standard}</div>
                 </motion.div>
             ))}
         </div>

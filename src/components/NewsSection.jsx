@@ -1,4 +1,5 @@
 import { motion } from 'framer-motion';
+import { BLOG_URL } from '../config';
 
 const NewsSection = () => {
     const newsItems = [
@@ -32,7 +33,7 @@ const NewsSection = () => {
                             Latest<br /><em>broadcasts.</em>
                         </h2>
                     </div>
-                    <a href="#" className="btn-outline">
+                    <a href={BLOG_URL} target="_blank" rel="noopener noreferrer" className="btn-outline">
                         View All Logs
                     </a>
                 </div>
@@ -40,7 +41,9 @@ const NewsSection = () => {
                 <div style={{ display: 'flex', flexDirection: 'column' }}>
                     {newsItems.map((news, idx) => (
                         <motion.a
-                            href="#"
+                            href={BLOG_URL}
+                            target="_blank"
+                            rel="noopener noreferrer"
                             key={idx}
                             initial={{ opacity: 0, y: 20 }}
                             whileInView={{ opacity: 1, y: 0 }}

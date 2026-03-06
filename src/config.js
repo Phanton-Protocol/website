@@ -1,6 +1,8 @@
 // Update this when your production DApp URL is live
 export const DAPP_URL = 'https://phantom-protocol.onrender.com';
 
+export const BLOG_URL = 'https://medium.com/@phantomprotocol9/list/';
+
 export const SOCIAL_LINKS = [
   { name: 'X', href: 'https://x.com/phantompro_?s=21' },
   { name: 'Instagram', href: 'https://www.instagram.com/phantompro__' },

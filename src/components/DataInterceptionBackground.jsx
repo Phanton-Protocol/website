@@ -74,7 +74,7 @@ const DataInterceptionBackground = () => {
                     const offsetY = (Math.random() - 0.5) * 10;
                     ctx.fillText(this.text, this.x + offsetX, this.y + offsetY);
 
-                    // Add secondary "ghost" text for interception effect
+                    // Add secondary ambient text for interception effect
                     ctx.fillStyle = `rgba(0, 229, 255, ${this.opacity * 0.2})`;
                     ctx.fillText(this.text, this.x - offsetX, this.y - offsetY);
                 } else {

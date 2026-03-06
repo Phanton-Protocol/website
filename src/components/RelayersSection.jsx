@@ -44,8 +44,8 @@ const RelayersSection = () => (
           <br />
           <em>Stake. Earn.</em>
         </h2>
-        <p style={{ color: 'var(--text-secondary)', fontSize: '1rem', lineHeight: 1.7, maxWidth: '680px', marginTop: '1.5rem' }}>
-          Relayers submit proven transactions to the Phantom pool on behalf of users. They pay gas and can charge a fee; they never see or control user funds. Stake the protocol token (SHDW) to register as a relayer and earn both <strong style={{ color: 'var(--text-primary)' }}>relayer fees</strong> and a <strong style={{ color: 'var(--text-primary)' }}>share of protocol fees</strong>.
+        <p style={{ color: '#fff', fontSize: 'var(--body-size)', fontWeight: 500, lineHeight: 'var(--body-line)', maxWidth: '680px', marginTop: '1.5rem' }}>
+          Relayers submit proven transactions to Phantom’s shielded pool on behalf of users. They pay gas and can charge a fee; they never see or control user funds. Stake the protocol token (SHDW) to register as a relayer and earn both <strong style={{ color: '#fff', fontWeight: 600 }}>relayer fees</strong> and a <strong style={{ color: '#fff', fontWeight: 600 }}>share of protocol fees</strong>.
         </p>
       </div>
 
@@ -59,7 +59,7 @@ const RelayersSection = () => (
           style={{ padding: '1.5rem', textAlign: 'center' }}
         >
           <div className="mono text-cyan" style={{ fontSize: '0.6rem', letterSpacing: '0.15em', marginBottom: '0.5rem' }}>STAKE</div>
-          <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', lineHeight: 1.6 }}>Stake SHDW in the DApp. Meet the minimum to register as a relayer.</p>
+          <p style={{ color: '#fff', fontSize: 'var(--body-size)', fontWeight: 500, lineHeight: 'var(--body-line)' }}>Stake SHDW in the DApp. Meet the minimum to register as a relayer.</p>
         </motion.div>
         <motion.div
           className="card"
@@ -70,7 +70,7 @@ const RelayersSection = () => (
           style={{ padding: '1.5rem', textAlign: 'center' }}
         >
           <div className="mono text-cyan" style={{ fontSize: '0.6rem', letterSpacing: '0.15em', marginBottom: '0.5rem' }}>EARN</div>
-          <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', lineHeight: 1.6 }}>Relayer fees you set + your share of protocol fees (e.g. 80% to stakers).</p>
+          <p style={{ color: '#fff', fontSize: 'var(--body-size)', fontWeight: 500, lineHeight: 'var(--body-line)' }}>Relayer fees you set + your share of protocol fees (e.g. 80% to stakers).</p>
         </motion.div>
         <motion.div
           className="card"
@@ -81,7 +81,7 @@ const RelayersSection = () => (
           style={{ padding: '1.5rem', textAlign: 'center' }}
         >
           <div className="mono text-cyan" style={{ fontSize: '0.6rem', letterSpacing: '0.15em', marginBottom: '0.5rem' }}>RUN</div>
-          <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', lineHeight: 1.6 }}>Run the backend with your relayer wallet. Pay gas; earn fees.</p>
+          <p style={{ color: '#fff', fontSize: 'var(--body-size)', fontWeight: 500, lineHeight: 'var(--body-line)' }}>Run the backend with your relayer wallet. Pay gas; earn fees.</p>
         </motion.div>
       </div>
 
@@ -98,7 +98,7 @@ const RelayersSection = () => (
               <div style={{ color: 'var(--cyan)', fontFamily: 'var(--font-mono)', fontSize: '0.85rem', flexShrink: 0 }}>{step.num}</div>
               <div>
                 <h3 style={{ fontFamily: 'var(--font-body)', fontWeight: 600, fontSize: '1.1rem', color: '#fff', marginBottom: '0.5rem' }}>{step.title}</h3>
-                <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', lineHeight: 1.7 }}>{step.body}</p>
+                <p style={{ color: '#fff', fontSize: 'var(--body-size)', fontWeight: 500, lineHeight: 'var(--body-line)' }}>{step.body}</p>
               </div>
             </div>
           ))}
@@ -107,7 +107,7 @@ const RelayersSection = () => (
 
       {/* CTA */}
       <div style={{ textAlign: 'center' }}>
-        <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginBottom: '1.25rem' }}>
+        <p style={{ color: '#fff', fontSize: 'var(--body-size)', fontWeight: 500, marginBottom: '1.25rem' }}>
           Open the DApp to stake, check min stake, and see your relayer status.
         </p>
         <a
