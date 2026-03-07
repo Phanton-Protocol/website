@@ -6,6 +6,7 @@ const stats = [
   { value: '3+', label: 'PRIMARY PAYROLL / TREASURY FLOWS' },
   { value: 'ZK', label: 'PRIVACY WITH AUDIT TRAILS' },
   { value: 'API', label: 'BACKEND-FIRST PROVER LAYER' },
+  { value: 'FHE / OTC', label: 'INTERNAL MATCHING — SWAPS LIVE' },
 ];
 
 const Hero = () => {

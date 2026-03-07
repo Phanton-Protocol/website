@@ -1,6 +1,10 @@
 // Update this when your production DApp URL is live
 export const DAPP_URL = 'https://phantom-protocol.onrender.com';
 
+export const API_URL = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_URL)
+  ? import.meta.env.VITE_API_URL
+  : 'https://phantom-protocol.onrender.com';
+
 export const BLOG_URL = 'https://medium.com/@phantomprotocol9/list/';
 
 export const SOCIAL_LINKS = [

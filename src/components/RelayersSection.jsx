@@ -40,13 +40,40 @@ const RelayersSection = () => (
       <div style={{ marginBottom: '4rem' }}>
         <div className="section-label">Relayer network</div>
         <h2 className="display-lg">
-          Run a relayer.
+          Become a relayer.
           <br />
-          <em>Stake. Earn.</em>
+          <em>Stake. Run. Earn.</em>
         </h2>
         <p style={{ color: '#fff', fontSize: 'var(--body-size)', fontWeight: 500, lineHeight: 'var(--body-line)', maxWidth: '680px', marginTop: '1.5rem' }}>
           Relayers submit proven transactions to Phantom’s shielded pool on behalf of users. They pay gas and can charge a fee; they never see or control user funds. Stake the protocol token (PHN) to register as a relayer and earn both <strong style={{ color: '#fff', fontWeight: 600 }}>relayer fees</strong> and a <strong style={{ color: '#fff', fontWeight: 600 }}>share of protocol fees</strong>.
         </p>
+        <div style={{ marginTop: '2rem' }}>
+          <a
+            href={DAPP_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              fontFamily: 'var(--font-mono)',
+              fontSize: '0.75rem',
+              letterSpacing: '0.12em',
+              textTransform: 'uppercase',
+              background: 'var(--cyan)',
+              color: '#0a0a0a',
+              padding: '0.9rem 2rem',
+              textDecoration: 'none',
+              fontWeight: 600,
+              display: 'inline-block',
+              transition: 'opacity 0.3s, box-shadow 0.3s',
+            }}
+            onMouseEnter={e => { e.target.style.opacity = '0.9'; e.target.style.boxShadow = '0 0 28px rgba(0,229,199,0.35)'; }}
+            onMouseLeave={e => { e.target.style.opacity = '1'; e.target.style.boxShadow = 'none'; }}
+          >
+            Open DApp — Staking Hub (Become a relayer)
+          </a>
+          <p style={{ color: 'var(--text-tertiary)', fontSize: '0.8rem', marginTop: '0.75rem' }}>
+            Stake PHN, meet the minimum, and run your relayer. All relayer info and staking is in the DApp.
+          </p>
+        </div>
       </div>
 
       {/* Summary cards: Stake · Earn · Run */}
@@ -108,7 +135,7 @@ const RelayersSection = () => (
       {/* CTA */}
       <div style={{ textAlign: 'center' }}>
         <p style={{ color: '#fff', fontSize: 'var(--body-size)', fontWeight: 500, marginBottom: '1.25rem' }}>
-          Open the DApp to stake, check min stake, and see your relayer status.
+          Stake PHN, check min stake, and see your relayer status in the DApp.
         </p>
         <a
           href={DAPP_URL}
