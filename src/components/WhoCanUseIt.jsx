@@ -15,12 +15,12 @@ const audiences = [
   {
     tag: 'TRADERS',
     title: 'Traders & market makers',
-    body: 'Swap and move size inside the pool with reduced on-chain footprint. Internal matching (roadmap) will allow private order matching; today you get shielded deposits, swaps, and withdrawals.',
+    body: 'Swap and move size inside the pool with reduced on-chain footprint. FHE-based internal matching (in development) lets you match orders privately — no public order book, so no price impact. Today you get shielded deposits, swaps, and withdrawals.',
   },
   {
     tag: 'TEAMS',
-    title: 'Teams & payroll',
-    body: 'Run company payroll from a single deposit into the pool. Distribute to employee wallets privately; each recipient can generate their own tax-reporting key for accountants or authorities.',
+    title: 'Teams & treasuries',
+    body: 'Run payroll from a single deposit and distribute privately. Big use case: liquidate team or DAO tokens and liquidity positions through FHE internal matching so the public market never sees the order — exit at target price with zero slippage and zero visible impact.',
   },
 ];
 
@@ -35,7 +35,7 @@ const WhoCanUseIt = () => (
           traders, and teams.
         </h2>
         <p style={{ color: '#fff', fontSize: 'var(--body-size)', fontWeight: 500, lineHeight: 'var(--body-line)', maxWidth: '560px', marginTop: '1.5rem' }}>
-          Phantom provides private, compliant rails for on-chain money — whether you're a bank offering custody, a fund running payroll, a trader moving size, or a team paying contractors.
+          Phantom provides private, compliant rails for on-chain money — payroll, treasury, and liquidating tokens or LP without moving the public price via FHE internal matching.
         </p>
       </div>
 

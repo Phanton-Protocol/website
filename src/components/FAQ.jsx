@@ -8,7 +8,7 @@ const faqs = [
   },
   {
     q: "Who can use Phantom?",
-    a: "Banks, institutions, traders, and teams. Banks and custodians can offer private settlement; funds and companies can run payroll and treasury; traders can swap with reduced on-chain footprint; teams can pay contractors privately. See the Who it's for section above."
+    a: "Banks, institutions, traders, and teams. Use cases include private payroll, treasury rebalancing, and — via FHE internal matching — liquidating token or LP positions without any public price impact. See the Who it's for section above."
   },
   {
     q: "Who controls the funds?",
@@ -21,6 +21,10 @@ const faqs = [
   {
     q: "What are the fees?",
     a: "Relayers may charge a small fee to cover gas; swap routing uses a DEX (e.g. PancakeSwap) so you pay normal DEX fees and slippage. There is no protocol fee today. See the Fees section for details."
+  },
+  {
+    q: "Can teams sell tokens without moving the price?",
+    a: "Yes. With FHE-based internal matching (in development), teams and DAOs can liquidate token or LP positions by matching with a counterparty inside the shielded pool. The order never hits the public order book, so there is no visible price impact and no slippage from the public market — a major use case for treasury exits and rebalancing."
   },
   {
     q: "What is internal matching?",

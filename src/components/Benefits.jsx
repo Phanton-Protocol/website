@@ -21,6 +21,12 @@ const benefits = [
   },
   {
     num: '04',
+    title: 'Liquidate tokens or LP with zero price impact',
+    body: 'Teams and DAOs can exit token or liquidity positions through FHE internal matching. The order is matched privately inside the pool — the public market never sees it, so no slippage and no impact on the ticker.',
+    tag: 'FHE MATCHING',
+  },
+  {
+    num: '05',
     title: 'Built for production, not demos',
     body: 'Backend-first proving with Rapidsnark where available, snarkjs fallback when not. Same API, safer UX, and room to scale to real company flows.',
     tag: 'ENGINEERING',
