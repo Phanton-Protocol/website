@@ -53,7 +53,11 @@ const WhoCanUseIt = () => (
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
             transition={{ delay: i * 0.08, duration: 0.6 }}
-            style={{ display: 'flex', flexDirection: 'column' }}
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gridColumn: audiences.length % 2 === 1 && i === audiences.length - 1 ? '1 / -1' : undefined,
+            }}
           >
             <span style={{
               fontFamily: 'var(--font-mono)',
