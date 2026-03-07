@@ -36,7 +36,7 @@ const TechCards = () => {
 
                 <div style={{
                     display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
+                    gridTemplateColumns: 'repeat(2, 1fr)',
                     gap: '1px',
                     background: 'var(--border)'
                 }}>
@@ -76,6 +76,14 @@ const TechCards = () => {
                     ))}
                 </div>
             </div>
+
+            <style>{`
+                @media (max-width: 640px) {
+                    #technology .container > div:last-child {
+                        grid-template-columns: 1fr !important;
+                    }
+                }
+            `}</style>
         </section>
     );
 };

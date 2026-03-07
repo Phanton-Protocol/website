@@ -52,7 +52,11 @@ const Benefits = () => (
                         whileInView={{ opacity: 1, y: 0 }}
                         viewport={{ once: true }}
                         transition={{ delay: i * 0.1, duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
-                        style={{ borderRadius: 0, border: 'none' }}
+                        style={{
+                            borderRadius: 0,
+                            border: 'none',
+                            gridColumn: benefits.length % 2 === 1 && i === benefits.length - 1 ? '1 / -1' : undefined,
+                        }}
                     >
                         {/* Icon placeholder */}
                         <div style={{ marginBottom: '1.5rem' }}>

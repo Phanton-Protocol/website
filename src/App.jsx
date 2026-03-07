@@ -5,6 +5,7 @@ import WhoCanUseIt from './components/WhoCanUseIt';
 import Benefits from './components/Benefits';
 import ComparisonTable from './components/ComparisonTable';
 import TechCards from './components/TechCards';
+import SDKSection from './components/SDKSection';
 import MetricsVisualizer from './components/MetricsVisualizer';
 import NewsSection from './components/NewsSection';
 import Mechanics from './components/Mechanics';
@@ -56,6 +57,7 @@ function App() {
         <Benefits />
         <ComparisonTable />
         <TechCards />
+        <SDKSection />
         <MetricsVisualizer />
         <NewsSection />
         <Mechanics />

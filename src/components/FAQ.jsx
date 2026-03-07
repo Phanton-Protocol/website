@@ -45,6 +45,10 @@ const faqs = [
   {
     q: "What chains are planned?",
     a: "The current implementation targets BNB Chain. The architecture is EVM‑compatible and can be extended to other chains in future iterations."
+  },
+  {
+    q: "Can I build my own app on Phantom?",
+    a: "Yes. Phantom provides an SDK and APIs so you can build on-chain contracts, messaging apps, treasury tools, and more. Use the relayer API for proofs and submissions (quote, intent, swap, deposit, withdraw, merkle), and our contract interfaces (ShieldedPool, NoteStorage, SwapAdaptor, RelayerStaking) to integrate with the pool. See the Build / SDK section and GitHub for code and patterns."
   }
 ];
 

@@ -22,6 +22,11 @@ const audiences = [
     title: 'Teams & treasuries',
     body: 'Run payroll from a single deposit and distribute privately. OTC-style internal matching: set your price to sell (or buy) tokens or LP; when someone comes with the opposite order at a compatible price, you match inside the shielded pool — no public book, zero visible impact.',
   },
+  {
+    tag: 'DEVELOPERS',
+    title: 'Developers & builders',
+    body: 'Build on-chain contracts, messaging apps, and treasury tools with our SDK and APIs. Relayer API for proofs and submissions; contract interfaces for ShieldedPool, NoteStorage, SwapAdaptor. See the Build / SDK section.',
+  },
 ];
 
 const WhoCanUseIt = () => (
