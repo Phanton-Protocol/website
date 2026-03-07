@@ -14,6 +14,7 @@ import FeesSection from './components/FeesSection';
 import Roadmap from './components/Roadmap';
 import FAQ from './components/FAQ';
 import GhostChainVisualizer from './components/GhostChainVisualizer';
+import DataInterceptionBackground from './components/DataInterceptionBackground';
 import logoUrl from './assets/logo.jpg';
 import { SOCIAL_LINKS } from './config';
 
@@ -35,7 +36,10 @@ function App() {
       <div className="cursor-dot" style={{ left: mousePos.x, top: mousePos.y }} />
       <div className="cursor-ring" style={{ left: mousePos.x, top: mousePos.y }} />
 
-      {/* Interactive lines background (ghost chain — lines + mouse) */}
+      {/* Encryption / chain data layer (hex particles, interception zone) */}
+      <DataInterceptionBackground />
+
+      {/* Interactive lines background (nodes, links, mouse breaks links) */}
       <GhostChainVisualizer />
 
       {/* Logo Watermark — fixed, centered, z:0 */}

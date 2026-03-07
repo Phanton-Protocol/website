@@ -121,7 +121,16 @@ const DataInterceptionBackground = () => {
     return (
         <canvas
             ref={canvasRef}
-            className="fixed inset-0 pointer-events-none z-0 opacity-40 mix-blend-screen"
+            style={{
+                position: 'fixed',
+                inset: 0,
+                width: '100%',
+                height: '100%',
+                pointerEvents: 'none',
+                zIndex: 0,
+                opacity: 0.25,
+                mixBlendMode: 'screen',
+            }}
         />
     );
 };
