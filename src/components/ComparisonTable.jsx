@@ -3,10 +3,10 @@ import { motion } from 'framer-motion';
 const features = [
   { name: 'Salary & payout privacy', phantom: 'Shielded pool', standard: 'Fully public ledger' },
   { name: 'Per‑wallet reporting keys', phantom: 'Built‑in & revocable', standard: 'Rare / custom' },
-  { name: 'Sanctions / risk checks', phantom: 'Chainalysis‑ready', standard: 'Usually off‑chain, ad‑hoc' },
+  { name: 'Sanctions / risk checks', phantom: 'Chainalysis tracking (in development)', standard: 'Usually off‑chain, ad‑hoc' },
   { name: 'Proof generation', phantom: 'Backend Rapidsnark (ZK) + fallback', standard: 'Browser or none' },
   { name: 'Treasury move visibility', phantom: 'Aggregate only', standard: 'Every move visible' },
-  { name: 'Private order matching', phantom: 'FHE-based (in development)', standard: 'Public DEX only' },
+  { name: 'Private order matching', phantom: 'OTC-style (in development)', standard: 'Public DEX only' },
 ];
 
 const ComparisonTable = () => (

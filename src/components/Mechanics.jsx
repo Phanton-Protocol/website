@@ -47,8 +47,8 @@ const Mechanics = () => {
                         <div style={{ display: 'flex', gap: '2rem', alignItems: 'flex-start' }}>
                             <div style={{ color: 'var(--cyan)' }}>04</div>
                             <div style={{ flexGrow: 1 }}>
-                                <div style={{ color: '#fff', marginBottom: '0.5rem', fontWeight: 500 }}>FHE-based internal matching (in development).</div>
-                                <div style={{ textTransform: 'none', fontFamily: 'var(--font-body)', fontSize: 'var(--body-size)', fontWeight: 500, lineHeight: 'var(--body-line)' }}>When two users want to swap in opposite directions (e.g. USDT for BNB), Phantom matches them inside the pool using fully homomorphic encryption (FHE): orders are encrypted and matched on ciphertext so neither side reveals size or direction. The FHECoprocessor and backend FHE service handle this; when no match exists, swaps fall back to an external DEX.</div>
+                                <div style={{ color: '#fff', marginBottom: '0.5rem', fontWeight: 500 }}>OTC-style internal matching (in development).</div>
+                                <div style={{ textTransform: 'none', fontFamily: 'var(--font-body)', fontSize: 'var(--body-size)', fontWeight: 500, lineHeight: 'var(--body-line)' }}>In the DApp you enter the price you want to buy or sell at. When someone submits an opposite order at a compatible price, you’re matched inside the shielded pool — no public order book. Orders are encrypted (FHE); the matcher only sees that a match exists and settles it. When no counterparty is available, swaps route through an external DEX.</div>
                             </div>
                         </div>
                     </motion.div>

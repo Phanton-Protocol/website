@@ -15,17 +15,17 @@ const steps = [
   {
     num: '03',
     title: 'How to stake',
-    body: 'Stake the protocol token (SHDW) in the DApp’s Staking Hub. There is a minimum stake required to register as a relayer; the exact amount is shown in the DApp (Staking Hub → Min Stake). Use the same wallet that will run your relayer backend (RELAYER_PRIVATE_KEY). After staking at or above the minimum, your relayer can submit transactions and earn relayer fees plus your share of protocol fees.',
+    body: 'Stake the protocol token (PHN) in the DApp’s Staking Hub. There is a minimum stake required to register as a relayer; the exact amount is shown in the DApp (Staking Hub → Min Stake). Use the same wallet that will run your relayer backend (RELAYER_PRIVATE_KEY). After staking at or above the minimum, your relayer can submit transactions and earn relayer fees plus your share of protocol fees.',
   },
   {
     num: '04',
     title: 'How to run a relayer',
-    body: 'Run the Phantom backend (or your own server that implements the same API) with a funded wallet. Set RELAYER_PRIVATE_KEY to the private key of the wallet that has staked. Your server will accept /prove requests, submit transactions on-chain, and optionally coordinate with validators. You need: a server, gas (BNB), and stake ≥ min stake in SHDW. No special permission is required beyond that.',
+    body: 'Run the Phantom backend (or your own server that implements the same API) with a funded wallet. Set RELAYER_PRIVATE_KEY to the private key of the wallet that has staked. Your server will accept /prove requests, submit transactions on-chain, and optionally coordinate with validators. You need: a server, gas (BNB), and stake ≥ min stake in PHN. No special permission is required beyond that.',
   },
   {
     num: '05',
     title: 'Requirements at a glance',
-    body: 'Protocol token (SHDW) to stake; minimum stake amount (see DApp); a wallet to use as relayer (same as staking wallet); gas (BNB) for submitting transactions; a running backend with RELAYER_PRIVATE_KEY set. The DApp shows total staked, min stake, your stake, and your relayer status.',
+    body: 'Protocol token (PHN) to stake; minimum stake amount (see DApp); a wallet to use as relayer (same as staking wallet); gas (BNB) for submitting transactions; a running backend with RELAYER_PRIVATE_KEY set. The DApp shows total staked, min stake, your stake, and your relayer status.',
   },
   {
     num: '06',
@@ -45,7 +45,7 @@ const RelayersSection = () => (
           <em>Stake. Earn.</em>
         </h2>
         <p style={{ color: '#fff', fontSize: 'var(--body-size)', fontWeight: 500, lineHeight: 'var(--body-line)', maxWidth: '680px', marginTop: '1.5rem' }}>
-          Relayers submit proven transactions to Phantom’s shielded pool on behalf of users. They pay gas and can charge a fee; they never see or control user funds. Stake the protocol token (SHDW) to register as a relayer and earn both <strong style={{ color: '#fff', fontWeight: 600 }}>relayer fees</strong> and a <strong style={{ color: '#fff', fontWeight: 600 }}>share of protocol fees</strong>.
+          Relayers submit proven transactions to Phantom’s shielded pool on behalf of users. They pay gas and can charge a fee; they never see or control user funds. Stake the protocol token (PHN) to register as a relayer and earn both <strong style={{ color: '#fff', fontWeight: 600 }}>relayer fees</strong> and a <strong style={{ color: '#fff', fontWeight: 600 }}>share of protocol fees</strong>.
         </p>
       </div>
 
@@ -59,7 +59,7 @@ const RelayersSection = () => (
           style={{ padding: '1.5rem', textAlign: 'center' }}
         >
           <div className="mono text-cyan" style={{ fontSize: '0.6rem', letterSpacing: '0.15em', marginBottom: '0.5rem' }}>STAKE</div>
-          <p style={{ color: '#fff', fontSize: 'var(--body-size)', fontWeight: 500, lineHeight: 'var(--body-line)' }}>Stake SHDW in the DApp. Meet the minimum to register as a relayer.</p>
+          <p style={{ color: '#fff', fontSize: 'var(--body-size)', fontWeight: 500, lineHeight: 'var(--body-line)' }}>Stake PHN in the DApp. Meet the minimum to register as a relayer.</p>
         </motion.div>
         <motion.div
           className="card"

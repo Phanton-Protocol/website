@@ -22,7 +22,7 @@ const benefits = [
   {
     num: '04',
     title: 'Liquidate tokens or LP with zero price impact',
-    body: 'Teams and DAOs can exit token or liquidity positions through FHE internal matching. The order is matched privately inside the pool — the public market never sees it, so no slippage and no impact on the ticker.',
+    body: 'Teams and DAOs can exit token or LP positions via OTC-style internal matching: set your price to sell (or buy); when someone comes with the opposite order at a compatible price, you match inside the shielded pool. No public book, no slippage, no impact on the ticker.',
     tag: 'FHE MATCHING',
   },
   {

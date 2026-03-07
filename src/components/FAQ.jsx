@@ -20,15 +20,23 @@ const faqs = [
   },
   {
     q: "What are the fees?",
-    a: "Relayers may charge a small fee to cover gas; swap routing uses a DEX (e.g. PancakeSwap) so you pay normal DEX fees and slippage. There is no protocol fee today. See the Fees section for details."
+    a: "Deposit: $2 in BNB per deposit. Swap via PancakeSwap: 0.1%. Swap when matched inside the shielded pool (internal match): 0.2%. Relayers may also charge a small fee; it’s shown in the DApp before you confirm."
+  },
+  {
+    q: "How does internal matching work without an order book?",
+    a: "Internal matching is OTC-style: there is no public order book. In the DApp you type the price you want to buy or sell at. Your order is stored encrypted. When someone comes with the opposite side (e.g. you want to sell BNB for USDT at X, they want to buy BNB for USDT at a compatible price), you're matched and the swap settles inside the shielded pool. Nobody sees the full book; the matcher only learns that a match exists and executes it."
   },
   {
     q: "Can teams sell tokens without moving the price?",
     a: "Yes. With FHE-based internal matching (in development), teams and DAOs can liquidate token or LP positions by matching with a counterparty inside the shielded pool. The order never hits the public order book, so there is no visible price impact and no slippage from the public market — a major use case for treasury exits and rebalancing."
   },
   {
+    q: "How does FHE order and price matching work?",
+    a: "OTC-style: you type the price you want to buy or sell at. Your order is encrypted (FHE). When someone submits the opposite side at a compatible price, the matcher runs on ciphertext and confirms the match; only the settlement is revealed. So the price is defined by you and the counterparty — when your price and theirs cross, you match. No public book."
+  },
+  {
     q: "What is internal matching?",
-    a: "When two users swap in opposite directions, Phantom can match them inside the pool using FHE (fully homomorphic encryption): orders are encrypted and matched on ciphertext so amounts and direction stay private. FHE-based internal matching is in development; when no match is found, swaps route through an external DEX."
+    a: "OTC-style matching inside the shielded pool. You set your price (buy or sell); when a counterparty submits an opposite order at a compatible price, you match. No public order book — orders are encrypted; when someone comes, the trade is settled privately. If no one matches, your swap can route through the DEX instead."
   },
   {
     q: "How does payroll work on Phantom?",

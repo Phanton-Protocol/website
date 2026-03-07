@@ -20,7 +20,7 @@ const TechCards = () => {
     {
       title: "FHE matching",
       subtitle: "FULLY HOMOMORPHIC ENCRYPTION",
-      desc: "Phantom uses FHE (Microsoft SEAL) for encrypted order matching: two users can be matched inside the pool without either revealing amounts or direction. The FHECoprocessor and backend FHE service run matching on ciphertexts; internal matching is in development alongside the existing ZK‑SNARK flows.",
+      desc: "OTC-style matching: set your price to buy or sell; when a counterparty comes with a compatible opposite order, you're matched inside the shielded pool. Orders are encrypted (FHE); no public order book.",
     },
   ];
 

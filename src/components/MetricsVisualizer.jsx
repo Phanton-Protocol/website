@@ -2,7 +2,7 @@ import { motion } from 'framer-motion';
 
 const MetricsVisualizer = () => {
     const metrics = [
-        { label: "SHADOW_VOL_24H", value: "$4.20B", info: "ENCRYPTED" },
+        { label: "PHN_VOL_24H", value: "$4.20B", info: "ENCRYPTED" },
         { label: "NODE_OPERATORS", value: "1,280", info: "ACTIVE" },
         { label: "ANONYMITY_SET", value: "85,490", info: "SHIELDED" },
         { label: "AVG_STATE_SYNC", value: "1.24s", info: "LATENCY" }

@@ -13,7 +13,7 @@ import PrivacyExplainer from './components/PrivacyExplainer';
 import FeesSection from './components/FeesSection';
 import Roadmap from './components/Roadmap';
 import FAQ from './components/FAQ';
-import NetworkVisualizer from './components/NetworkVisualizer';
+import GhostChainVisualizer from './components/GhostChainVisualizer';
 import logoUrl from './assets/logo.jpg';
 import { SOCIAL_LINKS } from './config';
 
@@ -35,8 +35,8 @@ function App() {
       <div className="cursor-dot" style={{ left: mousePos.x, top: mousePos.y }} />
       <div className="cursor-ring" style={{ left: mousePos.x, top: mousePos.y }} />
 
-      {/* Network visualizer — fixed canvas behind content */}
-      <NetworkVisualizer />
+      {/* Interactive lines background (ghost chain — lines + mouse) */}
+      <GhostChainVisualizer />
 
       {/* Logo Watermark — fixed, centered, z:0 */}
       <div className="watermark">

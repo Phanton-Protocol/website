@@ -10,7 +10,7 @@ const Roadmap = () => {
         },
         {
             num: "02",
-            title: "Dark Pool Init",
+            title: "Shielded Pool Init",
             desc: "FHE-based encrypted matching: orders matched on ciphertext so neither side reveals amount or direction. Real liquidity meets zero-knowledge and fully homomorphic encryption.",
             items: ["FHE Internal Matching (SEAL)", "Testnet Deployment", "Selective Disclosure Keys"]
         },

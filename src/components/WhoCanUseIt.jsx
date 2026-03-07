@@ -15,12 +15,12 @@ const audiences = [
   {
     tag: 'TRADERS',
     title: 'Traders & market makers',
-    body: 'Swap and move size inside the pool with reduced on-chain footprint. FHE-based internal matching (in development) lets you match orders privately — no public order book, so no price impact. Today you get shielded deposits, swaps, and withdrawals.',
+    body: 'Swap and move size inside the pool with reduced on-chain footprint. OTC-style internal matching (in development): set the price you want to buy or sell at; when a counterparty comes with a matching order, you’re filled. No public order book, no price impact. Today you get shielded deposits, swaps via DEX, and withdrawals.',
   },
   {
     tag: 'TEAMS',
     title: 'Teams & treasuries',
-    body: 'Run payroll from a single deposit and distribute privately. Big use case: liquidate team or DAO tokens and liquidity positions through FHE internal matching so the public market never sees the order — exit at target price with zero slippage and zero visible impact.',
+    body: 'Run payroll from a single deposit and distribute privately. OTC-style internal matching: set your price to sell (or buy) tokens or LP; when someone comes with the opposite order at a compatible price, you match inside the shielded pool — no public book, zero visible impact.',
   },
 ];
 
@@ -35,7 +35,7 @@ const WhoCanUseIt = () => (
           traders, and teams.
         </h2>
         <p style={{ color: '#fff', fontSize: 'var(--body-size)', fontWeight: 500, lineHeight: 'var(--body-line)', maxWidth: '560px', marginTop: '1.5rem' }}>
-          Phantom provides private, compliant rails for on-chain money — payroll, treasury, and liquidating tokens or LP without moving the public price via FHE internal matching.
+          Phantom provides private, compliant rails for on-chain money — payroll, treasury, and OTC-style matching (set your price; when someone comes, you match) so size never hits the public book.
         </p>
       </div>
 
