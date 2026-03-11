@@ -1,0 +1,13 @@
+{
+  "chainId": 97,
+  "shieldedPoolAddress": "0x6ea27B17D99B6c6D201aFE3F85D08d84093C0D6D",
+  "noteStorageAddress": "",
+  "swapAdaptorAddress": "0xfF39dCe4109D77a30E07E8C97d992664800C990f",
+  "relayerStakingAddress": "0x88D4AdbA09E1E527CD1E717C7D7406bBfCfAEd4F",
+  "feeOracleAddress": "0x6B5f46BEF77B4eDE2669951e7bFB34d61eAAB972",
+  "depositHandlerAddress": "",
+  "verifierAddress": "0xFe3c3D5E0F1A1cbB9c89c94dD34125cCeea9d92F",
+  "protocolTokenAddress": "",
+  "matchingHandlerAddress": "0xB10dFF54Bc6C375026c701747AfbF465B4B86dDe",
+  "fheCoprocessorAddress": "0x5E93F479b70033405ECC686DbAC7adc7cc87EA56"
+}
