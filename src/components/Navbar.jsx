@@ -6,6 +6,7 @@ import logoImg from '../assets/logo.jpg';
 const navLinks = [
   { name: 'Who it\'s for', href: '#who-its-for' },
   { name: 'Relayers', href: '#relayers' },
+  { name: 'DApp', href: '#dapp' },
   { name: 'Build / SDK', href: '#sdk' },
   { name: 'Architecture', href: '#architecture' },
   { name: 'Technology', href: '#technology' },

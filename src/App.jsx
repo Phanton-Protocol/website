@@ -14,6 +14,7 @@ import PrivacyExplainer from './components/PrivacyExplainer';
 import FeesSection from './components/FeesSection';
 import Roadmap from './components/Roadmap';
 import FAQ from './components/FAQ';
+import DAppSection from './components/DAppSection';
 import GhostChainVisualizer from './components/GhostChainVisualizer';
 import DataInterceptionBackground from './components/DataInterceptionBackground';
 import logoUrl from './assets/logo.jpg';
@@ -62,6 +63,7 @@ function App() {
         <NewsSection />
         <Mechanics />
         <RelayersSection />
+        <DAppSection />
         <PrivacyExplainer />
         <FeesSection />
         <Roadmap />

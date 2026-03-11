@@ -5,12 +5,12 @@ const steps = [
   {
     num: '01',
     title: 'What relayers do',
-    body: 'Users build a zero-knowledge proof (locally or via our prover API). Relayers take the proof and calldata and submit the transaction to the shielded pool contract. The relayer pays gas and can charge a small fee. They never see which notes belong to which user or control anyone’s funds.',
+    body: 'Users build a zero-knowledge proof (locally or via our prover API). Relayers take the proof and calldata and submit the transaction to the shielded pool contract. Gas is deducted from your deposited balance and repaid to the relayer; they may charge a small fee. They never see which notes belong to which user or control anyone’s funds.',
   },
   {
     num: '02',
     title: 'What you earn',
-    body: 'Two sources of earnings: (1) Relayer fees — you set a fee (e.g. % or flat) per transaction to cover gas and margin; users see it in the DApp before confirming. (2) Protocol fee share — when the protocol collects fees from swaps, a large share (e.g. 80%) is distributed to stakers. The more you stake, the higher your share of that reward stream.',
+    body: 'Two sources of earnings: (1) Relayer fees — you set a fee (e.g. % or flat) per transaction; users see it in the DApp before confirming. (2) $0.50 on every user deposit you submit (of the $2 deposit fee, $1.50 goes to treasury, $0.50 to you). (3) Proportional share of 80% of protocol swap fees; stakers claim via the staking contract.',
   },
   {
     num: '03',
@@ -20,12 +20,12 @@ const steps = [
   {
     num: '04',
     title: 'How to run a relayer',
-    body: 'Run the Phantom backend (or your own server that implements the same API) with a funded wallet. Set RELAYER_PRIVATE_KEY to the private key of the wallet that has staked. Your server will accept /prove requests, submit transactions on-chain, and optionally coordinate with validators. You need: a server, gas (BNB), and stake ≥ min stake in PHN. No special permission is required beyond that.',
+    body: 'Run the Phantom backend (or your own server that implements the same API) with a funded wallet. Set RELAYER_PRIVATE_KEY to the private key of the wallet that has staked. Your server will accept /prove requests, submit transactions on-chain, and optionally coordinate with validators. Gas is taken from the user’s balance and repaid to you. You need: a server and stake ≥ min stake in PHN. No special permission is required beyond that.',
   },
   {
     num: '05',
     title: 'Requirements at a glance',
-    body: 'Protocol token (PHN) to stake; minimum stake amount (see DApp); a wallet to use as relayer (same as staking wallet); gas (BNB) for submitting transactions; a running backend with RELAYER_PRIVATE_KEY set. The DApp shows total staked, min stake, your stake, and your relayer status.',
+    body: 'Protocol token (PHN) to stake; minimum stake amount (see DApp); a wallet to use as relayer (same as staking wallet); a running backend with RELAYER_PRIVATE_KEY set. Gas is paid by the user (deducted from their balance and repaid to you). The DApp shows total staked, min stake, your stake, and your relayer status.',
   },
   {
     num: '06',
@@ -44,8 +44,8 @@ const RelayersSection = () => (
           <br />
           <em>Stake. Run. Earn.</em>
         </h2>
-        <p style={{ color: '#fff', fontSize: 'var(--body-size)', fontWeight: 500, lineHeight: 'var(--body-line)', maxWidth: '680px', marginTop: '1.5rem' }}>
-          Relayers submit proven transactions to Phantom’s shielded pool on behalf of users. They pay gas and can charge a fee; they never see or control user funds. Stake the protocol token (PHN) to register as a relayer and earn both <strong style={{ color: '#fff', fontWeight: 600 }}>relayer fees</strong> and a <strong style={{ color: '#fff', fontWeight: 600 }}>share of protocol fees</strong>.
+          <p style={{ color: '#fff', fontSize: 'var(--body-size)', fontWeight: 500, lineHeight: 'var(--body-line)', maxWidth: '680px', marginTop: '1.5rem' }}>
+          Relayers submit proven transactions to Phantom’s shielded pool on behalf of users. A successful relayer receives $0.50 on every user deposit they process (of the $2 deposit fee, $1.50 goes to treasury). Gas is deducted from the user’s deposited balance and repaid to the relayer. They may charge a relayer fee. Stake the protocol token (PHN) to register as a relayer and earn both <strong style={{ color: '#fff', fontWeight: 600 }}>relayer fees</strong>, <strong style={{ color: '#fff', fontWeight: 600 }}>$0.50 per deposit</strong>, and a <strong style={{ color: '#fff', fontWeight: 600 }}>share of protocol fees</strong>.
         </p>
         <div style={{ marginTop: '2rem' }}>
           <a
@@ -97,7 +97,7 @@ const RelayersSection = () => (
           style={{ padding: '1.5rem', textAlign: 'center' }}
         >
           <div className="mono text-cyan" style={{ fontSize: '0.6rem', letterSpacing: '0.15em', marginBottom: '0.5rem' }}>EARN</div>
-          <p style={{ color: '#fff', fontSize: 'var(--body-size)', fontWeight: 500, lineHeight: 'var(--body-line)' }}>Relayer fees you set + your share of protocol fees (e.g. 80% to stakers).</p>
+          <p style={{ color: '#fff', fontSize: 'var(--body-size)', fontWeight: 500, lineHeight: 'var(--body-line)' }}>Relayer fees you set + $0.50 per user deposit you process + your share of protocol fees (e.g. 80% to stakers).</p>
         </motion.div>
         <motion.div
           className="card"
@@ -108,7 +108,7 @@ const RelayersSection = () => (
           style={{ padding: '1.5rem', textAlign: 'center' }}
         >
           <div className="mono text-cyan" style={{ fontSize: '0.6rem', letterSpacing: '0.15em', marginBottom: '0.5rem' }}>RUN</div>
-          <p style={{ color: '#fff', fontSize: 'var(--body-size)', fontWeight: 500, lineHeight: 'var(--body-line)' }}>Run the backend with your relayer wallet. Pay gas; earn fees.</p>
+          <p style={{ color: '#fff', fontSize: 'var(--body-size)', fontWeight: 500, lineHeight: 'var(--body-line)' }}>Run the backend with your relayer wallet. Gas is taken from users’ balances and repaid to you; you can also earn relayer fees.</p>
         </motion.div>
       </div>
 
