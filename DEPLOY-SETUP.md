@@ -10,30 +10,42 @@ The repo’s **Blueprint** (`render.yaml`) creates **3 services** (app + 2 valid
 
 ---
 
-## Option A: Render FREE – 1 service only (full app, no payment)
+## Option A: Render FREE – 1 service only (API backend, no payment)
+
+The backend API lives in **phantom-relayer-dashboard**. Use **Root Directory** so Render builds and runs only that app.
 
 1. Go to **https://render.com** and sign in with GitHub.
 
-2. **Do not use Blueprint.** Instead: **New +** → **Web Service**.
+2. **Do not use Blueprint** (it creates 3 services). Instead: **New +** → **Web Service**.
 
 3. Connect GitHub and select the repo **Phanton-Protocol/core**. Branch: `main`.
 
-4. Configure the one service:
+4. **Advanced** → set **Root Directory** to: `phantom-relayer-dashboard`
+
+5. Configure the one service:
    - **Name:** `phantom-protocol` (or any name).
    - **Runtime:** Node.
-   - **Build Command:** (paste this)
-     ```bash
-     npm install && npm run backend:install && NODE_ENV=development npm run frontend:install && NODE_ENV=development npm run build --prefix frontend
-     ```
+   - **Build Command:** `cd backend && npm install`
    - **Start Command:** `node backend/src/index.js`
    - **Instance type:** leave as **Free**.
 
-5. Click **Create Web Service**. Wait for the first deploy to finish.
+6. Click **Create Web Service**. Wait for the first deploy to finish.
 
-6. Your app URL: `https://phantom-protocol-xxxx.onrender.com` (from the service page).  
+7. Your API URL: `https://phantom-protocol-xxxx.onrender.com` (from the service page).  
    Auto-deploy: on by default for pushes to `main`.
 
-**Optional:** In the service → **Environment**, add variables from `render.env.example` (e.g. `RPC_URL`, `CHAIN_ID`, `DEV_BYPASS_PROOFS`). Validators are not run (only 1 service), but deposits, swaps, withdraw, Key, Payroll still work.
+**Environment:** Render sets `PORT` and `RENDER=true` automatically. In the service → **Environment**, add variables from `render.env.example` (e.g. `RPC_URL`, `CHAIN_ID`, `SHIELDED_POOL_ADDRESS`, `DEV_BYPASS_PROOFS`). Validators are not run (only 1 service), but deposits, swaps, withdraw, Key, Payroll still work.
+
+---
+
+### If the service shows "Crashed" or won’t start
+
+- **Logs:** In Render dashboard → your service → **Logs**. Look for the first error (e.g. "Cannot find module", "EADDRINUSE", "ENOENT").
+- **Root Directory:** Must be `phantom-relayer-dashboard`. If it’s blank or wrong, the build/start will fail (no `backend/`).
+- **Build command:** Must run from `phantom-relayer-dashboard`, so use `cd backend && npm install`. Start must be `node backend/src/index.js`.
+- **Free tier sleep:** On the free plan, the service **spins down after ~15 minutes of no traffic**. The first request after that can take 30–60 seconds; Render may show "Service Unavailable" until it wakes. That’s normal, not a crash. Use **Settings** → **Health Check Path** = `/health` so Render pings your app.
+- **Database:** On Render the disk is read-only except `/tmp`. The backend uses `/tmp/relayer.db` when `RENDER` is set (Render sets this automatically). If you see DB or permission errors, ensure **Environment** does not override `RENDER`.
+- **Port:** The app uses `process.env.PORT`; Render sets this. The server binds to `0.0.0.0` so it accepts external requests.
 
 ---
 
