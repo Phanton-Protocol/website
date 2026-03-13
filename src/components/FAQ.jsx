@@ -20,7 +20,7 @@ const faqs = [
   },
   {
     q: "What are the fees?",
-    a: "Deposit: $2 in BNB per deposit ($1.50 to treasury, $0.50 to the relayer who submits it—so relayers get $0.50 per user deposit). Swap via PancakeSwap: 0.1%. Swap when matched inside the shielded pool (internal match): 0.2%. Gas is taken from your deposited balance and repaid to the relayer. Relayers may also charge a small fee; both are shown in the DApp before you confirm."
+    a: "Deposit: $2 in BNB per deposit ($1.50 to treasury, $0.50 to the relayer who submits it). Swap via PancakeSwap: 0.1%. Swap when matched inside the pool (FHE/internal match): 0.2%; fees are collected and 80% is distributed monthly to stakers. Gas is paid from your deposited balance. Relayers may also charge a small fee; both are shown in the DApp before you confirm."
   },
   {
     q: "How does internal matching work without an order book?",

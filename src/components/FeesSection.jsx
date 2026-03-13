@@ -23,7 +23,7 @@ const FeesSection = () => (
           <div className="mono text-cyan" style={{ marginBottom: '1rem', fontSize: '0.65rem', letterSpacing: '0.15em' }}>DEPOSIT</div>
           <h3 style={{ fontFamily: 'var(--font-body)', fontWeight: 600, fontSize: '1.1rem', color: '#fff', marginBottom: '0.75rem' }}>$2 deposit: $1.50 treasury, $0.50 to relayer</h3>
           <p style={{ color: '#fff', fontSize: 'var(--body-size)', fontWeight: 500, lineHeight: 'var(--body-line)' }}>
-            Each deposit into the shielded pool costs a flat fee of $2 worth of BNB. Of this, $1.50 goes to the protocol treasury and $0.50 to the relayer who submits the deposit—a successful relayer gets $0.50 on every user deposit. No percentage on the amount deposited.
+            Each deposit costs a flat $2 in BNB. Of this, $1.50 goes to the pool treasury and $0.50 to the relayer who submits the deposit. FHE matching and internal swap fees are collected and 80% is distributed monthly to stakers, 20% to the treasury. No percentage on the amount deposited.
           </p>
         </motion.div>
         <motion.div
@@ -37,7 +37,7 @@ const FeesSection = () => (
           <div className="mono text-cyan" style={{ marginBottom: '1rem', fontSize: '0.65rem', letterSpacing: '0.15em' }}>SWAP — VIA PANCAKESWAP</div>
           <h3 style={{ fontFamily: 'var(--font-body)', fontWeight: 600, fontSize: '1.1rem', color: '#fff', marginBottom: '0.75rem' }}>0.1%</h3>
           <p style={{ color: '#fff', fontSize: 'var(--body-size)', fontWeight: 500, lineHeight: 'var(--body-line)' }}>
-            When your swap is routed through PancakeSwap (no internal match available), the protocol fee is 0.1% of the swap amount. Gas is taken from your deposited balance and repaid to the relayer; you may also pay a relayer fee.
+            When your swap is routed through PancakeSwap (no internal match available), the protocol fee is 0.1% of the swap amount. Gas is paid from your deposited balance—the circuit deducts the gas amount and sends it to the relayer to pay for the transaction; you may also pay a relayer fee.
           </p>
         </motion.div>
         <motion.div
@@ -65,7 +65,7 @@ const FeesSection = () => (
           <div className="mono text-cyan" style={{ marginBottom: '1rem', fontSize: '0.65rem', letterSpacing: '0.15em' }}>GAS & RELAYER FEE</div>
           <h3 style={{ fontFamily: 'var(--font-body)', fontWeight: 600, fontSize: '1.1rem', color: '#fff', marginBottom: '0.75rem' }}>You pay gas from your balance</h3>
           <p style={{ color: '#fff', fontSize: 'var(--body-size)', fontWeight: 500, lineHeight: 'var(--body-line)' }}>
-            Gas is deducted from your deposited balance (note) in the circuit and repaid to the relayer. Relayers do not pay gas out of pocket. They may also charge a relayer fee; both are shown in the DApp before you confirm.
+            Gas is paid from your deposited balance (note): the circuit deducts the gas amount and sends it to the relayer to pay for the transaction. Relayers do not pay gas out of pocket. They may also charge a relayer fee; both are shown in the DApp before you confirm.
           </p>
         </motion.div>
       </div>

@@ -110,7 +110,7 @@ const PrivacyExplainer = () => {
 
               <div style={{ marginBottom: '1.5rem' }}>
                 <span className="t-green">✓ Submitting to shielded pool contract</span><br />
-                <span className="t-green">✓ Relayer gas refund settled (deducted from user balance)</span>
+                <span className="t-green">✓ Gas paid from user balance (sent to relayer to cover tx)</span>
               </div>
 
               <div>

@@ -50,7 +50,7 @@ Config files that must stay in sync across backend, frontend, and chain:
 
 **Authorization:** Every state-changing operation (deposit, swap, withdraw) is authorized by a **zero-knowledge proof** (Groth16) that shows: (i) input commitment(s) are leaves of the current tree with valid Merkle path(s), (ii) nullifiers are fresh, (iii) output commitments and amounts satisfy conservation and fee rules.
 
-**Relayers:** Submit proofs and calldata to the pool. Gas is deducted from the user’s deposited balance (note) in the circuit and repaid to the relayer; relayers do not bear gas cost. They do not see note contents or control funds. They may charge a relayer fee (shown in DApp). To register, the relayer stakes PHN in the relayer staking contract and runs the backend with that wallet as `RELAYER_PRIVATE_KEY`.
+**Relayers:** Submit proofs and calldata to the pool. Gas is paid from the user’s balance (note): the circuit deducts the gas amount and sends it to the relayer to pay for the transaction; relayers do not pay gas out of pocket. They do not see note contents or control funds. They may charge a relayer fee (shown in DApp). To register, the relayer stakes PHN in the relayer staking contract and runs the backend with that wallet as `RELAYER_PRIVATE_KEY`.
 
 **Backend:** Exposes REST API for quote, intent, swap, deposit, withdraw, merkle proof, health, telemetry, staking, tax reporting keys, payroll. Runs the prover (Rapidsnark or snarkjs) to generate proofs; can act as or connect to a relayer.
 
@@ -77,8 +77,8 @@ Config files that must stay in sync across backend, frontend, and chain:
 **Deposit**
 
 - User sends BNB or ERC-20 to the pool’s deposit handler.
-- BNB: `depositForBNB(depositor, commitment, assetID)` with `msg.value` = deposit amount + fixed fee (e.g. $2 in BNB; $1.5 to treasury, $0.50 to relayer when relayer submits).
-- ERC-20: Approve handler then `depositFor(depositor, token, amount, commitment, assetID)`. Handler charges fixed fee ($2 equivalent; $1.5 treasury, $0.50 to relayer when relayer submits).
+- BNB: `depositForBNB(depositor, commitment, assetID)` with `msg.value` = deposit amount + fixed fee (e.g. $2 in BNB; $1.50 to treasury, $0.50 to relayer who submits).
+- ERC-20: Approve handler then `depositFor(depositor, token, amount, commitment, assetID)`. Handler charges fixed fee ($2 equivalent; $1.50 treasury, $0.50 to relayer when relayer submits).
 - Client computes note and commitment before calling; commitment is passed in and registered in the pool’s Merkle tree. Client stores note locally (or encrypted).
 - **Shadow-address flow:** User requests one-time deposit address from API (`POST /shadow-address` with depositor, token, amount, commitment, assetID, deadline, signature). User sends funds to that address; sweeper/relayer calls deposit handler to register commitment.
 
@@ -108,7 +108,7 @@ Deployment targets: BNB Chain testnet (chain id 97), mainnet (56). Addresses liv
 - **SwapHandler** — Executes swaps (DEX or internal).
 - **PancakeSwapAdaptor** — Interfaces with PancakeSwap router for DEX path (e.g. getExpectedOutput, execute swap).
 - **NoteStorage** — Optional commitment-to-note metadata (off-chain or on-chain).
-- **FeeOracle / OffchainPriceOracle** — Returns protocol fee for operation/amount (e.g. $2 deposit: $1.5 treasury, $0.50 relayer when relayer submits; 0.1%/0.2% swap).
+- **FeeOracle / OffchainPriceOracle** — Returns protocol fee for operation/amount (e.g. $2 deposit: $1.50 to treasury, $0.50 to relayer who submits; 0.1%/0.2% swap).
 - **Groth16Verifier / Groth16VerifierAdapter** — On-chain proof verification (pairing check).
 - **RelayerRegistry / RelayerStaking** — PHN staking, minimum stake, reward distribution (e.g. 80% of swap fees to stakers), claim(feeToken).
 - **ComplianceModule** — Optional Chainalysis/compliance integration.
@@ -208,9 +208,9 @@ Backend code and Phantom SDK/docs contain full request/response shapes and integ
 
 ## 10. Relayers and staking
 
-- Relayers submit proofs and calldata. Gas is taken from the user’s balance (note) in the circuit and repaid to the relayer; relayers do not pay gas out of pocket. They set relayer fee (e.g. 0.05% or flat BNB); DApp shows it before confirm. They do not see note data or control funds.
+- Relayers submit proofs and calldata. Gas is paid from the user’s balance (note): the circuit deducts the gas amount and sends it to the relayer to pay for the transaction; relayers do not pay gas out of pocket. They set relayer fee (e.g. 0.05% or flat BNB); DApp shows it before confirm. They do not see note data or control funds.
 - **Registration:** Stake PHN in RelayerStaking (or RelayerRegistry) at or above `minStake()` (read from contract; DApp shows it). Run backend with that wallet as `RELAYER_PRIVATE_KEY`. No permission required.
-- **Earnings:** (1) Relayer fee (100% to relayer). (2) $0.50 per user deposit when the relayer submits that deposit. (3) Proportional share of 80% of protocol swap fees; stakers claim via `claim(feeToken)` on staking contract. Slashing for misbehavior (e.g. invalid proofs) per staking contract/governance.
+- **Earnings:** (1) Relayer fee (100% to relayer). (2) $0.50 per user deposit when the relayer submits that deposit. (3) FHE matching and internal swap fees are collected and 80% is distributed monthly to stakers; proportional share claimable via staking contract; stakers claim via `claim(feeToken)` on staking contract. Slashing for misbehavior (e.g. invalid proofs) per staking contract/governance.
 - **Optional validators:** `VALIDATOR_URLS` lists nodes that must attest/co-sign; threshold (e.g. 66%). `DEV_BYPASS_VALIDATORS` skips for development. `GET /relayer/validator-status` returns status.
 
 
@@ -223,11 +223,11 @@ Backend code and Phantom SDK/docs contain full request/response shapes and integ
 
 ## 12. Fees (technical reference)
 
-- **Deposit:** Fixed $2 in BNB per deposit (deposit handler / fee oracle). Of this, $1.5 goes to the protocol treasury and $0.50 goes to the relayer who submits the deposit—so a successful relayer receives $0.50 on every user deposit they process. Gas is taken from the user’s deposit/operation (gasRefund in circuit) and repaid to the relayer.
+- **Deposit:** Fixed $2 in BNB per deposit (deposit handler / fee oracle). Of this, $1.50 goes to the treasury and $0.50 to the relayer who submits the deposit—so a successful relayer receives $0.50 on every user deposit they process. FHE matching and internal swap fees are collected and 80% is distributed monthly to stakers, 20% to treasury. Gas is paid from the user’s balance: the circuit deducts the gas amount from the user’s deposit/operation and sends it to the relayer to pay for the transaction.
 - **Swap DEX:** 0.1% of swap amount to protocol; then 80% to stakers, 20% to treasury. Relayer fee set by relayer.
 - **Swap internal (OTC):** 0.2% to protocol; same 80/20 split. Relayer fee set by relayer.
-- **Withdrawal:** Protocol fee and relayer fee if configured; shown in DApp before confirm. Gas is deducted from the user’s note (gasRefund) and repaid to the relayer.
-- **Gas:** Gas cost is always borne by the user: deducted from the user’s note/operation in the circuit (`gasRefund`) and sent to the relayer. The relayer submits the tx but does not pay gas out of pocket.
+- **Withdrawal:** Protocol fee and relayer fee if configured; shown in DApp before confirm. Gas is paid from the user’s note—the circuit deducts the gas amount and sends it to the relayer to pay for the transaction.
+- **Gas:** Gas is always paid from the user’s balance: the circuit deducts the gas amount from the user’s note/operation and sends it to the relayer to pay for the transaction. The relayer does not pay gas out of pocket.
 
 
 ## 13. Deployment and networks
