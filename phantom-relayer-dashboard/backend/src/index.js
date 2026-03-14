@@ -337,6 +337,14 @@ const depositSchema = z.object({
   signature: z.string(),
 });
 
+app.get("/", (req, res) => {
+  res.json({
+    name: "Phantom Protocol Relayer API",
+    health: "/health",
+    docs: "See DEVELOPER_SPEC.md or WHITEPAPER.md for endpoints (quote, intent, swap, withdraw, relayer, staking, etc.)",
+  });
+});
+
 app.get("/health", (req, res) => {
   res.json({ ok: true });
 });
@@ -1214,6 +1222,10 @@ if (fs.existsSync(dashboardDist)) {
   app.use(express.static(dashboardDist));
   app.get("*", (req, res) => {
     res.sendFile(path.join(dashboardDist, "index.html"));
+  });
+} else {
+  app.use((req, res) => {
+    res.status(404).json({ error: "Not Found", path: req.path });
   });
 }
 
