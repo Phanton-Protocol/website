@@ -1,0 +1,29 @@
+# Render Blueprint - 1 free service (no credit card required)
+# Render free tier allows only 1 web service. Coordinator can be added later.
+# https://render.com/docs/blueprint-spec
+
+services:
+  - type: web
+    name: phantom-protocol
+    plan: free
+    runtime: node
+
+    buildCommand: |
+      npm install
+      npm run backend:install
+      npm run build
+
+    startCommand: node backend/src/index.js
+
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: RENDER
+        value: "1"
+      - key: VALIDATOR_TIMEOUT_MS
+        value: "90000"
+      - key: RELAYER_STAKING_ADDRESS
+        value: "0x3c8c698335A4942A52a709091a441f27FF2a5bc8"
+      # Add in Render Dashboard > Environment:
+      # RPC_URL, CHAIN_ID, RELAYER_PRIVATE_KEY, SHIELDED_POOL_ADDRESS,
+      # NOTE_STORAGE_ADDRESS, SWAP_ADAPTOR_ADDRESS, DEV_BYPASS_VALIDATORS, DEV_BYPASS_PROOFS

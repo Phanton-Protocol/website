@@ -1,0 +1,167 @@
+
+
+require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
+const express = require('express');
+const { ethers } = require('ethers');
+const snarkjs = require('snarkjs');
+const fs = require('fs');
+const path = require('path');
+
+const PROJECT_ROOT = path.join(__dirname, '..', '..');
+const VALIDATOR_PORT = process.env.PORT || process.env.VALIDATOR_PORT || 6000;
+const VALIDATOR_PRIVATE_KEY = process.env.VALIDATOR_PRIVATE_KEY;
+const RPC_URL = process.env.RPC_URL || 'https://data-seed-prebsc-1-s1.binance.org:8545';
+const VERIFICATION_KEY_PATH = process.env.VERIFICATION_KEY_PATH
+  || path.join(PROJECT_ROOT, 'circuits', 'verification_key.json');
+const RELAYER_STAKING_ADDRESS = process.env.RELAYER_STAKING_ADDRESS;
+
+if (!VALIDATOR_PRIVATE_KEY) {
+  throw new Error('Missing VALIDATOR_PRIVATE_KEY');
+}
+
+const wallet = new ethers.Wallet(VALIDATOR_PRIVATE_KEY);
+const validatorAddress = wallet.address;
+
+console.log(`🔐 Validator Address: ${validatorAddress}`);
+console.log(`⚡ Starting validator server on port ${VALIDATOR_PORT}...`);
+
+let vKey;
+try {
+  const vkPath = path.isAbsolute(VERIFICATION_KEY_PATH) ? VERIFICATION_KEY_PATH : path.resolve(VERIFICATION_KEY_PATH);
+  vKey = JSON.parse(fs.readFileSync(vkPath, 'utf-8'));
+  console.log('✅ Verification key loaded from', vkPath);
+} catch (err) {
+  console.error('❌ Failed to load verification key:', err.message);
+  console.error('   Path:', VERIFICATION_KEY_PATH);
+  console.error('   Generate with: npx snarkjs zkey export verificationkey circuits/joinsplit_0001.zkey circuits/verification_key.json');
+  process.exit(1);
+}
+
+const app = express();
+app.use(express.json({ limit: '10mb' }));
+
+app.get('/health', (req, res) => {
+  res.json({ 
+    status: 'ok', 
+    validator: validatorAddress,
+    uptime: process.uptime()
+  });
+});
+
+app.post('/verify', async (req, res) => {
+  const startTime = Date.now();
+  
+  try {
+    const { proof, publicInputs } = req.body;
+    
+    if (!proof || !publicInputs) {
+      return res.status(400).json({ error: 'Missing proof or publicInputs' });
+    }
+    
+    console.log(`\n🔍 Verifying proof...`);
+
+    const isValid = await verifyProofOffChain(proof, publicInputs);
+    
+    console.log(`${isValid ? '✅' : '❌'} Proof is ${isValid ? 'VALID' : 'INVALID'} (${Date.now() - startTime}ms)`);
+
+    const coder = ethers.AbiCoder.defaultAbiCoder();
+    const proofForHash = {
+      a: coder.encode(['uint256[2]'], [proof.a]),
+      b: coder.encode(['uint256[2][2]'], [proof.b]),
+      c: coder.encode(['uint256[2]'], [proof.c])
+    };
+    const proofHash = ethers.keccak256(
+      coder.encode(
+        ['bytes', 'bytes', 'bytes', 'uint256[]'],
+        [proofForHash.a, proofForHash.b, proofForHash.c, publicInputs]
+      )
+    );
+
+    const votingPower = await getVotingPower(validatorAddress);
+    
+    console.log(`💪 Voting power: ${ethers.formatEther(votingPower)} tokens`);
+
+    const timestamp = Math.floor(Date.now() / 1000);
+    const message = ethers.keccak256(
+      ethers.solidityPacked(['bytes32', 'bool', 'uint256'], [proofHash, isValid, timestamp])
+    );
+    const signature = await wallet.signMessage(ethers.getBytes(message));
+    
+    console.log(`✍️  Signed result (${signature.slice(0, 10)}...)`);
+
+    res.json({
+      valid: isValid,
+      validator: validatorAddress,
+      votingPower: votingPower.toString(),
+      signature,
+      timestamp,
+      proofHash,
+      verificationTime: Date.now() - startTime
+    });
+    
+  } catch (err) {
+    console.error('❌ Verification error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+async function verifyProofOffChain(proof, publicInputs) {
+  try {
+
+    const proofSnarkJS = {
+      pi_a: proof.a.slice(0, 2), 
+
+      pi_b: [
+        [proof.b[0][1], proof.b[0][0]], 
+
+        [proof.b[1][1], proof.b[1][0]]
+      ],
+      pi_c: proof.c.slice(0, 2),
+      protocol: "groth16",
+      curve: "bn128"
+    };
+
+    const isValid = await snarkjs.groth16.verify(vKey, publicInputs, proofSnarkJS);
+    
+    return isValid;
+  } catch (err) {
+    console.error('Verification failed:', err.message);
+    return false;
+  }
+}
+
+async function getVotingPower(address) {
+  try {
+    if (!RELAYER_STAKING_ADDRESS) {
+
+      return ethers.parseEther('100000'); 
+
+    }
+
+    const provider = new ethers.JsonRpcProvider(RPC_URL);
+    const stakingContract = new ethers.Contract(
+      RELAYER_STAKING_ADDRESS,
+      ['function stakedBalance(address) view returns (uint256)'],
+      provider
+    );
+    return await stakingContract.stakedBalance(address);
+  } catch (err) {
+    console.error('Failed to get voting power:', err.message);
+    return ethers.parseEther('0');
+  }
+}
+
+app.listen(VALIDATOR_PORT, () => {
+  console.log(`\n✅ Validator server running!`);
+  console.log(`📡 Endpoint: http://localhost:${VALIDATOR_PORT}/verify`);
+  console.log(`\n📋 To test:`);
+  console.log(`   curl -X POST http://localhost:${VALIDATOR_PORT}/verify \\`);
+  console.log(`     -H "Content-Type: application/json" \\`);
+  console.log(`     -d '{"proof": {...}, "publicInputs": [...]}'`);
+  console.log(`\n🎯 Waiting for proof verification requests...\n`);
+});
+
+process.on('SIGINT', () => {
+  console.log('\n👋 Shutting down validator server...');
+  process.exit(0);
+});
