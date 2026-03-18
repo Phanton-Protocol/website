@@ -1,0 +1,18 @@
+{
+  "chainId": 97,
+  "rpcUrl": "https://data-seed-prebsc-1-s1.binance.org:8545",
+  "addresses": {
+    "shieldedPool": "",
+    "swapAdaptor": "",
+    "noteStorage": "",
+    "feeOracle": "",
+    "relayerStaking": ""
+  },
+  "assets": [
+    { "assetId": 0, "symbol": "WBNB", "decimals": 18, "address": "0xae13d989dac2f0debff460ac112a837c89baa7cd" },
+    { "assetId": 1, "symbol": "tBUSD", "decimals": 18, "address": "" },
+    { "assetId": 2, "symbol": "tUSDT", "decimals": 18, "address": "" },
+    { "assetId": 3, "symbol": "tUSDC", "decimals": 18, "address": "" }
+  ]
+}
+

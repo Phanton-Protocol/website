@@ -2,10 +2,8 @@ import React, { useState, useEffect, useCallback, useRef } from "react";
 import { BrowserProvider, Contract, parseEther, MaxUint256, getAddress, keccak256, solidityPacked, getBytes, AbiCoder } from "ethers";
 import { groth16 } from "snarkjs";
 
-const API_URL = import.meta.env.VITE_API_URL || "https://phantom-protocol.onrender.com";
+const DEFAULT_API_URL = import.meta.env.VITE_API_URL || "";
 const BSC_TESTNET = { chainId: 97, chainIdHex: "0x61", rpcUrl: "https://data-seed-prebsc-1-s1.binance.org:8545", name: "BSC Testnet" };
-const FALLBACK_STAKING = "0x3c8c698335A4942A52a709091a441f27FF2a5bc8";
-const FALLBACK_TOKEN = "0x0e161E683c325482c165A2863b24157754c131f1";
 const BUILD_ID = "v3-approve-check";
 
 function getInjectedProvider() {
@@ -50,18 +48,25 @@ function useFetch(url, intervalMs = 0) {
 }
 
 function getInitialApiUrl() {
-  if (typeof window === "undefined") return API_URL;
+  if (typeof window === "undefined") return DEFAULT_API_URL;
   const params = new URLSearchParams(window.location.search);
   const fromUrl = params.get("api");
   if (fromUrl) return fromUrl.trim();
-  return localStorage.getItem("relayer_api") || API_URL;
+  const saved = localStorage.getItem("relayer_api");
+  if (saved) return saved;
+  if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
+    return "http://localhost:5050";
+  }
+  return DEFAULT_API_URL || window.location.origin;
 }
 
 export default function App() {
+  const [wallet, setWallet] = useState({ address: null, provider: null, signer: null });
   const [apiBase, setApiBase] = useState(getInitialApiUrl);
   const base = (apiBase || "").replace(/\/$/, "").trim();
 
   const { data: health, error: healthError } = useFetch(base ? `${base}/health` : null, 5000);
+  const { data: cfg } = useFetch(base ? `${base}/config` : null, 15000);
   const { data: relayer } = useFetch(base ? `${base}/relayer` : null, 10000);
   const { data: staking, error: stakingError } = useFetch(base ? `${base}/relayer/staking-status` : null, 10000);
   const { data: proofStats } = useFetch(base ? `${base}/relayer/proof-stats` : null, 5000);
@@ -72,7 +77,6 @@ export default function App() {
   );
   const { data: network } = useFetch(base ? `${base}/relayer/network` : null, 0);
 
-  const [wallet, setWallet] = useState({ address: null, provider: null, signer: null });
   const [stakeAmount, setStakeAmount] = useState("");
   const [stakeTx, setStakeTx] = useState({ status: null, hash: null, error: null });
   const [approveTx, setApproveTx] = useState({ status: null, hash: null, error: null });
@@ -85,7 +89,7 @@ export default function App() {
   }, [apiBase]);
 
   useEffect(() => {
-    const stakingAddr = stakingStats?.stakingAddress || staking?.stakingAddress || FALLBACK_STAKING;
+    const stakingAddr = stakingStats?.stakingAddress || staking?.stakingAddress;
     if (!stakingAddr) return;
     const p = getInjectedProvider();
     if (!p) return;
@@ -174,8 +178,14 @@ export default function App() {
   }, [network?.chainId]);
 
   const approveTokens = async () => {
-    const stakingAddr = getAddress(stakingStats?.stakingAddress || staking?.stakingAddress || FALLBACK_STAKING);
-    const tokenAddr = getAddress(stakingTokenAddr || stakingStats?.protocolTokenAddress || FALLBACK_TOKEN);
+    const stakingAddrRaw = stakingStats?.stakingAddress || staking?.stakingAddress;
+    const tokenAddrRaw = stakingTokenAddr || stakingStats?.protocolTokenAddress;
+    if (!stakingAddrRaw || !tokenAddrRaw) {
+      setApproveTx({ status: "error", error: "Staking config not loaded. Check API /staking/stats and /relayer/staking-status." });
+      return;
+    }
+    const stakingAddr = getAddress(stakingAddrRaw);
+    const tokenAddr = getAddress(tokenAddrRaw);
     if (!wallet.signer) return;
     setApproveTx({ status: "pending" });
     try {
@@ -191,8 +201,14 @@ export default function App() {
   };
 
   const stake = async () => {
-    const stakingAddr = getAddress(stakingStats?.stakingAddress || staking?.stakingAddress || FALLBACK_STAKING);
-    const tokenAddr = getAddress(stakingTokenAddr || stakingStats?.protocolTokenAddress || FALLBACK_TOKEN);
+    const stakingAddrRaw = stakingStats?.stakingAddress || staking?.stakingAddress;
+    const tokenAddrRaw = stakingTokenAddr || stakingStats?.protocolTokenAddress;
+    if (!stakingAddrRaw || !tokenAddrRaw) {
+      setStakeTx({ status: "error", error: "Staking config not loaded. Check API /staking/stats and /relayer/staking-status." });
+      return;
+    }
+    const stakingAddr = getAddress(stakingAddrRaw);
+    const tokenAddr = getAddress(tokenAddrRaw);
     if (!wallet.signer || !stakeAmount) return;
     setStakeTx({ status: "pending" });
     try {
@@ -334,6 +350,15 @@ export default function App() {
         <ValidatorSetup base={base} relayer={relayer} staking={staking} wallet={wallet} />
       ) : (
       <section style={{ display: "grid", gap: "1.5rem" }}>
+        {cfg?.mode === "degraded" && (
+          <div style={{ background: "#7f1d1d20", border: "1px solid #ef4444", borderRadius: 10, padding: "0.75rem 1rem" }}>
+            <div style={{ fontWeight: 700, color: "#fecaca" }}>Backend is in degraded mode</div>
+            <div style={{ color: "#fca5a5", fontSize: "0.9rem", marginTop: "0.25rem" }}>
+              Missing env for transactions: {(cfg.missingForTx || []).join(", ") || "unknown"}.
+            </div>
+          </div>
+        )}
+
         <Card title="Health">
           {!base ? (
             <div style={{ color: "#f59e0b" }}>
@@ -342,7 +367,7 @@ export default function App() {
           ) : health ? (
             <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
               <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#22c55e" }} />
-              <span>OK — {health.status || "running"}</span>
+              <span>OK — {health.status || "running"}{health.mode ? ` (${health.mode})` : ""}</span>
             </div>
           ) : (
             <div style={{ color: "#ef4444" }}>
@@ -395,8 +420,11 @@ export default function App() {
                     </div>
                   )}
                   <div style={{ fontSize: "0.8rem", color: "#6b7280", marginBottom: "0.25rem" }}>
-                    <strong>Stake SHDW:</strong> Enter amount → Click <strong>Stake</strong>. If approval is needed, MetaMask will prompt twice (approve, then stake).
-                    <br /><span style={{ color: "#9ca3af", fontSize: "0.75rem" }}>SHDW: {(stakingTokenAddr || stakingStats?.protocolTokenAddress || FALLBACK_TOKEN).slice(0, 10)}… | Staking: {(stakingStats?.stakingAddress || FALLBACK_STAKING).slice(0, 10)}…</span>
+                    <strong>Stake:</strong> Enter amount → Click <strong>Stake</strong>. If approval is needed, MetaMask will prompt twice (approve, then stake).
+                    <br />
+                    <span style={{ color: "#9ca3af", fontSize: "0.75rem" }}>
+                      Token: {(stakingTokenAddr || stakingStats?.protocolTokenAddress || "").slice(0, 10)}… | Staking: {(stakingStats?.stakingAddress || "").slice(0, 10)}…
+                    </span>
                   </div>
                   {stakeTx.status === "error" && (stakeTx.error?.includes("insufficient allowance") || stakeTx.error?.includes("allowance")) && (
                     <div style={{ background: "#7f1d1d20", border: "1px solid #ef4444", borderRadius: 6, padding: "0.5rem 0.75rem", fontSize: "0.85rem", color: "#fca5a5", marginBottom: "0.5rem" }}>

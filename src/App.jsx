@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Routes, Route } from 'react-router-dom';
 import Navbar from './components/Navbar';
 import Hero from './components/Hero';
 import WhoCanUseIt from './components/WhoCanUseIt';
@@ -20,14 +21,42 @@ import DataInterceptionBackground from './components/DataInterceptionBackground'
 import logoUrl from './assets/logo.jpg';
 import { SOCIAL_LINKS } from './config';
 
-function App() {
-  const [mousePos, setMousePos] = useState({ x: -999, y: -999 });
-  const [isHovering, setIsHovering] = useState(false);
+function UserDappPage() {
+  return (
+    <div style={{ minHeight: '100vh' }}>
+      <Navbar />
+      <div style={{ paddingTop: '6rem' }}>
+        <DAppSection />
+      </div>
+    </div>
+  );
+}
 
-  const handleMouseMove = (e) => {
-    setMousePos({ x: e.clientX, y: e.clientY });
-  };
+function RelayerStakerPage() {
+  return (
+    <div style={{ minHeight: '100vh' }}>
+      <Navbar />
+      <section className="section" style={{ paddingTop: '7rem' }}>
+        <div className="container">
+          <div className="section-label">Relayers / Stakers</div>
+          <h2 className="display-lg">Operator dashboard</h2>
+          <p style={{ color: 'var(--text-secondary)', fontSize: 'var(--body-size)', fontWeight: 500, lineHeight: 'var(--body-line)', maxWidth: 720, marginTop: '1rem' }}>
+            This is the relayer/staker view. For relayer health, validator status, and staking actions, use the dedicated dashboard app.
+          </p>
+          <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', marginTop: '1.25rem' }}>
+            <a className="btn-outline" href="http://localhost:5177/" target="_blank" rel="noreferrer">Open local operator dashboard</a>
+            <a className="btn-outline" href="https://phantom-protocol.onrender.com" target="_blank" rel="noreferrer">Open hosted operator dashboard</a>
+          </div>
+          <p className="mono" style={{ color: 'var(--muted)', fontSize: '0.8rem', marginTop: '1rem' }}>
+            Tip: locally, the operator dashboard may run on a different port (e.g. 5177). Use the URL printed by its dev server.
+          </p>
+        </div>
+      </section>
+    </div>
+  );
+}
 
+function LandingPage({ mousePos, isHovering, handleMouseMove }) {
   return (
     <main
       className={isHovering ? 'cursor-hover' : ''}
@@ -96,6 +125,23 @@ function App() {
         </footer>
       </div>
     </main>
+  );
+}
+
+function App() {
+  const [mousePos, setMousePos] = useState({ x: -999, y: -999 });
+  const [isHovering, setIsHovering] = useState(false);
+
+  const handleMouseMove = (e) => {
+    setMousePos({ x: e.clientX, y: e.clientY });
+  };
+
+  return (
+    <Routes>
+      <Route path="/" element={<LandingPage mousePos={mousePos} isHovering={isHovering} handleMouseMove={handleMouseMove} />} />
+      <Route path="/user" element={<UserDappPage />} />
+      <Route path="/relayer" element={<RelayerStakerPage />} />
+    </Routes>
   );
 }
 

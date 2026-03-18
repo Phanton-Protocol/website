@@ -36,7 +36,13 @@ The backend API lives in **phantom-relayer-dashboard**. Use **Root Directory** s
 
 **Environment:** Render sets `PORT` and `RENDER=true` automatically. In the service → **Environment**, add variables from `render.env.example` (e.g. `RPC_URL`, `CHAIN_ID`, `SHIELDED_POOL_ADDRESS`, `DEV_BYPASS_PROOFS`). Validators are not run (only 1 service), but deposits, swaps, withdraw, Key, Payroll still work.
 
+**Config files (staging → mainnet):** The backend also supports committed config files in `config/`:\n- `config/bscTestnet.json`\n- `config/bscMainnet.json`\n\nBy default the backend selects the config file by `CHAIN_ID`. You can override with:\n- `PHANTOM_CONFIG_PATH` (absolute/relative path to a config JSON)\n- `PHANTOM_CONFIG_DIR` (directory containing the chain config files)\n\nEnvironment variables still take precedence over file values.\n+
 ---
+
+### If you see "Not Found" or "This service has been suspended"
+
+- **Suspended:** Render can **suspend** a service (e.g. free tier limits, billing, or inactivity). In that case every URL (including `/health`) returns a Render page saying "This service has been suspended." **Fix:** Log in at **https://dashboard.render.com** → open your **phantom-protocol** web service → use **Resume** or **Unsuspend** (or fix billing/account if prompted). Then trigger a **Manual Deploy** if needed.
+- **Not Found on a path:** If the service is running but a path returns "Not Found", check the URL (root `/` and `/health` are valid). Other API paths are in DEVELOPER_SPEC.md.
 
 ### If the service shows "Crashed" or won’t start
 

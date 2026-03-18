@@ -29,8 +29,39 @@ const { registerOrderAndTryMatch } = require("./fheMatchingService");
 
 const app = express();
 app.use(express.json({ limit: "2mb" }));
-app.use(cors({ origin: true, credentials: true }));
+const ALLOWED_ORIGINS = (process.env.CORS_ORIGINS || "")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
+app.use(cors({
+  origin: (origin, cb) => {
+    if (!origin) return cb(null, true);
+    if (ALLOWED_ORIGINS.length === 0) return cb(null, true);
+    return cb(null, ALLOWED_ORIGINS.includes(origin));
+  },
+  credentials: true
+}));
 app.use("/fhe", fheMatchingRouter);
+
+const RATE_LIMIT_WINDOW_MS = Number(process.env.RATE_LIMIT_WINDOW_MS || 30_000);
+const RATE_LIMIT_MAX = Number(process.env.RATE_LIMIT_MAX || 120);
+const rlBuckets = new Map();
+function rateLimit(req, res, next) {
+  const key = req.ip || req.headers["x-forwarded-for"] || "unknown";
+  const now = Date.now();
+  const bucket = rlBuckets.get(key) || { resetAt: now + RATE_LIMIT_WINDOW_MS, count: 0 };
+  if (now > bucket.resetAt) {
+    bucket.resetAt = now + RATE_LIMIT_WINDOW_MS;
+    bucket.count = 0;
+  }
+  bucket.count += 1;
+  rlBuckets.set(key, bucket);
+  if (bucket.count > RATE_LIMIT_MAX) {
+    return res.status(429).json({ error: "rate_limited", retryAfterMs: bucket.resetAt - now });
+  }
+  return next();
+}
+app.use(rateLimit);
 
 loadConfig();
 
@@ -52,6 +83,8 @@ const QUOTE_MODE = process.env.QUOTE_MODE || (CHAIN_ID === 97 ? "mock" : "dex");
 const PROVER_WASM = process.env.PROVER_WASM || path.join(__dirname, "..", "..", "circuits", "joinsplit_js", "joinsplit.wasm");
 const PROVER_ZKEY = process.env.PROVER_ZKEY || path.join(__dirname, "..", "..", "circuits", "joinsplit_0001.zkey");
 const DB_PATH = (process.env.VERCEL || process.env.RENDER) ? "/tmp/relayer.db" : (process.env.DB_PATH || path.join(__dirname, "..", "data", "relayer.db"));
+const CONFIG_DIR = process.env.PHANTOM_CONFIG_DIR || path.join(__dirname, "..", "..", "..", "config");
+const CONFIG_PATH = process.env.PHANTOM_CONFIG_PATH || "";
 
 let db;
 try {
@@ -117,6 +150,83 @@ const receipts = new Map();
 const intents = new Map();
 
 const shadowDeposits = new Map();
+
+function missingEnv(required) {
+  return required.filter((k) => !process.env[k] || String(process.env[k]).trim() === "");
+}
+
+function requireConfigured(res, requiredKeys, featureLabel) {
+  const missing = missingEnv(requiredKeys);
+  if (missing.length) {
+    res.status(503).json({
+      error: `${featureLabel} not configured`,
+      missing,
+      hint: "Set these environment variables and restart the backend. For local dev, put them in phantom-relayer-dashboard/backend/.env",
+    });
+    return false;
+  }
+  return true;
+}
+
+function readJsonIfExists(p) {
+  try {
+    if (!p) return null;
+    if (!fs.existsSync(p)) return null;
+    return JSON.parse(fs.readFileSync(p, "utf8"));
+  } catch (_) {
+    return null;
+  }
+}
+
+function selectConfigFileByChainId(chainId) {
+  if (!chainId) return null;
+  const name =
+    Number(chainId) === 56 ? "bscMainnet.json"
+      : Number(chainId) === 97 ? "bscTestnet.json"
+        : null;
+  if (!name) return null;
+  return path.join(CONFIG_DIR, name);
+}
+
+function getRuntimeConfig() {
+  const filePath = CONFIG_PATH || selectConfigFileByChainId(CHAIN_ID);
+  const fileCfg = readJsonIfExists(filePath) || {};
+  const envStr = (v) => (v && String(v).trim() ? String(v).trim() : undefined);
+
+  const chainId = Number(process.env.CHAIN_ID ?? fileCfg.chainId ?? CHAIN_ID ?? 97);
+  const rpcUrl = String(process.env.RPC_URL ?? fileCfg.rpcUrl ?? RPC_URL ?? "").trim();
+  const addresses = {
+    shieldedPool: envStr(process.env.SHIELDED_POOL_ADDRESS) ?? fileCfg.addresses?.shieldedPool ?? SHIELDED_POOL_ADDRESS ?? null,
+    swapAdaptor: envStr(process.env.SWAP_ADAPTOR_ADDRESS) ?? fileCfg.addresses?.swapAdaptor ?? SWAP_ADAPTOR_ADDRESS ?? null,
+    noteStorage: envStr(process.env.NOTE_STORAGE_ADDRESS) ?? fileCfg.addresses?.noteStorage ?? NOTE_STORAGE_ADDRESS ?? null,
+    feeOracle: envStr(process.env.OFFCHAIN_ORACLE_ADDRESS) ?? fileCfg.addresses?.feeOracle ?? OFFCHAIN_ORACLE_ADDRESS ?? null,
+    relayerStaking: envStr(process.env.RELAYER_STAKING_ADDRESS) ?? fileCfg.addresses?.relayerStaking ?? RELAYER_STAKING_ADDRESS ?? null,
+  };
+
+  const assets = Array.isArray(fileCfg.assets) ? fileCfg.assets : [];
+  const requiredForTx = ["RPC_URL", "SHIELDED_POOL_ADDRESS", "RELAYER_PRIVATE_KEY"];
+  const missingForTx = missingEnv(requiredForTx);
+  const mode = missingForTx.length ? "degraded" : "live";
+
+  return {
+    mode,
+    chainId,
+    rpcUrl: rpcUrl || null,
+    addresses,
+    assets,
+    features: {
+      relayerOnly: true,
+      dryRun: RELAYER_DRY_RUN,
+      bypassValidators: DEV_BYPASS_VALIDATORS,
+      bypassProofs: DEV_BYPASS_PROOFS,
+      quoteMode: QUOTE_MODE,
+      chainalysisScreeningEnabled: !!process.env.CHAINALYSIS_API_KEY,
+      fheEnabled: true,
+    },
+    configFile: filePath || null,
+    missingForTx,
+  };
+}
 
 function toAddress(v) {
   if (!v) return ethers.ZeroAddress;
@@ -346,6 +456,44 @@ app.get("/", (req, res) => {
 });
 
 app.get("/health", (req, res) => {
+  const cfg = getRuntimeConfig();
+  res.json({
+    ok: true,
+    uptimeSec: Math.floor(process.uptime()),
+    mode: cfg.mode,
+    chainId: cfg.chainId,
+    poolConfigured: !!cfg.addresses?.shieldedPool,
+    missingForTx: cfg.missingForTx,
+  });
+});
+
+app.get("/config", (req, res) => {
+  const cfg = getRuntimeConfig();
+  res.json({
+    mode: cfg.mode,
+    chainId: cfg.chainId,
+    rpcUrl: cfg.rpcUrl,
+    addresses: cfg.addresses,
+    assets: cfg.assets,
+    features: cfg.features,
+    missingForTx: cfg.missingForTx,
+    configFile: cfg.configFile,
+  });
+});
+
+app.get("/ready", (req, res) => {
+  const missing = missingEnv(["RPC_URL", "SHIELDED_POOL_ADDRESS", "RELAYER_PRIVATE_KEY"]);
+  if (missing.length) {
+    return res.status(503).json({
+      ok: false,
+      missing,
+      configured: {
+        RPC_URL: !!process.env.RPC_URL,
+        SHIELDED_POOL_ADDRESS: !!process.env.SHIELDED_POOL_ADDRESS,
+        RELAYER_PRIVATE_KEY: !!process.env.RELAYER_PRIVATE_KEY,
+      },
+    });
+  }
   res.json({ ok: true });
 });
 
@@ -498,6 +646,7 @@ app.post("/swap", async (req, res) => {
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.flatten() });
   }
+  if (!requireConfigured(res, ["RPC_URL", "SHIELDED_POOL_ADDRESS", "RELAYER_PRIVATE_KEY"], "Swap")) return;
 
   const { intentId, intent, intentSig, swapData } = parsed.data;
   const cached = intents.get(intentId) || getIntent(db, intentId)?.payload;
@@ -565,6 +714,7 @@ app.post("/withdraw", async (req, res) => {
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.flatten() });
   }
+  if (!requireConfigured(res, ["RPC_URL", "SHIELDED_POOL_ADDRESS", "RELAYER_PRIVATE_KEY"], "Withdraw")) return;
   const { withdrawData } = parsed.data;
   try {
     const txResult = RELAYER_DRY_RUN
@@ -635,7 +785,7 @@ app.get("/relayer/network", (req, res) => {
 });
 
 app.get("/relayer", (req, res) => {
-  if (!RELAYER_PRIVATE_KEY) return res.status(500).json({ error: "Relayer not configured" });
+  if (!requireConfigured(res, ["RELAYER_PRIVATE_KEY"], "Relayer")) return;
   const relayer = new ethers.Wallet(RELAYER_PRIVATE_KEY);
   res.json({
     relayer: relayer.address,
@@ -674,7 +824,7 @@ async function getStakingContract(provider) {
 }
 
 app.get("/staking/stats", async (req, res) => {
-  if (!SHIELDED_POOL_ADDRESS || !RPC_URL) return res.status(500).json({ error: "Pool not configured" });
+  if (!requireConfigured(res, ["RPC_URL", "SHIELDED_POOL_ADDRESS"], "Staking stats")) return;
   try {
     const provider = new ethers.JsonRpcProvider(RPC_URL);
     const staking = await getStakingContract(provider);
@@ -700,7 +850,7 @@ app.get("/staking/stats", async (req, res) => {
 app.get("/staking/balance", async (req, res) => {
   const addr = req.query.address;
   if (!addr || !ethers.isAddress(addr)) return res.status(400).json({ error: "Missing or invalid address" });
-  if (!SHIELDED_POOL_ADDRESS || !RPC_URL) return res.status(500).json({ error: "Pool not configured" });
+  if (!requireConfigured(res, ["RPC_URL", "SHIELDED_POOL_ADDRESS"], "Staking balance")) return;
   try {
     const provider = new ethers.JsonRpcProvider(RPC_URL);
     const staking = await getStakingContract(provider);
@@ -900,9 +1050,7 @@ app.post("/deposit", async (req, res) => {
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.flatten() });
   }
-  if (!SHIELDED_POOL_ADDRESS || !RELAYER_PRIVATE_KEY || !RPC_URL) {
-    return res.status(500).json({ error: "Relayer env not configured" });
-  }
+  if (!requireConfigured(res, ["RPC_URL", "SHIELDED_POOL_ADDRESS", "RELAYER_PRIVATE_KEY"], "Deposit")) return;
   const payload = parsed.data;
   if (payload.deadline < Math.floor(Date.now() / 1000)) {
     return res.status(400).json({ error: "Deposit expired" });
