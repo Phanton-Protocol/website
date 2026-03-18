@@ -1,4 +1,3 @@
-import { motion } from 'framer-motion';
 import { BLOG_URL } from '../config';
 
 const NewsSection = () => {

@@ -1,5 +1,3 @@
-import { motion } from 'framer-motion';
-
 const features = [
   { name: 'Salary & payout privacy', phantom: 'Shielded pool', standard: 'Fully public ledger' },
   { name: 'Per‑wallet reporting keys', phantom: 'Built‑in & revocable', standard: 'Rare / custom' },

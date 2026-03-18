@@ -1,4 +1,3 @@
-import { motion } from 'framer-motion';
 import { DAPP_URL } from '../config';
 
 const useCases = [

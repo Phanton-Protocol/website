@@ -1,5 +1,68 @@
 import React, { useEffect, useRef } from 'react';
 
+const HEX_CHARS = '0123456789ABCDEF';
+
+class Particle {
+    constructor({ canvas, ctx }) {
+        this.canvas = canvas;
+        this.ctx = ctx;
+        this.init();
+    }
+
+    init() {
+        this.x = Math.random() * this.canvas.width;
+        this.y = Math.random() * this.canvas.height;
+        this.speed = 0.5 + Math.random() * 1.5;
+        this.size = 10 + Math.random() * 10;
+        this.text = Array.from({ length: 4 }, () => HEX_CHARS[Math.floor(Math.random() * 16)]).join('');
+        this.opacity = Math.random() * 0.5 + 0.1;
+        this.isBroken = false;
+        this.brokenTimer = 0;
+    }
+
+    update() {
+        this.x += this.speed;
+        if (this.x > this.canvas.width) this.x = -50;
+
+        const centerX = this.canvas.width / 2;
+        const centerY = this.canvas.height / 2;
+        const distance = Math.sqrt((this.x - centerX) ** 2 + (this.y - centerY) ** 2);
+
+        if (distance < 200) {
+            if (!this.isBroken) {
+                this.isBroken = true;
+                this.brokenTimer = 30;
+            }
+        } else {
+            this.isBroken = false;
+        }
+
+        if (this.isBroken) {
+            if (Math.random() > 0.8) {
+                this.text = Array.from({ length: 4 }, () => HEX_CHARS[Math.floor(Math.random() * 16)]).join('');
+            }
+        }
+    }
+
+    draw() {
+        const ctx = this.ctx;
+        ctx.font = `${this.size}px JetBrains Mono`;
+
+        if (this.isBroken) {
+            ctx.fillStyle = `rgba(255, 255, 255, ${this.opacity * 0.5})`;
+            const offsetX = (Math.random() - 0.5) * 10;
+            const offsetY = (Math.random() - 0.5) * 10;
+            ctx.fillText(this.text, this.x + offsetX, this.y + offsetY);
+
+            ctx.fillStyle = `rgba(0, 229, 255, ${this.opacity * 0.2})`;
+            ctx.fillText(this.text, this.x - offsetX, this.y - offsetY);
+        } else {
+            ctx.fillStyle = `rgba(0, 229, 255, ${this.opacity})`;
+            ctx.fillText(this.text, this.x, this.y);
+        }
+    }
+}
+
 const DataInterceptionBackground = () => {
     const canvasRef = useRef(null);
 
@@ -19,73 +82,9 @@ const DataInterceptionBackground = () => {
         // Particle System Configuration
         const particles = [];
         const particleCount = 40;
-        const hexChars = '0123456789ABCDEF';
-
-        class Particle {
-            constructor() {
-                this.init();
-            }
-
-            init() {
-                this.x = Math.random() * canvas.width;
-                this.y = Math.random() * canvas.height;
-                this.speed = 0.5 + Math.random() * 1.5;
-                this.size = 10 + Math.random() * 10;
-                this.text = Array.from({ length: 4 }, () => hexChars[Math.floor(Math.random() * 16)]).join('');
-                this.opacity = Math.random() * 0.5 + 0.1;
-                this.isBroken = false;
-                this.brokenTimer = 0;
-            }
-
-            update() {
-                this.x += this.speed;
-                if (this.x > canvas.width) this.x = -50;
-
-                // Interception logic: Central Zone
-                const centerX = canvas.width / 2;
-                const centerY = canvas.height / 2;
-                const distance = Math.sqrt((this.x - centerX) ** 2 + (this.y - centerY) ** 2);
-
-                // If in the center zone (Phantom Protocol Interception)
-                if (distance < 200) {
-                    if (!this.isBroken) {
-                        this.isBroken = true;
-                        this.brokenTimer = 30; // 30 frames of glitching
-                    }
-                } else {
-                    this.isBroken = false;
-                }
-
-                if (this.isBroken) {
-                    // Scramble text
-                    if (Math.random() > 0.8) {
-                        this.text = Array.from({ length: 4 }, () => hexChars[Math.floor(Math.random() * 16)]).join('');
-                    }
-                }
-            }
-
-            draw() {
-                ctx.font = `${this.size}px JetBrains Mono`;
-
-                if (this.isBroken) {
-                    ctx.fillStyle = `rgba(255, 255, 255, ${this.opacity * 0.5})`;
-                    // Glitchy offset
-                    const offsetX = (Math.random() - 0.5) * 10;
-                    const offsetY = (Math.random() - 0.5) * 10;
-                    ctx.fillText(this.text, this.x + offsetX, this.y + offsetY);
-
-                    // Add secondary ambient text for interception effect
-                    ctx.fillStyle = `rgba(0, 229, 255, ${this.opacity * 0.2})`;
-                    ctx.fillText(this.text, this.x - offsetX, this.y - offsetY);
-                } else {
-                    ctx.fillStyle = `rgba(0, 229, 255, ${this.opacity})`;
-                    ctx.fillText(this.text, this.x, this.y);
-                }
-            }
-        }
 
         for (let i = 0; i < particleCount; i++) {
-            particles.push(new Particle());
+            particles.push(new Particle({ canvas, ctx }));
         }
 
         const render = () => {

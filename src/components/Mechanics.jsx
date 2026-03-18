@@ -1,5 +1,3 @@
-import { motion } from 'framer-motion';
-
 const Mechanics = () => {
     return (
         <section className="section" id="architecture">

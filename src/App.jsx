@@ -64,10 +64,9 @@ function RelayerStakerPage() {
   );
 }
 
-function LandingPage({ mousePos, isHovering, handleMouseMove }) {
+function LandingPage({ mousePos, handleMouseMove }) {
   return (
     <main
-      className={isHovering ? 'cursor-hover' : ''}
       onMouseMove={handleMouseMove}
       style={{ position: 'relative', minHeight: '100vh' }}
     >
@@ -138,7 +137,6 @@ function LandingPage({ mousePos, isHovering, handleMouseMove }) {
 
 function App() {
   const [mousePos, setMousePos] = useState({ x: -999, y: -999 });
-  const [isHovering, setIsHovering] = useState(false);
 
   const handleMouseMove = (e) => {
     setMousePos({ x: e.clientX, y: e.clientY });
@@ -146,7 +144,7 @@ function App() {
 
   return (
     <Routes>
-      <Route path="/" element={<LandingPage mousePos={mousePos} isHovering={isHovering} handleMouseMove={handleMouseMove} />} />
+      <Route path="/" element={<LandingPage mousePos={mousePos} handleMouseMove={handleMouseMove} />} />
       <Route path="/user" element={<UserDappPage />} />
       <Route path="/relayer" element={<RelayerStakerPage />} />
     </Routes>

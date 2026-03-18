@@ -1,5 +1,3 @@
-import { motion } from 'framer-motion';
-
 const FeesSection = () => (
   <section className="section" id="fees">
     <div className="container">

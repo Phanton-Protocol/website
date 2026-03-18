@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
 import { API_URL } from '../config';
 
 const defaultMetrics = [
