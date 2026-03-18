@@ -16,6 +16,7 @@ import FeesSection from './components/FeesSection';
 import Roadmap from './components/Roadmap';
 import FAQ from './components/FAQ';
 import DAppSection from './components/DAppSection';
+import ProtocolUserDapp from './components/ProtocolUserDapp';
 import GhostChainVisualizer from './components/GhostChainVisualizer';
 import DataInterceptionBackground from './components/DataInterceptionBackground';
 import logoUrl from './assets/logo.jpg';
@@ -26,7 +27,14 @@ function UserDappPage() {
     <div style={{ minHeight: '100vh' }}>
       <Navbar />
       <div style={{ paddingTop: '6rem' }}>
-        <DAppSection />
+        <div className="section">
+          <div className="container">
+            <ProtocolUserDapp />
+            <div style={{ marginTop: "2rem" }}>
+              <DAppSection />
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
