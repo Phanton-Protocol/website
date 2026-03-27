@@ -38,16 +38,18 @@ const Navbar = () => {
                 right: 0,
                 zIndex: 200,
                 padding: scrolled ? '1rem 0' : '1.75rem 0',
-                background: scrolled ? 'rgba(10,10,10,0.9)' : 'transparent',
-                backdropFilter: scrolled ? 'blur(20px)' : 'none',
-                borderBottom: scrolled ? '1px solid var(--border)' : 'none',
+                background: scrolled ? 'rgba(10,10,10,0.97)' : 'rgba(10,10,10,0.88)',
+                backdropFilter: scrolled ? 'blur(16px)' : 'blur(12px)',
+                WebkitBackdropFilter: scrolled ? 'blur(16px)' : 'blur(12px)',
+                borderBottom: scrolled ? '1px solid var(--border)' : '1px solid transparent',
                 transition: 'all 0.4s ease',
             }}
         >
-            <div className="container nav-container" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem' }}>
+            <div className="container nav-container">
                 {/* Logo */}
                 <a
                     href="/"
+                    className="nav-brand"
                     style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', textDecoration: 'none', flexShrink: 0 }}
                     onClick={() => window.scrollTo(0, 0)}
                 >
@@ -75,7 +77,7 @@ const Navbar = () => {
                 </a>
 
                 {/* Desktop Links - tighter so all fit on one line */}
-                <div className="nav-links hidden-mobile" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '1.5rem', flex: '1 1 auto', minWidth: 0 }}>
+                <div className="nav-links hidden-mobile" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '1.5rem', flex: '1 1 auto', minWidth: 0, maxWidth: '100%' }}>
                     {navLinks.map(link => (
                         <a
                             key={link.name}
@@ -208,7 +210,45 @@ const Navbar = () => {
             </AnimatePresence>
 
             <style>{`
-        .nav-container { overflow: visible; }
+        .nav-container {
+          overflow: visible;
+          align-items: center;
+          display: flex;
+          flex-wrap: nowrap;
+          justify-content: space-between;
+          gap: 1rem;
+        }
+        @media (min-width: 1321px) {
+          .nav-container { flex-wrap: nowrap; }
+          .nav-links {
+            overflow-x: auto;
+            overscroll-behavior-x: contain;
+            scrollbar-width: none;
+            -ms-overflow-style: none;
+            justify-content: center;
+          }
+          .nav-links::-webkit-scrollbar { display: none; }
+        }
+        @media (max-width: 1320px) and (min-width: 769px) {
+          .nav-container {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            grid-template-rows: auto auto;
+            gap: 0.65rem 1rem;
+            align-items: center;
+          }
+          .nav-brand { grid-column: 1; grid-row: 1; min-width: 0; }
+          .nav-cta { grid-column: 2; grid-row: 1; justify-self: end; }
+          .nav-links {
+            grid-column: 1 / -1;
+            grid-row: 2;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 0.65rem 1.1rem !important;
+            max-width: 100%;
+          }
+          .nav-links a { font-size: 0.55rem !important; letter-spacing: 0.08em !important; }
+        }
         .nav-links a { overflow: visible; }
         @media (max-width: 768px) {
           .hidden-mobile { display: none !important; }
@@ -216,11 +256,6 @@ const Navbar = () => {
         }
         @media (min-width: 769px) {
           .show-mobile { display: none !important; }
-        }
-        /* On medium widths, if nav still wraps, show smaller gap */
-        @media (max-width: 1200px) and (min-width: 769px) {
-          .nav-links { gap: 1rem !important; }
-          .nav-links a { font-size: 0.55rem !important; letter-spacing: 0.08em !important; }
         }
       `}</style>
         </motion.nav>

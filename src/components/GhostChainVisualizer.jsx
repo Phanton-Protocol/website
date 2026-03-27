@@ -243,13 +243,6 @@ const GhostChainVisualizer = () => {
             ctx.fillStyle = cGrd;
             ctx.fill();
 
-            ctx.textAlign = 'center';
-            ctx.font = '6.5px JetBrains Mono';
-            ctx.fillStyle = `rgba(${C_WHITE}, 0.22)`;
-            ctx.fillText('PHANTOM', ghost.x, ghost.y + 32);
-            ctx.fillText('PROTOCOL', ghost.x, ghost.y + 42);
-            ctx.textAlign = 'left';
-
             raf = requestAnimationFrame(render);
         }
 
