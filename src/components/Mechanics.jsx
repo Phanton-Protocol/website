@@ -1,3 +1,5 @@
+import { motion } from 'framer-motion';
+
 const Mechanics = () => {
     return (
         <section className="section" id="architecture">
@@ -21,8 +23,8 @@ const Mechanics = () => {
                         <div style={{ display: 'flex', gap: '2rem', alignItems: 'flex-start' }}>
                             <div style={{ color: 'var(--cyan)' }}>01</div>
                             <div style={{ flexGrow: 1, paddingBottom: '3rem', borderBottom: '1px solid var(--border)' }}>
-                                <div style={{ color: '#fff', marginBottom: '0.5rem', fontWeight: 500 }}>Deposit into the shielded pool.</div>
-                                <div style={{ textTransform: 'none', fontFamily: 'var(--font-body)', fontSize: 'var(--body-size)', fontWeight: 500, lineHeight: 'var(--body-line)' }}>A company or user deposits assets from a public wallet into the shielded pool. On-chain you only see a single deposit; inside Phantom it becomes a private note that tracks balance, asset and owner, without linking to the public address.</div>
+                                <div style={{ color: '#fff', marginBottom: '0.5rem', fontWeight: 500 }}>Deposit into the pool.</div>
+                                <div style={{ textTransform: 'none', fontFamily: 'var(--font-body)', fontSize: 'var(--body-size)', fontWeight: 500, lineHeight: 'var(--body-line)' }}>A company or user deposits assets from a public wallet into the pool. On-chain you only see a single deposit; inside Phantom it becomes a private note that tracks balance, asset and owner, without linking to the public address.</div>
                             </div>
                         </div>
 
@@ -45,8 +47,8 @@ const Mechanics = () => {
                         <div style={{ display: 'flex', gap: '2rem', alignItems: 'flex-start' }}>
                             <div style={{ color: 'var(--cyan)' }}>04</div>
                             <div style={{ flexGrow: 1 }}>
-                                <div style={{ color: '#fff', marginBottom: '0.5rem', fontWeight: 500 }}>OTC-style internal matching (in development).</div>
-                                <div style={{ textTransform: 'none', fontFamily: 'var(--font-body)', fontSize: 'var(--body-size)', fontWeight: 500, lineHeight: 'var(--body-line)' }}>In the DApp you enter the price you want to buy or sell at. When someone submits an opposite order at a compatible price, you’re matched inside the shielded pool — no public order book. Orders are encrypted (FHE); the matcher only sees that a match exists and settles it. When no counterparty is available, swaps route through an external DEX.</div>
+                                <div style={{ color: '#fff', marginBottom: '0.5rem', fontWeight: 500 }}>OTC-style internal matching.</div>
+                                <div style={{ textTransform: 'none', fontFamily: 'var(--font-body)', fontSize: 'var(--body-size)', fontWeight: 500, lineHeight: 'var(--body-line)' }}>In the DApp you enter the price you want to buy or sell at. When someone submits an opposite order at a compatible price, you’re matched inside the pool — no public order book. Orders are encrypted (FHE); the matcher only sees that a match exists and settles it. When no counterparty is available, swaps route through an external DEX.</div>
                             </div>
                         </div>
                     </motion.div>

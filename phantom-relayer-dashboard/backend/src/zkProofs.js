@@ -26,6 +26,28 @@ const CIRCUITS_DIR = path.join(__dirname, "..", "..", "circuits");
 
 const DEV_BYPASS_PROOFS = process.env.DEV_BYPASS_PROOFS === "true";
 
+function swapCircuitToPublicInputs(ci) {
+  return {
+    nullifier: String(ci.nullifier),
+    inputCommitment: String(ci.inputCommitment),
+    outputCommitmentSwap: String(ci.outputCommitmentSwap),
+    outputCommitmentChange: String(ci.outputCommitmentChange),
+    merkleRoot: String(ci.merkleRoot),
+    inputAssetID: Number(ci.inputAssetID),
+    outputAssetIDSwap: Number(ci.outputAssetIDSwap),
+    outputAssetIDChange: Number(ci.outputAssetIDChange),
+    inputAmount: String(ci.inputAmount),
+    swapAmount: String(ci.swapAmount),
+    changeAmount: String(ci.changeAmount),
+    outputAmountSwap: String(ci.outputAmountSwapPublic),
+    minOutputAmountSwap: String(ci.minOutputAmountSwap),
+    gasRefund: String(ci.gasRefund),
+    protocolFee: String(ci.protocolFee),
+    merklePath: [...ci.merklePath],
+    merklePathIndices: [...ci.merklePathIndices],
+  };
+}
+
 const proofStats = { swap: [], withdraw: [], portfolio: [], lastError: null };
 const MAX_STATS = 50;
 
@@ -323,6 +345,7 @@ async function generateSwapProof(swapData) {
     return {
       proof: { a: ["0", "0"], b: [["0", "0"], ["0", "0"]], c: ["0", "0"] },
       publicSignals,
+      publicInputs: swapCircuitToPublicInputs(circuitInputs),
       generationTime: 0
     };
   }
@@ -491,7 +514,7 @@ async function generateSwapProof(swapData) {
     console.log(`\n🔍 Generating proof...`);
     const result = await proveWithRapidsnarkOrSnarkjs(circuitInputs, WASM_PATH, ZKEY_PATH, "joinsplit");
     recordProofStats("swap", result.generationTime, true);
-    return result;
+    return { ...result, publicInputs: swapCircuitToPublicInputs(circuitInputs) };
   } catch (error) {
     recordProofStats("swap", Date.now() - startTime, false);
     console.error("❌ Proof generation failed:", error.message);

@@ -23,6 +23,7 @@ export default defineConfig([
     'scripts/**',
     'sei-ggc-holders/**',
     'phantom-relayer-dashboard/**',
+    'fhe-dev/**',
   ]),
   {
     files: ['**/*.{js,jsx}'],

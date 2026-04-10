@@ -1,3 +1,5 @@
+import { motion } from 'framer-motion';
+
 const TechCards = () => {
   const cards = [
     {
@@ -8,12 +10,7 @@ const TechCards = () => {
     {
       title: "Backend Prover",
       subtitle: "RAPIDSNARK + SNARKJS",
-      desc: "A backend‑first proving layer that uses Rapidsnark where available and snarkjs as a fallback, so heavy proofs don’t freeze the browser.",
-    },
-    {
-      title: "Reporting Keys",
-      subtitle: "SELECTIVE DISCLOSURE",
-      desc: "Per‑wallet reporting keys for accountants, lawyers, and regulators. Share exactly the flows you need to, and nothing more.",
+      desc: "A backend‑first proving layer that uses Rapidsnark where available and snarkjs as a fallback, then routes submissions through relayers so heavy proofs don’t freeze the browser or expose user transaction flow.",
     },
     {
       title: "FHE matching",
@@ -28,7 +25,7 @@ const TechCards = () => {
                 <div style={{ marginBottom: '4rem' }}>
                     <div className="section-label">Underlying Infrastructure</div>
                     <h2 className="display-lg">
-                        Zero knowledge.<br /><em>Absolute</em> certainty.
+                        Zero Knowledge (ZKP) <br />And Fully Homomorphic Encryption (FHE)
                     </h2>
                 </div>
 
@@ -46,7 +43,13 @@ const TechCards = () => {
                             whileInView={{ opacity: 1, y: 0 }}
                             viewport={{ once: true }}
                             transition={{ delay: idx * 0.15, duration: 0.6 }}
-                            style={{ border: 'none', borderRadius: 0, display: 'flex', flexDirection: 'column' }}
+                            style={{
+                                border: 'none',
+                                borderRadius: 0,
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gridColumn: cards.length % 2 === 1 && idx === cards.length - 1 ? '1 / -1' : undefined,
+                            }}
                         >
                             <div className="mono text-cyan" style={{ marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
                                 <span style={{ width: 8, height: 8, background: 'var(--cyan)' }}></span>

@@ -1,74 +1,140 @@
-import { API_URL } from '../config';
+import { relayerFetchJson } from '../lib/relayerHttp';
+const enterpriseHeaders = () => {
+  const key = localStorage.getItem('phantom_enterprise_api_key') || '';
+  return key ? { 'X-Enterprise-API-Key': key } : {};
+};
 
-const base = (path) => `${API_URL.replace(/\/$/, '')}/${path.replace(/^\//, '')}`;
+async function req(path, opts = {}) {
+  const { data } = await relayerFetchJson(path, opts);
+  return data;
+}
 
 export async function getRelayer() {
-  const res = await fetch(base('/relayer'));
-  if (!res.ok) throw new Error(res.statusText || 'Relayer fetch failed');
-  return res.json();
+  return req('/relayer');
 }
 
 export async function createReportingKey(walletAddress, signature, message) {
-  const res = await fetch(base('/tax-reporting-keys'), {
+  return req('/tax-reporting-keys', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ wallet: walletAddress, signature, message }),
   });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.message || err.error || res.statusText || 'Create key failed');
-  }
-  return res.json();
 }
 
 export async function revokeReportingKey(walletAddress, signature, message) {
-  const res = await fetch(base('/tax-reporting-keys/revoke'), {
+  return req('/tax-reporting-keys/revoke', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ wallet: walletAddress, signature, message }),
   });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.message || err.error || res.statusText || 'Revoke failed');
-  }
-  return res.json();
 }
 
 export async function getTaxExport(key) {
-  const url = new URL(base('/tax-export'));
-  url.searchParams.set('key', key);
-  const res = await fetch(url.toString(), {
+  const qs = new URLSearchParams({ key: String(key || '') });
+  return req(`/tax-export?${qs.toString()}`, {
     headers: { 'X-Tax-Reporting-Key': key },
   });
-  if (!res.ok) throw new Error(res.statusText || 'Export failed');
-  return res.json();
 }
 
 export async function getFhePublicKey() {
-  const res = await fetch(base('/fhe/public-key'));
-  if (!res.ok) throw new Error(res.statusText || 'FHE public key unavailable');
-  return res.json();
+  return req('/fhe/public-key');
 }
 
 export async function encryptFhe(payload) {
-  const res = await fetch(base('/fhe/encrypt'), {
+  return req('/fhe/encrypt', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
-  if (!res.ok) throw new Error(res.statusText || 'Encrypt failed');
-  return res.json();
 }
 
 export async function submitFheOrder(orderPayload) {
-  const res = await fetch(base('/fhe/order'), {
+  return req('/fhe/order', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(orderPayload),
   });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.message || err.error || res.statusText || 'Order submit failed');
-  }
-  return res.json();
+}
+
+export async function createPayrollRun(payload) {
+  return req('/payroll/runs', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...enterpriseHeaders() },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function listPayrollRuns() {
+  return req('/payroll/runs', { headers: enterpriseHeaders() });
+}
+
+export async function approvePayrollRun(runId) {
+  return req(`/payroll/runs/${runId}/approve`, { method: 'POST', headers: enterpriseHeaders() });
+}
+
+export async function executePayrollRun(runId) {
+  return req(`/payroll/runs/${runId}/execute`, { method: 'POST', headers: enterpriseHeaders() });
+}
+
+export async function screenCompliance(payload) {
+  return req('/compliance/screen', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...enterpriseHeaders() },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function createLedgerAccount(payload) {
+  return req('/ledger/accounts', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...enterpriseHeaders() },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function postLedgerEntry(payload) {
+  return req('/ledger/post', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...enterpriseHeaders() },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function listLedgerEntries(tenantId) {
+  const qs = new URLSearchParams();
+  if (tenantId) qs.set('tenantId', tenantId);
+  const path = qs.toString() ? `/ledger/entries?${qs.toString()}` : '/ledger/entries';
+  return req(path, { headers: enterpriseHeaders() });
+}
+
+export async function createGovernanceProposal(payload) {
+  return req('/governance/proposals', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...enterpriseHeaders() },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function voteOnProposal(proposalId, payload) {
+  return req(`/governance/proposals/${proposalId}/vote`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...enterpriseHeaders() },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function getGovernanceOverview() {
+  return req('/governance/overview', { headers: enterpriseHeaders() });
+}
+
+export async function getAuditEvents() {
+  return req('/audit/events', { headers: enterpriseHeaders() });
+}
+
+export async function getTokenomicsMetrics() {
+  return req('/tokenomics/metrics', { headers: enterpriseHeaders() });
+}
+
+export async function getSeeConfig() {
+  return req('/see/config');
 }

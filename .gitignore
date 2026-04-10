@@ -26,3 +26,8 @@ dist-ssr
 .vercel
 .env
 .env*.local
+
+artifacts/
+cache/
+
+~$*

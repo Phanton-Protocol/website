@@ -1,4 +1,5 @@
-import { DAPP_URL } from '../config';
+import { Link } from 'react-router-dom';
+import { motion } from 'framer-motion';
 
 const stats = [
   { value: '1', label: 'SHIELDED POOL FOR MANY USES' },
@@ -17,6 +18,7 @@ const Hero = () => {
 
   return (
     <section
+      id="hero"
       style={{
         minHeight: '100vh',
         display: 'flex',
@@ -27,50 +29,45 @@ const Hero = () => {
       }}
     >
       <div className="container" style={{ width: '100%' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '4rem', alignItems: 'center' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(160px, 240px)', gap: '3rem', alignItems: 'center' }}>
 
           {/* Left: Headline */}
           <div>
             <motion.div {...fade(0.1)} className="section-label">
-              Private, compliant rails for on‑chain money
+              Privacy by Proof. Invisible by Design.
             </motion.div>
 
             <motion.h1
               {...fade(0.25)}
               className="display-xl"
-              style={{ marginBottom: '2.5rem', maxWidth: '820px' }}
+              style={{ marginBottom: 'clamp(1.5rem, 4vw, 2.5rem)', maxWidth: 'min(820px, 100%)' }}
             >
-              Privacy for teams,
-              <br />
-              treasuries, <em>traders</em>
-              <br />
-              and payouts.
+              For Traders, Teams, Treasuries, Institutions and Stakers
             </motion.h1>
 
             <motion.p
               {...fade(0.4)}
               style={{
-                maxWidth: '520px',
+                maxWidth: 'min(520px, 100%)',
                 color: '#ffffff',
                 fontSize: 'var(--body-size)',
                 fontWeight: 500,
                 lineHeight: 'var(--body-line)',
-                marginBottom: '3rem',
+                marginBottom: 'clamp(1.75rem, 4vw, 3rem)',
               }}
             >
-              Phantom Protocol is a shielded pool and relayer network on BNB Chain
-              that lets you run payroll, manage treasury, and swap assets privately —
-              with per‑wallet reporting keys for auditors, lawyers, and tax tools.
+              Phantom Protocol delivers Confidentiality as a Service (CaaS),
+              providing a high-performance privacy layer designed for the rigorous
+              demands of professional traders, global banking institutions, and
+              secure corporate payroll systems.
             </motion.p>
 
             <motion.div {...fade(0.5)} style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', alignItems: 'center' }}>
-              <a
-                href={DAPP_URL}
-                target="_blank"
-                rel="noopener noreferrer"
+              <Link
+                to="/trade"
                 style={{
                   fontFamily: 'var(--font-mono)',
-                  fontSize: '0.7rem',
+                  fontSize: 'var(--btn-text-size)',
                   letterSpacing: '0.12em',
                   textTransform: 'uppercase',
                   background: 'var(--cyan)',
@@ -84,30 +81,21 @@ const Hero = () => {
                 onMouseEnter={e => { e.target.style.opacity = '0.9'; e.target.style.boxShadow = '0 0 32px rgba(0,229,199,0.4)'; }}
                 onMouseLeave={e => { e.target.style.opacity = '1'; e.target.style.boxShadow = 'none'; }}
               >
-                Open DApp
+                InternalMatching
+              </Link>
+              <a href="#architecture" className="btn-outline">
+                How it works
               </a>
-              <a href="#architecture" className="btn-outline-cyan btn-outline">
-                Explore how it works
+              <a href="#newsletter" className="btn-outline">
+                Subscribe newsletter
               </a>
-              <a href="#features" className="btn-outline">
-                See what you can do
+              <Link to="/relayer" className="btn-outline">
+                Become a relayer
+              </Link>
+              <a href="#investors" className="btn-outline">
+                For investors
               </a>
             </motion.div>
-
-            <motion.p
-              {...fade(0.6)}
-              style={{
-                marginTop: '2.5rem',
-                fontFamily: 'var(--font-mono)',
-                fontSize: 'var(--label-size)',
-                fontWeight: 500,
-                letterSpacing: '0.18em',
-                textTransform: 'uppercase',
-                color: '#ffffff',
-              }}
-            >
-              For banks · institutions · traders · teams
-            </motion.p>
           </div>
 
           {/* Right: Stats */}
@@ -154,11 +142,25 @@ const Hero = () => {
 
       {/* Responsive: hide stats on small screens */}
       <style>{`
-        @media (max-width: 768px) {
-          section > .container > div {
+        @media (max-width: 1366px) {
+          #hero > .container > div {
+            gap: 2rem !important;
+          }
+        }
+        @media (max-width: 1180px) {
+          #hero > .container > div {
             grid-template-columns: 1fr !important;
           }
-          section > .container > div > div:last-child {
+          #hero > .container > div > div:last-child {
+            display: none !important;
+          }
+        }
+        @media (max-width: 768px) {
+          #hero {
+            padding-top: 7rem !important;
+            padding-bottom: 4.5rem !important;
+          }
+          #hero > .container > div > div:last-child {
             display: none !important;
           }
         }

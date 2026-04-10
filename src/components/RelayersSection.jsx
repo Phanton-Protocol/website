@@ -1,35 +1,25 @@
-import { DAPP_URL } from '../config';
+import { motion } from 'framer-motion';
 
 const steps = [
   {
     num: '01',
     title: 'What relayers do',
-    body: 'Users build a zero-knowledge proof (locally or via our prover API). Relayers take the proof and calldata and submit the transaction to the shielded pool contract. Gas is paid from your deposited balance—the circuit deducts the gas amount and sends it to the relayer to pay for the transaction; they may charge a small fee. They never see which notes belong to which user or control anyone’s funds.',
+    body: 'Relayers submit verified private transactions to Phantom on behalf of users and keep execution flow operational across the network. Relayers front the network gas at submission, then the protocol reimburses that gas from user balance rules after settlement.',
   },
   {
     num: '02',
     title: 'What you earn',
-    body: 'Two sources of earnings: (1) Relayer fees — you set a fee (e.g. % or flat) per transaction; users see it in the DApp before confirming. (2) $0.50 on every user deposit you submit (of the $2 deposit fee, $1.50 to treasury, $0.50 to you). (3) Proportional share of the 80% of FHE/internal swap fees that is distributed monthly to stakers; claim via the staking contract.',
+    body: 'Relayers earn $0.50 on each successful deposit submitted to the pool, plus a protocol-fee share from swaps and internal matching based on staking weight.',
   },
   {
     num: '03',
-    title: 'How to stake',
-    body: 'Stake the protocol token (PHN) in the DApp’s Staking Hub. There is a minimum stake required to register as a relayer; the exact amount is shown in the DApp (Staking Hub → Min Stake). Use the same wallet that will run your relayer backend (RELAYER_PRIVATE_KEY). After staking at or above the minimum, your relayer can submit transactions and earn relayer fees plus your share of protocol fees.',
+    title: 'How to become one',
+    body: 'Stake $PPT and meet the minimum threshold shown in relayer onboarding. Then run a relayer node/backend with the same registered wallet to activate relayer status.',
   },
   {
     num: '04',
-    title: 'How to run a relayer',
-    body: 'Run the Phantom backend (or your own server that implements the same API) with a funded wallet. Set RELAYER_PRIVATE_KEY to the private key of the wallet that has staked. Your server will accept /prove requests, submit transactions on-chain, and optionally coordinate with validators. Gas is paid from the user’s balance—the circuit deducts the gas amount and sends it to you to pay for the transaction. You need: a server and stake ≥ min stake in PHN. No special permission is required beyond that.',
-  },
-  {
-    num: '05',
-    title: 'Requirements at a glance',
-    body: 'Protocol token (PHN) to stake; minimum stake amount (see DApp); a wallet to use as relayer (same as staking wallet); a running backend with RELAYER_PRIVATE_KEY set. Gas is paid by the user—deducted from their balance and sent to you to pay for the transaction. The DApp shows total staked, min stake, your stake, and your relayer status.',
-  },
-  {
-    num: '06',
-    title: 'Slashing & safety',
-    body: 'The protocol can slash stake for misbehavior (e.g. submitting invalid proofs or abuse). Relayers that follow the rules and stay online earn fees and reward share; those that are slashed lose part of their stake. Stay compliant and run reliable infrastructure.',
+    title: 'Safety & reliability',
+    body: 'Relayer status is stake-backed. Malicious or abusive behavior can be slashed, while reliable operators remain eligible for reward share.',
   },
 ];
 
@@ -44,13 +34,11 @@ const RelayersSection = () => (
           <em>Stake. Run. Earn.</em>
         </h2>
           <p style={{ color: '#fff', fontSize: 'var(--body-size)', fontWeight: 500, lineHeight: 'var(--body-line)', maxWidth: '680px', marginTop: '1.5rem' }}>
-          Relayers submit proven transactions to Phantom’s shielded pool on behalf of users. A successful relayer receives $0.50 on every user deposit they process ($1.50 to treasury, $0.50 to relayer). FHE and internal swap fees are collected and 80% is distributed monthly to stakers. Gas is paid from the user’s deposited balance—the circuit deducts the gas amount and sends it to the relayer to pay for the transaction. They may charge a relayer fee. Stake the protocol token (PHN) to register as a relayer and earn both <strong style={{ color: '#fff', fontWeight: 600 }}>relayer fees</strong>, <strong style={{ color: '#fff', fontWeight: 600 }}>$0.50 per deposit</strong>, and a <strong style={{ color: '#fff', fontWeight: 600 }}>share of protocol fees</strong> (80% of FHE/internal swap fees distributed monthly to stakers).
+          Relayers submit proven transactions to Phantom on behalf of users. Anyone can become a relayer by staking $PPT tokens and meeting the minimum threshold shown in relayer onboarding.
         </p>
         <div style={{ marginTop: '2rem' }}>
           <a
-            href={DAPP_URL}
-            target="_blank"
-            rel="noopener noreferrer"
+            href="/relayer"
             style={{
               fontFamily: 'var(--font-mono)',
               fontSize: '0.75rem',
@@ -67,10 +55,10 @@ const RelayersSection = () => (
             onMouseEnter={e => { e.target.style.opacity = '0.9'; e.target.style.boxShadow = '0 0 28px rgba(0,229,199,0.35)'; }}
             onMouseLeave={e => { e.target.style.opacity = '1'; e.target.style.boxShadow = 'none'; }}
           >
-            Open DApp — Staking Hub (Become a relayer)
+            Open relayer onboarding
           </a>
           <p style={{ color: 'var(--text-tertiary)', fontSize: '0.8rem', marginTop: '0.75rem' }}>
-            Stake PHN, meet the minimum, and run your relayer. All relayer info and staking is in the DApp.
+            Stake PPT, meet the minimum threshold, and run your relayer node. All relayer info and staking is in relayer onboarding.
           </p>
         </div>
       </div>
@@ -85,7 +73,7 @@ const RelayersSection = () => (
           style={{ padding: '1.5rem', textAlign: 'center' }}
         >
           <div className="mono text-cyan" style={{ fontSize: '0.6rem', letterSpacing: '0.15em', marginBottom: '0.5rem' }}>STAKE</div>
-          <p style={{ color: '#fff', fontSize: 'var(--body-size)', fontWeight: 500, lineHeight: 'var(--body-line)' }}>Stake PHN in the DApp. Meet the minimum to register as a relayer.</p>
+          <p style={{ color: '#fff', fontSize: 'var(--body-size)', fontWeight: 500, lineHeight: 'var(--body-line)' }}>Stake $PPT with the minimum requirement to become part of the relayer node network.</p>
         </motion.div>
         <motion.div
           className="card"
@@ -96,18 +84,7 @@ const RelayersSection = () => (
           style={{ padding: '1.5rem', textAlign: 'center' }}
         >
           <div className="mono text-cyan" style={{ fontSize: '0.6rem', letterSpacing: '0.15em', marginBottom: '0.5rem' }}>EARN</div>
-          <p style={{ color: '#fff', fontSize: 'var(--body-size)', fontWeight: 500, lineHeight: 'var(--body-line)' }}>Relayer fees you set + $0.50 per user deposit you process + 80% of the fee on FHE/internal swaps you submit + your share of protocol fees.</p>
-        </motion.div>
-        <motion.div
-          className="card"
-          initial={{ opacity: 0, y: 12 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ delay: 0.1 }}
-          style={{ padding: '1.5rem', textAlign: 'center' }}
-        >
-          <div className="mono text-cyan" style={{ fontSize: '0.6rem', letterSpacing: '0.15em', marginBottom: '0.5rem' }}>RUN</div>
-          <p style={{ color: '#fff', fontSize: 'var(--body-size)', fontWeight: 500, lineHeight: 'var(--body-line)' }}>Run the backend with your relayer wallet. Gas is paid from users’ balances—the circuit deducts the gas amount and sends it to you to pay for the transaction; you can also earn relayer fees.</p>
+          <p style={{ color: '#fff', fontSize: 'var(--body-size)', fontWeight: 500, lineHeight: 'var(--body-line)' }}>Relayers earn $0.50 on each successful deposit submitted to the pool, plus 80% of platform fees generated from swaps and internal matching.</p>
         </motion.div>
       </div>
 
@@ -134,12 +111,10 @@ const RelayersSection = () => (
       {/* CTA */}
       <div style={{ textAlign: 'center' }}>
         <p style={{ color: '#fff', fontSize: 'var(--body-size)', fontWeight: 500, marginBottom: '1.25rem' }}>
-          Stake PHN, check min stake, and see your relayer status in the DApp.
+          Stake $PPT, check minimum threshold, and see your relayer status in relayer onboarding.
         </p>
         <a
-          href={DAPP_URL}
-          target="_blank"
-          rel="noopener noreferrer"
+          href="/relayer"
           style={{
             fontFamily: 'var(--font-mono)',
             fontSize: '0.7rem',
@@ -156,7 +131,7 @@ const RelayersSection = () => (
           onMouseEnter={e => { e.target.style.opacity = '0.9'; e.target.style.boxShadow = '0 0 28px rgba(0,229,199,0.35)'; }}
           onMouseLeave={e => { e.target.style.opacity = '1'; e.target.style.boxShadow = 'none'; }}
         >
-          Open DApp — Staking Hub & Relayer
+          Open relayer page
         </a>
       </div>
     </div>

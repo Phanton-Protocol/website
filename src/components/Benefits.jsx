@@ -1,3 +1,5 @@
+import { motion } from 'framer-motion';
+
 const benefits = [
   {
     num: '01',
@@ -25,7 +27,13 @@ const benefits = [
   },
   {
     num: '05',
-    title: 'Built for production, not demos',
+    title: 'Banking-grade privacy rails',
+    body: 'Banks(Account holders) and institutions can execute digital transactions, account transfers, and inter-bank settlements while keeping customer data invisible on-chain.',
+    tag: 'BANKS',
+  },
+  {
+    num: '06',
+    title: 'Built for production',
     body: 'Backend-first proving with Rapidsnark where available, snarkjs fallback when not. Same API, safer UX, and room to scale to real company flows.',
     tag: 'ENGINEERING',
   },

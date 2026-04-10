@@ -1,4 +1,5 @@
-import { DAPP_URL } from '../config';
+import { useState } from 'react';
+import { motion } from 'framer-motion';
 
 const useCases = [
   {
@@ -19,7 +20,10 @@ const useCases = [
   },
 ];
 
-const SDKSection = () => (
+const SDKSection = () => {
+  const [showComingSoon, setShowComingSoon] = useState(false);
+
+  return (
   <section className="section" id="sdk">
     <div className="container">
       <div style={{ marginBottom: '4rem' }}>
@@ -82,10 +86,8 @@ const SDKSection = () => (
       </div>
 
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem', alignItems: 'center' }}>
-        <a
-          href="https://github.com/phantomproto"
-          target="_blank"
-          rel="noopener noreferrer"
+        <button
+          type="button"
           style={{
             fontFamily: 'var(--font-mono)',
             fontSize: '0.7rem',
@@ -94,27 +96,66 @@ const SDKSection = () => (
             background: 'var(--cyan)',
             color: '#0a0a0a',
             padding: '0.85rem 1.75rem',
-            textDecoration: 'none',
             fontWeight: 600,
+            border: 'none',
+            cursor: 'pointer',
             transition: 'opacity 0.3s, box-shadow 0.3s',
           }}
+          onClick={() => setShowComingSoon(true)}
           onMouseEnter={e => { e.target.style.opacity = '0.9'; e.target.style.boxShadow = '0 0 28px rgba(0,229,199,0.35)'; }}
           onMouseLeave={e => { e.target.style.opacity = '1'; e.target.style.boxShadow = 'none'; }}
         >
-          SDK & code — GitHub
-        </a>
-        <a
-          href={DAPP_URL}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="btn-outline-cyan btn-outline"
-          style={{ fontSize: '0.7rem', padding: '0.85rem 1.75rem' }}
-        >
-          Try the DApp
-        </a>
+          SDK
+        </button>
       </div>
+
+      {showComingSoon && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setShowComingSoon(false)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0, 0, 0, 0.62)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 2000,
+            padding: '1rem',
+          }}
+        >
+          <div
+            className="card"
+            onClick={e => e.stopPropagation()}
+            style={{
+              width: '100%',
+              maxWidth: '420px',
+              padding: '1.5rem',
+              border: '1px solid var(--border)',
+              background: 'var(--bg-card)',
+            }}
+          >
+            <div className="section-label" style={{ marginBottom: '0.75rem' }}>SDK</div>
+            <h3 style={{ fontFamily: 'var(--font-body)', fontWeight: 700, color: '#fff', marginBottom: '0.5rem' }}>
+              Coming soon
+            </h3>
+            <p style={{ color: 'var(--text-secondary)', marginBottom: '1.25rem' }}>
+              SDK access will be available soon.
+            </p>
+            <button
+              type="button"
+              className="btn-outline btn-outline-cyan"
+              onClick={() => setShowComingSoon(false)}
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   </section>
-);
+  );
+};
 
 export default SDKSection;

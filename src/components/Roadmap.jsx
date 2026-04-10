@@ -1,22 +1,69 @@
+import { motion } from 'framer-motion';
+
 const Roadmap = () => {
     const phases = [
         {
-            num: "01",
-            title: "Genesis Node",
-            desc: "Laying the foundations of privacy-first institutional DeFi. Core architecture and initial cryptographic primitives established.",
-            items: ["Whitepaper v1.0", "ZK-SNARKs Engine Blueprint", "Institutional Framework Design"]
+            num: "Phase 1",
+            completed: true,
+            title: "Confidentiality Engine",
+            desc: "",
+            items: ["Shielded Pool Architectural Flow Design", "ZK Circuit Development", "Mock FHE Design", "Relayer Architecture Build on BNB Testnet"]
         },
         {
-            num: "02",
-            title: "Shielded Pool Init",
-            desc: "FHE-based encrypted matching: orders matched on ciphertext so neither side reveals amount or direction. Real liquidity meets zero-knowledge and fully homomorphic encryption.",
-            items: ["FHE Internal Matching (SEAL)", "Testnet Deployment", "Selective Disclosure Keys"]
+            num: "Phase 2",
+            completed: true,
+            title: "The Confidentiality Rail",
+            desc: "",
+            items: [
+                "Production FHE Matching Implementation",
+                "Merkle Tree Growth Under Live Load",
+                "Fully On-Chain Deposit / Withdraw / Swap Execution",
+                "Mock Payroll System",
+                "Mock Bank Architecture",
+                "Integration Rails for Launch Readiness"
+            ]
         },
         {
-            num: "03",
-            title: "Omnichain Flux",
-            desc: "Scaling privacy across the fragmented multi-chain landscape. Boundless, untraceable liquidity.",
-            items: ["Cross-chain Obfuscation", "DEX Aggregator Integration", "Institutional SDK Release"]
+            num: "Phase 3",
+            current: true,
+            title: "Confidentiality Activation",
+            desc: "",
+            items: ["Testnet Campaigns", "Protocol Stress Testing", "Real Payroll System on Testnet", "Base Chain Addition"]
+        },
+        {
+            num: "Phase 4",
+            title: "Confidentiality Mainnet",
+            desc: "",
+            items: [
+                "Mainnet Go-Live",
+                "Protocol Token Launch",
+                "Relayer Staking on Mainnet",
+                "Protocol Activation on Mainnet",
+                "Additional EVM Chain Expansion",
+                "Payroll System Stress Testing"
+            ]
+        },
+        {
+            num: "Phase 5",
+            title: "Confidentiality Adoption & Expansion",
+            desc: "",
+            items: [
+                "Payroll System Live on Mainnet",
+                "Awareness Campaigns for Organisations",
+                "Bank SaaS Model Stress Testing",
+                "Solana Chain Addition"
+            ]
+        },
+        {
+            num: "Phase 6",
+            title: "Banking SaaS Launch",
+            desc: "",
+            items: [
+                "Banking SaaS Model Launch",
+                "Partnerships with Private Banks",
+                "Partnerships with Public Banks",
+                "BTC Network Integration Research for Phantom Protocol"
+            ]
         }
     ];
 
@@ -44,11 +91,24 @@ const Roadmap = () => {
                                 display: 'grid',
                                 gridTemplateColumns: 'minmax(80px, auto) 1fr',
                                 gap: '3rem',
-                                padding: '3rem 0',
+                                padding: '2rem 0',
                                 borderTop: idx === 0 ? '1px solid var(--border)' : '1px solid rgba(255,255,255,0.03)'
                             }}
                         >
                             <div className="display-lg" style={{ color: 'var(--text-tertiary)', fontSize: 'clamp(3rem, 5vw, 4.5rem)', lineHeight: 0.9 }}>
+                                <span
+                                    style={{
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        width: '1em',
+                                        marginRight: '0.2em',
+                                        color: 'var(--cyan)',
+                                        fontSize: '0.8em'
+                                    }}
+                                >
+                                    {phase.completed ? '✓' : phase.current ? '➜' : ''}
+                                </span>
                                 {phase.num}
                             </div>
                             <div>
@@ -61,16 +121,18 @@ const Roadmap = () => {
                                 }}>
                                     {phase.title}
                                 </h3>
-                                <p style={{
-                                    color: '#fff',
-                                    fontSize: 'var(--body-size)',
-                                    fontWeight: 500,
-                                    lineHeight: 'var(--body-line)',
-                                    maxWidth: '600px',
-                                    marginBottom: '2rem'
-                                }}>
-                                    {phase.desc}
-                                </p>
+                                {phase.desc && (
+                                    <p style={{
+                                        color: '#fff',
+                                        fontSize: 'var(--body-size)',
+                                        fontWeight: 500,
+                                        lineHeight: 'var(--body-line)',
+                                        maxWidth: '600px',
+                                        marginBottom: '2rem'
+                                    }}>
+                                        {phase.desc}
+                                    </p>
+                                )}
                                 <div style={{ display: 'flex', gap: '2rem', flexWrap: 'wrap' }}>
                                     {phase.items.map((item, i) => (
                                         <div key={i} className="mono text-muted" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>

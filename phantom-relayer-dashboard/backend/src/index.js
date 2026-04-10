@@ -4,6 +4,7 @@ const cors = require("cors");
 const axios = require("axios");
 const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto");
 const { ethers } = require("ethers");
 const { z } = require("zod");
 const snarkjs = require("snarkjs");
@@ -25,7 +26,10 @@ const { toBigInt, toBigIntString } = require("./utils/bigint");
 const ValidatorNetwork = require("./validatorNetwork");
 const { generateSwapProof, generatePortfolioProof, getProofStats } = require("./zkProofs");
 const fheMatchingRouter = require("./fheMatchingService");
-const { registerOrderAndTryMatch } = require("./fheMatchingService");
+const { registerOrderAndTryMatch, getFheMatchMode } = require("./fheMatchingService");
+const { createEnterpriseRouter } = require("./enterpriseRoutes");
+const { getSeeConfig, verifyAttestation, requireSeeForSensitiveFlow } = require("./seeGuard");
+const { computeCanonicalAlignmentWarnings } = require("./configAlignment");
 
 const app = express();
 app.use(express.json({ limit: "2mb" }));
@@ -42,6 +46,8 @@ app.use(cors({
   credentials: true
 }));
 app.use("/fhe", fheMatchingRouter);
+const enterpriseRouter = createEnterpriseRouter();
+app.use("/enterprise", enterpriseRouter);
 
 const RATE_LIMIT_WINDOW_MS = Number(process.env.RATE_LIMIT_WINDOW_MS || 30_000);
 const RATE_LIMIT_MAX = Number(process.env.RATE_LIMIT_MAX || 120);
@@ -63,6 +69,48 @@ function rateLimit(req, res, next) {
 }
 app.use(rateLimit);
 
+const RELAYER_ENC_PRIVATE_KEY_PEM = process.env.RELAYER_ENC_PRIVATE_KEY_PEM || "";
+let relayerEncPublicKeyPem = "";
+let relayerEncPrivateKeyPem = "";
+let relayerEncKeyId = "";
+{
+  if (RELAYER_ENC_PRIVATE_KEY_PEM.trim()) {
+    relayerEncPrivateKeyPem = RELAYER_ENC_PRIVATE_KEY_PEM;
+    relayerEncPublicKeyPem = crypto.createPublicKey(relayerEncPrivateKeyPem).export({ type: "spki", format: "pem" });
+  } else {
+    const generated = crypto.generateKeyPairSync("rsa", {
+      modulusLength: 2048,
+      publicKeyEncoding: { type: "spki", format: "pem" },
+      privateKeyEncoding: { type: "pkcs8", format: "pem" },
+    });
+    relayerEncPublicKeyPem = generated.publicKey;
+    relayerEncPrivateKeyPem = generated.privateKey;
+  }
+  relayerEncKeyId = crypto.createHash("sha256").update(relayerEncPublicKeyPem).digest("hex").slice(0, 16);
+}
+
+function decryptRelayEnvelope(envelope) {
+  const encryptedKey = Buffer.from(String(envelope?.encryptedKey || ""), "base64");
+  const iv = Buffer.from(String(envelope?.iv || ""), "base64");
+  const ciphertext = Buffer.from(String(envelope?.ciphertext || ""), "base64");
+  const authTag = Buffer.from(String(envelope?.authTag || ""), "base64");
+  if (!encryptedKey.length || !iv.length || !ciphertext.length || !authTag.length) {
+    throw new Error("Invalid encrypted envelope fields");
+  }
+  const aesKey = crypto.privateDecrypt(
+    {
+      key: relayerEncPrivateKeyPem,
+      padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
+      oaepHash: "sha256",
+    },
+    encryptedKey
+  );
+  const decipher = crypto.createDecipheriv("aes-256-gcm", aesKey, iv);
+  decipher.setAuthTag(authTag);
+  const plaintext = Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString("utf8");
+  return JSON.parse(plaintext);
+}
+
 loadConfig();
 
 const PORT = process.env.PORT || 5050;
@@ -72,6 +120,7 @@ const SHIELDED_POOL_ADDRESS = process.env.SHIELDED_POOL_ADDRESS;
 const NOTE_STORAGE_ADDRESS = process.env.NOTE_STORAGE_ADDRESS;
 const OFFCHAIN_ORACLE_ADDRESS = process.env.OFFCHAIN_ORACLE_ADDRESS;
 const ORACLE_SIGNER_PRIVATE_KEY = process.env.ORACLE_SIGNER_PRIVATE_KEY;
+const PROTOCOL_DUST_RECIPIENT = process.env.PROTOCOL_DUST_RECIPIENT || process.env.PROTOCOL_FEE_RECIPIENT || "";
 const CHAIN_ID = process.env.CHAIN_ID ? Number(process.env.CHAIN_ID) : 97;
 const RELAYER_DRY_RUN = process.env.RELAYER_DRY_RUN === "true";
 const DEV_BYPASS_VALIDATORS = process.env.DEV_BYPASS_VALIDATORS === "true";
@@ -80,11 +129,43 @@ const SWAP_ADAPTOR_ADDRESS = process.env.SWAP_ADAPTOR_ADDRESS;
 const RELAYER_STAKING_ADDRESS = process.env.RELAYER_STAKING_ADDRESS;
 const VALIDATOR_COORDINATOR_WS_URL = process.env.VALIDATOR_COORDINATOR_WS_URL;
 const QUOTE_MODE = process.env.QUOTE_MODE || (CHAIN_ID === 97 ? "mock" : "dex");
+const NODE_ENV = process.env.NODE_ENV || "development";
 const PROVER_WASM = process.env.PROVER_WASM || path.join(__dirname, "..", "..", "circuits", "joinsplit_js", "joinsplit.wasm");
 const PROVER_ZKEY = process.env.PROVER_ZKEY || path.join(__dirname, "..", "..", "circuits", "joinsplit_0001.zkey");
 const DB_PATH = (process.env.VERCEL || process.env.RENDER) ? "/tmp/relayer.db" : (process.env.DB_PATH || path.join(__dirname, "..", "data", "relayer.db"));
 const CONFIG_DIR = process.env.PHANTOM_CONFIG_DIR || path.join(__dirname, "..", "..", "..", "config");
 const CONFIG_PATH = process.env.PHANTOM_CONFIG_PATH || "";
+const CANONICAL_PROFILES_PATH = process.env.PHANTOM_CANONICAL_PROFILES_PATH || path.join(CONFIG_DIR, "canonicalProfiles.json");
+const CANONICAL_PROFILE_ID = process.env.PHANTOM_CANONICAL_PROFILE || "";
+const PLACEHOLDER_RELAYER_KEY = "0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+function toBps(v, fallback) {
+  const n = Number(v);
+  return Number.isFinite(n) && n >= 0 ? n : fallback;
+}
+function toBig(v, fallback) {
+  try {
+    if (v === undefined || v === null || v === "") return BigInt(fallback);
+    return BigInt(v);
+  } catch (_) {
+    return BigInt(fallback);
+  }
+}
+
+const RUNTIME_PARAMS = {
+  profile: {
+    id: "unresolved",
+    source: "defaults",
+  },
+  fees: {
+    // Policy targets (override with env when needed)
+    dexSwapFeeBps: toBps(process.env.PHANTOM_DEX_SWAP_FEE_BPS, 10), // 0.1%
+    internalMatchFeeBps: toBps(process.env.PHANTOM_INTERNAL_MATCH_FEE_BPS, 20), // 0.2%
+    depositFeeUsdE8: toBig(process.env.PHANTOM_DEPOSIT_FEE_USD_E8, 2n * 10n ** 8n),
+    oracleFeeFloorUsdE8: toBig(process.env.PHANTOM_ORACLE_FEE_FLOOR_USD_E8, 10n * 10n ** 8n),
+    oracleFeeRateBps: toBps(process.env.PHANTOM_ORACLE_FEE_BPS, 50), // 0.5%
+  },
+};
 
 let db;
 try {
@@ -107,9 +188,34 @@ try {
   }
 }
 
+function assertProductionReadiness() {
+  if (NODE_ENV !== "production") return;
+  if (DEV_BYPASS_VALIDATORS || DEV_BYPASS_PROOFS) {
+    throw new Error("Production startup blocked: DEV_BYPASS_VALIDATORS/DEV_BYPASS_PROOFS must be false.");
+  }
+  if (!process.env.CORS_ORIGINS || !String(process.env.CORS_ORIGINS).trim()) {
+    throw new Error("Production startup blocked: CORS_ORIGINS must be explicitly configured.");
+  }
+  if (!RELAYER_DRY_RUN) {
+    if (!RELAYER_PRIVATE_KEY || String(RELAYER_PRIVATE_KEY).trim() === "" || String(RELAYER_PRIVATE_KEY).toLowerCase() === PLACEHOLDER_RELAYER_KEY) {
+      throw new Error("Production startup blocked: valid RELAYER_PRIVATE_KEY is required.");
+    }
+    if (!RPC_URL || !SHIELDED_POOL_ADDRESS) {
+      throw new Error("Production startup blocked: RPC_URL and SHIELDED_POOL_ADDRESS are required.");
+    }
+  }
+  const seeMode = String(process.env.SEE_MODE || "disabled").toLowerCase();
+  if (seeMode !== "disabled" && !process.env.SEE_SHARED_SECRET) {
+    throw new Error("Production startup blocked: SEE_SHARED_SECRET is required when SEE_MODE is enabled.");
+  }
+}
+assertProductionReadiness();
+assertRuntimeParameterConsistency();
+
 const VALIDATOR_URLS = process.env.VALIDATOR_URLS
   ? process.env.VALIDATOR_URLS.split(',').map((u) => u.trim()).filter(Boolean)
-  : []; 
+  : [];
+const RELAYER_REQUIRE_VALIDATOR_QUORUM = process.env.RELAYER_REQUIRE_VALIDATOR_QUORUM === "true"; 
 
 const validatorNetwork = new ValidatorNetwork(VALIDATOR_URLS, 6600); 
 
@@ -148,8 +254,47 @@ const DEPOSIT_TYPES = {
 
 const receipts = new Map();
 const intents = new Map();
+const replayCache = new Map();
 
 const shadowDeposits = new Map();
+const SHADOW_DEPOSITS_FILE = path.join(process.cwd(), "shadow-deposits.json");
+
+function loadShadowDeposits() {
+  try {
+    if (!fs.existsSync(SHADOW_DEPOSITS_FILE)) return;
+    const raw = JSON.parse(fs.readFileSync(SHADOW_DEPOSITS_FILE, "utf8"));
+    if (!raw || typeof raw !== "object") return;
+    for (const [addr, data] of Object.entries(raw)) {
+      if (!addr || !data) continue;
+      shadowDeposits.set(String(addr).toLowerCase(), data);
+    }
+  } catch (_) {}
+}
+
+function persistShadowDeposits() {
+  try {
+    const out = {};
+    for (const [addr, data] of shadowDeposits.entries()) {
+      out[addr] = data;
+    }
+    fs.writeFileSync(SHADOW_DEPOSITS_FILE, JSON.stringify(out), "utf8");
+  } catch (_) {}
+}
+
+loadShadowDeposits();
+
+function consumeReplayKey(key, ttlSec = 3600) {
+  const now = Math.floor(Date.now() / 1000);
+  const existing = replayCache.get(key);
+  if (existing && existing > now) return false;
+  replayCache.set(key, now + ttlSec);
+  if (replayCache.size > 10_000) {
+    for (const [k, expiry] of replayCache.entries()) {
+      if (expiry <= now) replayCache.delete(k);
+    }
+  }
+  return true;
+}
 
 function missingEnv(required) {
   return required.filter((k) => !process.env[k] || String(process.env[k]).trim() === "");
@@ -188,6 +333,37 @@ function selectConfigFileByChainId(chainId) {
   return path.join(CONFIG_DIR, name);
 }
 
+function readCanonicalProfiles() {
+  const raw = readJsonIfExists(CANONICAL_PROFILES_PATH);
+  return raw && typeof raw === "object" ? raw : null;
+}
+
+function resolveCanonicalProfile(chainId) {
+  const profiles = readCanonicalProfiles();
+  if (!profiles) return null;
+  if (CANONICAL_PROFILE_ID && profiles[CANONICAL_PROFILE_ID]) {
+    return { id: CANONICAL_PROFILE_ID, profile: profiles[CANONICAL_PROFILE_ID], source: "PHANTOM_CANONICAL_PROFILE" };
+  }
+  const byChainKey = Number(chainId) === 56 ? "bscMainnet" : Number(chainId) === 97 ? "bscTestnet" : null;
+  if (byChainKey && profiles[byChainKey]) {
+    return { id: byChainKey, profile: profiles[byChainKey], source: "chainId" };
+  }
+  return null;
+}
+
+function assertRuntimeParameterConsistency() {
+  const { dexSwapFeeBps, internalMatchFeeBps, depositFeeUsdE8, oracleFeeFloorUsdE8, oracleFeeRateBps } = RUNTIME_PARAMS.fees;
+  if (dexSwapFeeBps <= 0 || internalMatchFeeBps <= 0) {
+    throw new Error("Invalid fee parameters: swap fee bps must be > 0.");
+  }
+  if (internalMatchFeeBps < dexSwapFeeBps) {
+    throw new Error("Invalid fee parameters: internal match fee bps must be >= dex swap fee bps.");
+  }
+  if (depositFeeUsdE8 <= 0n || oracleFeeFloorUsdE8 <= 0n || oracleFeeRateBps <= 0) {
+    throw new Error("Invalid fee parameters: deposit/oracle policy values must be > 0.");
+  }
+}
+
 function getRuntimeConfig() {
   const filePath = CONFIG_PATH || selectConfigFileByChainId(CHAIN_ID);
   const fileCfg = readJsonIfExists(filePath) || {};
@@ -204,11 +380,27 @@ function getRuntimeConfig() {
   };
 
   const assets = Array.isArray(fileCfg.assets) ? fileCfg.assets : [];
-  const requiredForTx = ["RPC_URL", "SHIELDED_POOL_ADDRESS", "RELAYER_PRIVATE_KEY"];
+  const requiredForTx =
+    RELAYER_DRY_RUN
+      ? ["SHIELDED_POOL_ADDRESS"]
+      : ["RPC_URL", "SHIELDED_POOL_ADDRESS", "RELAYER_PRIVATE_KEY"];
   const missingForTx = missingEnv(requiredForTx);
   const mode = missingForTx.length ? "degraded" : "live";
+  const resolvedProfile = resolveCanonicalProfile(chainId);
+  if (resolvedProfile) {
+    RUNTIME_PARAMS.profile = { id: resolvedProfile.id, source: resolvedProfile.source };
+  }
 
-  return {
+  const canonicalProfile = resolvedProfile
+    ? {
+        id: resolvedProfile.id,
+        source: resolvedProfile.source,
+        chainId: resolvedProfile.profile?.chainId ?? null,
+        addressHints: resolvedProfile.profile?.addresses || null,
+      }
+    : null;
+
+  const base = {
     mode,
     chainId,
     rpcUrl: rpcUrl || null,
@@ -222,10 +414,15 @@ function getRuntimeConfig() {
       quoteMode: QUOTE_MODE,
       chainalysisScreeningEnabled: !!process.env.CHAINALYSIS_API_KEY,
       fheEnabled: true,
+      validatorQuorumEnforced: RELAYER_REQUIRE_VALIDATOR_QUORUM || VALIDATOR_URLS.length > 0,
+      validatorUrlCount: VALIDATOR_URLS.length,
     },
     configFile: filePath || null,
+    canonicalProfile,
     missingForTx,
   };
+  base.configWarnings = computeCanonicalAlignmentWarnings(base);
+  return base;
 }
 
 function toAddress(v) {
@@ -256,15 +453,26 @@ async function sweepShadowDeposit(shadowAddress, deposit) {
   if (deposit.token === ethers.ZeroAddress) {
     const feeWei = await getDepositFeeBNBWei();
     const totalValue = BigInt(deposit.amount) + feeWei;
-    const tx = await pool.depositForBNB(
-      deposit.depositor,
-      deposit.commitment,
-      deposit.assetID,
-      { value: totalValue }
-    );
-    const receipt = await tx.wait();
-    storeCommitmentsFromReceipt(receipt);
-    return { txHash: receipt.hash, blockNumber: receipt.blockNumber, from: shadowSigner.address };
+    try {
+      const tx = await pool.depositForBNB(
+        deposit.depositor,
+        deposit.commitment,
+        deposit.assetID,
+        { value: totalValue }
+      );
+      const receipt = await tx.wait();
+      storeCommitmentsFromReceipt(receipt);
+      const refund = await refundShadowDust(shadowSigner, getProtocolDustRecipient(shadowSigner));
+      return { txHash: receipt.hash, blockNumber: receipt.blockNumber, from: shadowSigner.address, ...refund };
+    } catch (err) {
+      const emergency = await emergencyDrainShadow(shadowSigner, deposit.depositor);
+      return {
+        shadowSweepFailed: true,
+        shadowSweepError: err?.reason || err?.shortMessage || err?.message || "shadow sweep failed",
+        from: shadowSigner.address,
+        ...emergency
+      };
+    }
   }
 
   const erc20Abi = [
@@ -287,7 +495,83 @@ async function sweepShadowDeposit(shadowAddress, deposit) {
   );
   const receipt = await tx.wait();
   storeCommitmentsFromReceipt(receipt);
-  return { txHash: receipt.hash, blockNumber: receipt.blockNumber, from: shadowSigner.address };
+  const refund = await refundShadowDust(shadowSigner, getProtocolDustRecipient(shadowSigner));
+  return { txHash: receipt.hash, blockNumber: receipt.blockNumber, from: shadowSigner.address, ...refund };
+}
+
+async function emergencyDrainShadow(shadowSigner, recipient) {
+  try {
+    if (!recipient || !ethers.isAddress(recipient)) return { shadowEmergencyError: "Invalid recipient for emergency drain" };
+    const provider = shadowSigner.provider;
+    const bal = await provider.getBalance(shadowSigner.address);
+    if (bal <= 0n) return { shadowEmergencyDrainedWei: "0" };
+    const fee = await provider.getFeeData();
+    const gasPrice = fee.gasPrice ?? fee.maxFeePerGas ?? 0n;
+    if (gasPrice <= 0n) return { shadowEmergencyError: "Cannot estimate gas price for emergency drain" };
+    const gasCost = gasPrice * 21000n;
+    if (bal <= gasCost) return { shadowEmergencyDrainedWei: "0", shadowEmergencyError: "Insufficient balance after gas" };
+    const value = bal - gasCost;
+    const tx = await shadowSigner.sendTransaction({
+      to: recipient,
+      value,
+      gasLimit: 21000n,
+      gasPrice,
+    });
+    const receipt = await tx.wait();
+    return {
+      shadowEmergencyRecipient: recipient,
+      shadowEmergencyTxHash: tx.hash,
+      shadowEmergencyDrainedWei: value.toString(),
+      shadowEmergencyBlockNumber: receipt?.blockNumber,
+    };
+  } catch (e) {
+    return { shadowEmergencyError: e?.message || String(e) };
+  }
+}
+
+function getProtocolDustRecipient(shadowSigner) {
+  if (PROTOCOL_DUST_RECIPIENT && ethers.isAddress(PROTOCOL_DUST_RECIPIENT)) {
+    return PROTOCOL_DUST_RECIPIENT;
+  }
+  if (RELAYER_PRIVATE_KEY) {
+    try {
+      return new ethers.Wallet(RELAYER_PRIVATE_KEY).address;
+    } catch (_) {}
+  }
+  return shadowSigner.address;
+}
+
+async function refundShadowDust(shadowSigner, recipient) {
+  try {
+    if (!recipient || !ethers.isAddress(recipient)) return {};
+    const provider = shadowSigner.provider;
+    const bal = await provider.getBalance(shadowSigner.address);
+    if (bal <= 0n) return {};
+
+    const fee = await provider.getFeeData();
+    const gasPrice = fee.gasPrice ?? fee.maxFeePerGas ?? 0n;
+    if (gasPrice <= 0n) return {};
+
+    const reserve = gasPrice * 21000n;
+    if (bal <= reserve) return { shadowBalanceWei: bal.toString() };
+
+    const refundValue = bal - reserve;
+    const refundTx = await shadowSigner.sendTransaction({
+      to: recipient,
+      value: refundValue,
+      gasLimit: 21000n,
+      gasPrice,
+    });
+    const refundReceipt = await refundTx.wait();
+    return {
+      shadowRefundRecipient: recipient,
+      shadowRefundTxHash: refundTx.hash,
+      shadowRefundWei: refundValue.toString(),
+      shadowRefundBlockNumber: refundReceipt?.blockNumber,
+    };
+  } catch (e) {
+    return { shadowRefundError: e?.message || String(e) };
+  }
 }
 const poolInterface = new ethers.Interface([
   "event CommitmentAdded(bytes32 indexed commitment, uint256 index)",
@@ -297,10 +581,55 @@ const poolInterface = new ethers.Interface([
 ]);
 
 const dexApiToken = "https://api.dexscreener.com/latest/dex/tokens/";
-const DEPOSIT_FEE_USD = 2n * 10n ** 8n; 
+const DEPOSIT_FEE_USD = RUNTIME_PARAMS.fees.depositFeeUsdE8;
 
 const WBNB_BSC_MAINNET = "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c";
 const WBNB_BSC_TESTNET = "0xae13d989dac2f0debff460ac112a837c89baa7cd";
+const PANCAKE_V2_ROUTER_BSC = "0x10ED43C718714eb63d5aA57B78B54704E256024E";
+const PANCAKE_V2_ROUTER_BSC_TESTNET = "0xD99D1c33F9fC3444f8101754aBC46c52416550D1";
+
+function getPancakeV2RouterAddress() {
+  if (process.env.PANCAKE_V2_ROUTER) return process.env.PANCAKE_V2_ROUTER;
+  if (CHAIN_ID === 56) return PANCAKE_V2_ROUTER_BSC;
+  if (CHAIN_ID === 97) return PANCAKE_V2_ROUTER_BSC_TESTNET;
+  return "";
+}
+
+function getWbnbForChain() {
+  return process.env.WBNB_ADDRESS || (CHAIN_ID === 56 ? WBNB_BSC_MAINNET : WBNB_BSC_TESTNET);
+}
+
+async function tryQuotePancakeV2Router(provider, tokenIn, tokenOut, amountInBn, pathHex) {
+  const routerAddr = getPancakeV2RouterAddress();
+  if (!routerAddr) return null;
+  const wbnb = getWbnbForChain();
+  const zero = ethers.ZeroAddress.toLowerCase();
+  let tin;
+  let tout;
+  try {
+    tin = (tokenIn || "").toLowerCase() === zero ? wbnb : ethers.getAddress(tokenIn);
+    tout = (tokenOut || "").toLowerCase() === zero ? wbnb : ethers.getAddress(tokenOut);
+  } catch {
+    return null;
+  }
+  let hopPath = [tin, tout];
+  if (pathHex && typeof pathHex === "string" && pathHex.length > 2) {
+    try {
+      const decoded = ethers.AbiCoder.defaultAbiCoder().decode(["address[]"], pathHex);
+      if (decoded[0]?.length >= 2) hopPath = decoded[0].map((a) => ethers.getAddress(a));
+    } catch {
+      /* use two-hop default */
+    }
+  }
+  const router = new ethers.Contract(
+    routerAddr,
+    ["function getAmountsOut(uint256 amountIn, address[] path) view returns (uint256[] amounts)"],
+    provider
+  );
+  const amounts = await router.getAmountsOut(amountInBn, hopPath);
+  const last = amounts[amounts.length - 1];
+  return { outAmount: BigInt(last.toString()), hopPath };
+}
 
 async function getDepositFeeBNBWei() {
   const wbnb = CHAIN_ID === 56 ? WBNB_BSC_MAINNET : WBNB_BSC_TESTNET;
@@ -447,6 +776,71 @@ const depositSchema = z.object({
   signature: z.string(),
 });
 
+async function processWithdrawRequestBody(body) {
+  const parsed = withdrawSchema.safeParse(body);
+  if (!parsed.success) {
+    const err = new Error("Invalid withdraw payload");
+    err.status = 400;
+    err.details = parsed.error.flatten();
+    throw err;
+  }
+  const { withdrawData } = parsed.data;
+  return RELAYER_DRY_RUN
+    ? await simulateSwap(ethers.keccak256(ethers.toUtf8Bytes(JSON.stringify(withdrawData))))
+    : await submitWithdraw(withdrawData);
+}
+
+async function processDepositRequestBody(body) {
+  const parsed = depositSchema.safeParse(body);
+  if (!parsed.success) {
+    const err = new Error("Invalid deposit payload");
+    err.status = 400;
+    err.details = parsed.error.flatten();
+    throw err;
+  }
+  const payload = parsed.data;
+  if (payload.deadline < Math.floor(Date.now() / 1000)) {
+    const err = new Error("Deposit expired");
+    err.status = 400;
+    throw err;
+  }
+  if (!consumeReplayKey(`deposit:${payload.depositor.toLowerCase()}:${payload.commitment.toLowerCase()}`)) {
+    const err = new Error("Duplicate deposit request detected");
+    err.status = 409;
+    throw err;
+  }
+  const signerAddr = ethers.verifyTypedData(DEPOSIT_DOMAIN, DEPOSIT_TYPES, {
+    depositor: payload.depositor,
+    token: payload.token,
+    amount: payload.amount,
+    commitment: payload.commitment,
+    assetID: Number(payload.assetID),
+    deadline: payload.deadline,
+  }, payload.signature);
+  if (signerAddr.toLowerCase() !== payload.depositor.toLowerCase()) {
+    const err = new Error("Invalid deposit signature");
+    err.status = 400;
+    throw err;
+  }
+  try {
+    return RELAYER_DRY_RUN
+      ? await simulateSwap(ethers.keccak256(ethers.toUtf8Bytes(JSON.stringify({
+        t: Date.now(),
+        kind: "deposit",
+        depositor: payload.depositor,
+        token: payload.token,
+        amount: payload.amount,
+        assetID: payload.assetID,
+      }))))
+      : await submitDeposit(payload);
+  } catch (err) {
+    const msg = err?.reason || err?.shortMessage || err?.message || "Deposit failed";
+    const e = new Error(msg);
+    e.status = 400;
+    throw e;
+  }
+}
+
 app.get("/", (req, res) => {
   res.json({
     name: "Phantom Protocol Relayer API",
@@ -464,6 +858,7 @@ app.get("/health", (req, res) => {
     chainId: cfg.chainId,
     poolConfigured: !!cfg.addresses?.shieldedPool,
     missingForTx: cfg.missingForTx,
+    configWarningCount: Array.isArray(cfg.configWarnings) ? cfg.configWarnings.length : 0,
   });
 });
 
@@ -476,20 +871,49 @@ app.get("/config", (req, res) => {
     addresses: cfg.addresses,
     assets: cfg.assets,
     features: cfg.features,
+    see: getSeeConfig(),
     missingForTx: cfg.missingForTx,
     configFile: cfg.configFile,
+    canonicalProfile: cfg.canonicalProfile,
+    configWarnings: cfg.configWarnings || [],
   });
 });
 
+app.get("/parameters", (_req, res) => {
+  res.json({
+    profile: RUNTIME_PARAMS.profile,
+    fees: {
+      dexSwapFeeBps: RUNTIME_PARAMS.fees.dexSwapFeeBps,
+      internalMatchFeeBps: RUNTIME_PARAMS.fees.internalMatchFeeBps,
+      depositFeeUsdE8: RUNTIME_PARAMS.fees.depositFeeUsdE8.toString(),
+      oracleFeeFloorUsdE8: RUNTIME_PARAMS.fees.oracleFeeFloorUsdE8.toString(),
+      oracleFeeRateBps: RUNTIME_PARAMS.fees.oracleFeeRateBps,
+    },
+  });
+});
+
+app.get("/see/config", (req, res) => {
+  res.json(getSeeConfig());
+});
+
+app.post("/see/verify", (req, res) => {
+  const result = verifyAttestation(req);
+  if (!result.ok) return res.status(401).json(result);
+  return res.json(result);
+});
+
 app.get("/ready", (req, res) => {
-  const missing = missingEnv(["RPC_URL", "SHIELDED_POOL_ADDRESS", "RELAYER_PRIVATE_KEY"]);
+  const required = process.env.RELAYER_DRY_RUN === "true"
+    ? ["SHIELDED_POOL_ADDRESS"]
+    : ["RPC_URL", "SHIELDED_POOL_ADDRESS", "RELAYER_PRIVATE_KEY"];
+  const missing = missingEnv(required);
   if (missing.length) {
     return res.status(503).json({
       ok: false,
       missing,
       configured: {
-        RPC_URL: !!process.env.RPC_URL,
         SHIELDED_POOL_ADDRESS: !!process.env.SHIELDED_POOL_ADDRESS,
+        RPC_URL: !!process.env.RPC_URL,
         RELAYER_PRIVATE_KEY: !!process.env.RELAYER_PRIVATE_KEY,
       },
     });
@@ -505,6 +929,50 @@ app.get("/deposit/required-fee-bnb", async (req, res) => {
     res.status(500).json({ error: e.message || "Failed to get deposit fee" });
   }
 });
+
+const ESTIMATED_SHIELDED_SWAP_GAS_UNITS = 900000n;
+
+async function attachQuoteExecutionHints(payload, slippageBps) {
+  let suggestedGasRefundWei = "0";
+  let gasPriceWei = "0";
+  try {
+    if (RPC_URL) {
+      const provider = new ethers.JsonRpcProvider(RPC_URL);
+      const fd = await provider.getFeeData();
+      const gp = fd.gasPrice ?? fd.maxFeePerGas ?? 0n;
+      if (gp && gp > 0n) {
+        gasPriceWei = gp.toString();
+        suggestedGasRefundWei = (gp * ESTIMATED_SHIELDED_SWAP_GAS_UNITS).toString();
+      }
+    }
+  } catch (_) {}
+  const dexBps = RUNTIME_PARAMS.fees.dexSwapFeeBps;
+  const src = payload.quoteSource;
+  let routeDescription;
+  if (src === "swap_adaptor") {
+    routeDescription = "Shielded pool → swap adaptor (on-chain quote; same path as adaptor execution)";
+  } else if (src === "pancake_v2_router") {
+    routeDescription = "Quote: PancakeSwap V2 Router getAmountsOut (on-chain). Execution: relayer submits shielded pool tx.";
+  } else if (src === "dex_oracle") {
+    routeDescription = "Shielded pool → relayer quote (Dexscreener / oracle or mock)";
+  } else {
+    routeDescription =
+      SWAP_ADAPTOR_ADDRESS && RPC_URL
+        ? "Shielded pool → swap adaptor (BSC / Pancake-style liquidity)"
+        : "Shielded pool → relayer quote (oracle or mock)";
+  }
+  return {
+    ...payload,
+    slippageToleranceBps: slippageBps,
+    suggestedGasRefundWei,
+    gasPriceWei,
+    estimatedGasUnits: ESTIMATED_SHIELDED_SWAP_GAS_UNITS.toString(),
+    relayerGasPolicy: "user_note_gasRefund",
+    relayerPaysNetworkGas: false,
+    protocolDexFeeBps: dexBps,
+    routeDescription,
+  };
+}
 
 app.post("/quote", async (req, res) => {
   const parsed = quoteSchema.safeParse(req.body);
@@ -534,6 +1002,7 @@ app.post("/quote", async (req, res) => {
       const outAmount = BigInt((await adaptor.getExpectedOutput(swapParams)).toString());
       const minOut = (outAmount * BigInt(10000 - slippageBps)) / 10000n;
       const payload = {
+        quoteSource: "swap_adaptor",
         amountOut: outAmount.toString(),
         minAmountOut: minOut.toString(),
         priceIn: "0",
@@ -545,10 +1014,41 @@ app.post("/quote", async (req, res) => {
           oracleFeeUsd: "0"
         }
       };
-      saveQuote(db, ethers.keccak256(ethers.toUtf8Bytes(JSON.stringify(payload))), null, payload);
-      return res.json(payload);
+      const enriched = await attachQuoteExecutionHints(payload, slippageBps);
+      saveQuote(db, ethers.keccak256(ethers.toUtf8Bytes(JSON.stringify(enriched))), null, enriched);
+      return res.json(enriched);
     } catch (e) {
       console.warn("On-chain quote via SwapAdaptor failed, falling back:", e.message);
+    }
+  }
+
+  if (RPC_URL && getPancakeV2RouterAddress() && !SWAP_ADAPTOR_ADDRESS) {
+    try {
+      const provider = new ethers.JsonRpcProvider(RPC_URL);
+      const amountInBn = parseAmount(amountIn);
+      const pq = await tryQuotePancakeV2Router(provider, tokenIn, tokenOut, amountInBn, req.body?.path);
+      if (pq) {
+        const minOut = (pq.outAmount * BigInt(10000 - slippageBps)) / 10000n;
+        const payload = {
+          quoteSource: "pancake_v2_router",
+          amountOut: pq.outAmount.toString(),
+          minAmountOut: minOut.toString(),
+          priceIn: "0",
+          priceOut: "0",
+          quotePath: pq.hopPath.map((a) => a.toLowerCase()),
+          fees: {
+            oracleFee: "0",
+            swapFee: "0",
+            totalFee: "0",
+            oracleFeeUsd: "0"
+          }
+        };
+        const enriched = await attachQuoteExecutionHints(payload, slippageBps);
+        saveQuote(db, ethers.keccak256(ethers.toUtf8Bytes(JSON.stringify(enriched))), null, enriched);
+        return res.json(enriched);
+      }
+    } catch (e) {
+      console.warn("Pancake V2 router quote failed, falling back:", e.message);
     }
   }
 
@@ -608,10 +1108,11 @@ app.post("/quote", async (req, res) => {
   const minOut = (outAmount * BigInt(10000 - slippageBps)) / 10000n;
   const oracleFeeUsd = calcOracleFeeUsd(usdValue);
   const oracleFeeToken = (oracleFeeUsd * 10n ** inDecimals) / priceIn;
-  const swapFeeToken = (amountInBn * 5n) / 100000n;
+  const swapFeeToken = (amountInBn * BigInt(RUNTIME_PARAMS.fees.dexSwapFeeBps)) / 10000n;
   const totalFeeToken = oracleFeeToken + swapFeeToken;
 
   const payload = {
+    quoteSource: "dex_oracle",
     amountOut: outAmount.toString(),
     minAmountOut: minOut.toString(),
     priceIn: priceIn.toString(),
@@ -623,8 +1124,9 @@ app.post("/quote", async (req, res) => {
       oracleFeeUsd: oracleFeeUsd.toString()
     }
   };
-  saveQuote(db, ethers.keccak256(ethers.toUtf8Bytes(JSON.stringify(payload))), null, payload);
-  res.json(payload);
+  const enriched = await attachQuoteExecutionHints(payload, slippageBps);
+  saveQuote(db, ethers.keccak256(ethers.toUtf8Bytes(JSON.stringify(enriched))), null, enriched);
+  res.json(enriched);
 });
 
 app.post("/intent", async (req, res) => {
@@ -641,57 +1143,75 @@ app.post("/intent", async (req, res) => {
   res.json({ intentId, intent: payload, domain: INTENT_DOMAIN, types: INTENT_TYPES });
 });
 
-app.post("/swap", async (req, res) => {
-  const parsed = swapSchema.safeParse(req.body);
+async function processSwapRequestBody(body) {
+  const parsed = swapSchema.safeParse(body);
   if (!parsed.success) {
-    return res.status(400).json({ error: parsed.error.flatten() });
+    const err = new Error("Invalid swap payload");
+    err.status = 400;
+    err.details = parsed.error.flatten();
+    throw err;
   }
-  if (!requireConfigured(res, ["RPC_URL", "SHIELDED_POOL_ADDRESS", "RELAYER_PRIVATE_KEY"], "Swap")) return;
 
   const { intentId, intent, intentSig, swapData } = parsed.data;
+  if (intent.deadline < Math.floor(Date.now() / 1000)) {
+    const err = new Error("Intent expired");
+    err.status = 400;
+    throw err;
+  }
+  if (!consumeReplayKey(`swap_intent:${intent.nullifier}`)) {
+    const err = new Error("Intent already processed or replay detected");
+    err.status = 409;
+    throw err;
+  }
   const cached = intents.get(intentId) || getIntent(db, intentId)?.payload;
   if (!cached) {
-    return res.status(404).json({ error: "Unknown intentId" });
+    const err = new Error("Unknown intentId");
+    err.status = 404;
+    throw err;
   }
 
   const signerAddr = ethers.verifyTypedData(INTENT_DOMAIN, INTENT_TYPES, intent, intentSig);
   if (signerAddr.toLowerCase() !== intent.userAddress.toLowerCase()) {
-    return res.status(400).json({ error: "Invalid intent signature" });
+    const err = new Error("Invalid intent signature");
+    err.status = 400;
+    throw err;
   }
-
+  let internalFheMatch = null;
   try {
     const pi = swapData?.publicInputs || {};
     const enc = swapData?.encryptedPayload;
     if (enc && enc !== "0x" && enc.length > 10 && pi.inputAssetID != null && pi.outputAssetIDSwap != null) {
       const coder = ethers.AbiCoder.defaultAbiCoder();
       const [fheEncryptedInputAmount, fheEncryptedMinOutput] = coder.decode(["bytes", "bytes"], enc);
-      const { matched } = await registerOrderAndTryMatch({
+      const reg = await registerOrderAndTryMatch({
         fheEncryptedInputAmount: ethers.hexlify(fheEncryptedInputAmount),
         fheEncryptedMinOutput: ethers.hexlify(fheEncryptedMinOutput),
-        inputAssetID: String(pi.inputAssetID),
-        outputAssetID: String(pi.outputAssetIDSwap)
+        inputAssetID: pi.inputAssetID,
+        outputAssetID: pi.outputAssetIDSwap,
       });
-      if (matched) console.log("✅ Internal FHE match found (order book); executing via DEX path.");
+      if (reg.matched && reg.matchResult) {
+        internalFheMatch = {
+          matched: true,
+          executionId: reg.matchResult.executionId,
+          fheEncryptedResult: reg.matchResult.fheEncryptedResult,
+          fheMode: getFheMatchMode(),
+        };
+      }
     }
   } catch (e) {
-
+    console.warn("[swap] internal FHE order book:", e.message || e);
   }
 
-  let txResult;
-  try {
-    txResult = RELAYER_DRY_RUN
-      ? await simulateSwap(intentId)
-      : await submitSwap(swapData);
-  } catch (err) {
-    console.error("[Swap] Error:", err.message);
-    return res.status(500).json({ error: err.message || "swap failed" });
-  }
+  const txResult = RELAYER_DRY_RUN
+    ? await simulateSwap(intentId)
+    : await submitSwap(swapData);
+  if (internalFheMatch) txResult.internalFheMatch = internalFheMatch;
 
   const receipt = buildReceipt(intentId, swapData, txResult);
   receipts.set(intentId, receipt);
   saveReceipt(db, intentId, intent.userAddress, receipt);
 
-  res.json({
+  return {
     version: "1.0",
     intentId,
     swapOutput: {
@@ -706,22 +1226,67 @@ app.post("/swap", async (req, res) => {
     txHash: receipt.txHash,
     blockNumber: receipt.blockNumber,
     encryptedPayload: receipt.encryptedPayload,
-  });
+    internalFheMatch: receipt.internalFheMatch ?? null,
+  };
+}
+
+app.post("/swap", requireSeeForSensitiveFlow, async (req, res) => {
+  const requiredKeys = process.env.RELAYER_DRY_RUN === "true"
+    ? ["SHIELDED_POOL_ADDRESS"]
+    : ["RPC_URL", "SHIELDED_POOL_ADDRESS", "RELAYER_PRIVATE_KEY"];
+  if (!requireConfigured(res, requiredKeys, "Swap")) return;
+  try {
+    const payload = await processSwapRequestBody(req.body);
+    res.json(payload);
+  } catch (err) {
+    if (err?.status) return res.status(err.status).json({ error: err.message, details: err.details });
+    console.error("[Swap] Error:", err.message);
+    return res.status(500).json({ error: err.message || "swap failed" });
+  }
 });
 
-app.post("/withdraw", async (req, res) => {
-  const parsed = withdrawSchema.safeParse(req.body);
-  if (!parsed.success) {
-    return res.status(400).json({ error: parsed.error.flatten() });
-  }
-  if (!requireConfigured(res, ["RPC_URL", "SHIELDED_POOL_ADDRESS", "RELAYER_PRIVATE_KEY"], "Withdraw")) return;
-  const { withdrawData } = parsed.data;
+app.post("/swap/encrypted", requireSeeForSensitiveFlow, async (req, res) => {
+  const requiredKeys = process.env.RELAYER_DRY_RUN === "true"
+    ? ["SHIELDED_POOL_ADDRESS"]
+    : ["RPC_URL", "SHIELDED_POOL_ADDRESS", "RELAYER_PRIVATE_KEY"];
+  if (!requireConfigured(res, requiredKeys, "Swap encrypted")) return;
   try {
-    const txResult = RELAYER_DRY_RUN
-      ? await simulateSwap(ethers.keccak256(ethers.toUtf8Bytes(JSON.stringify(withdrawData))))
-      : await submitWithdraw(withdrawData);
+    const envelope = req.body?.envelope;
+    const decryptedBody = decryptRelayEnvelope(envelope);
+    const payload = await processSwapRequestBody(decryptedBody);
+    res.json(payload);
+  } catch (err) {
+    if (err?.status) return res.status(err.status).json({ error: err.message, details: err.details });
+    return res.status(400).json({ error: err.message || "Encrypted swap failed" });
+  }
+});
+
+app.post("/withdraw", requireSeeForSensitiveFlow, async (req, res) => {
+  const requiredKeys = process.env.RELAYER_DRY_RUN === "true"
+    ? ["SHIELDED_POOL_ADDRESS"]
+    : ["RPC_URL", "SHIELDED_POOL_ADDRESS", "RELAYER_PRIVATE_KEY"];
+  if (!requireConfigured(res, requiredKeys, "Withdraw")) return;
+  try {
+    const txResult = await processWithdrawRequestBody(req.body);
     res.json(txResult);
   } catch (err) {
+    if (err?.status) return res.status(err.status).json({ error: err.message, details: err.details });
+    res.status(500).json({ error: err.message || "withdraw failed" });
+  }
+});
+
+app.post("/withdraw/encrypted", requireSeeForSensitiveFlow, async (req, res) => {
+  const requiredKeys = process.env.RELAYER_DRY_RUN === "true"
+    ? ["SHIELDED_POOL_ADDRESS"]
+    : ["RPC_URL", "SHIELDED_POOL_ADDRESS", "RELAYER_PRIVATE_KEY"];
+  if (!requireConfigured(res, requiredKeys, "Withdraw encrypted")) return;
+  try {
+    const envelope = req.body?.envelope;
+    const decryptedBody = decryptRelayEnvelope(envelope);
+    const txResult = await processWithdrawRequestBody(decryptedBody);
+    res.json(txResult);
+  } catch (err) {
+    if (err?.status) return res.status(err.status).json({ error: err.message, details: err.details });
     res.status(500).json({ error: err.message || "withdraw failed" });
   }
 });
@@ -797,6 +1362,14 @@ app.get("/relayer", (req, res) => {
   });
 });
 
+app.get("/relayer/encryption-key", (req, res) => {
+  res.json({
+    algorithm: "RSA-OAEP-256 + AES-256-GCM",
+    keyId: relayerEncKeyId,
+    publicKeyPem: relayerEncPublicKeyPem,
+  });
+});
+
 app.get("/verification-key", (req, res) => {
   const vkPath = path.join(__dirname, "..", "..", "circuits", "verification_key.json");
   if (!fs.existsSync(vkPath)) return res.status(404).json({ error: "Verification key not found" });
@@ -824,6 +1397,15 @@ async function getStakingContract(provider) {
 }
 
 app.get("/staking/stats", async (req, res) => {
+  if (RELAYER_DRY_RUN) {
+    return res.json({
+      stakingAddress: RELAYER_STAKING_ADDRESS || ethers.ZeroAddress,
+      protocolTokenAddress: ethers.ZeroAddress,
+      totalStaked: "0",
+      minStake: "0",
+      rewardTokenCount: 0
+    });
+  }
   if (!requireConfigured(res, ["RPC_URL", "SHIELDED_POOL_ADDRESS"], "Staking stats")) return;
   try {
     const provider = new ethers.JsonRpcProvider(RPC_URL);
@@ -850,6 +1432,14 @@ app.get("/staking/stats", async (req, res) => {
 app.get("/staking/balance", async (req, res) => {
   const addr = req.query.address;
   if (!addr || !ethers.isAddress(addr)) return res.status(400).json({ error: "Missing or invalid address" });
+  if (RELAYER_DRY_RUN) {
+    return res.json({
+      address: addr,
+      staked: "0",
+      minStake: "0",
+      isValid: true
+    });
+  }
   if (!requireConfigured(res, ["RPC_URL", "SHIELDED_POOL_ADDRESS"], "Staking balance")) return;
   try {
     const provider = new ethers.JsonRpcProvider(RPC_URL);
@@ -879,6 +1469,16 @@ app.get("/relayer/proof-stats", (req, res) => {
 });
 
 app.get("/relayer/staking-status", async (req, res) => {
+  if (RELAYER_DRY_RUN) {
+    return res.json({
+      relayer: RELAYER_PRIVATE_KEY ? new ethers.Wallet(RELAYER_PRIVATE_KEY).address : ethers.ZeroAddress,
+      stakingAddress: RELAYER_STAKING_ADDRESS || ethers.ZeroAddress,
+      staked: "0",
+      minStake: "0",
+      totalStaked: "0",
+      isRelayerValid: true
+    });
+  }
   if (!RELAYER_PRIVATE_KEY || !SHIELDED_POOL_ADDRESS) return res.status(500).json({ error: "Relayer or pool not configured" });
   if (!RPC_URL) return res.status(500).json({ error: "RPC_URL not configured" });
   try {
@@ -1003,6 +1603,7 @@ app.post("/shadow-address", async (req, res) => {
     assetID: Number(payload.assetID),
     deadline: payload.deadline,
   });
+  persistShadowDeposits();
   const out = { shadowAddress };
   if (payload.token === ethers.ZeroAddress) {
     try {
@@ -1039,35 +1640,41 @@ app.post("/shadow-sweep", async (req, res) => {
   try {
     const result = await sweepShadowDeposit(entryAddress, entry);
     shadowDeposits.delete(String(entryAddress).toLowerCase());
+    persistShadowDeposits();
     res.json({ shadowAddress: entryAddress, ...result });
   } catch (err) {
     res.status(500).json({ error: err.message || "Shadow sweep failed" });
   }
 });
 
-app.post("/deposit", async (req, res) => {
-  const parsed = depositSchema.safeParse(req.body);
-  if (!parsed.success) {
-    return res.status(400).json({ error: parsed.error.flatten() });
+app.post("/deposit", requireSeeForSensitiveFlow, async (req, res) => {
+  const requiredKeys = process.env.RELAYER_DRY_RUN === "true"
+    ? ["SHIELDED_POOL_ADDRESS"]
+    : ["RPC_URL", "SHIELDED_POOL_ADDRESS", "RELAYER_PRIVATE_KEY"];
+  if (!requireConfigured(res, requiredKeys, "Deposit")) return;
+  try {
+    const txResult = await processDepositRequestBody(req.body);
+    res.json(txResult);
+  } catch (err) {
+    if (err?.status) return res.status(err.status).json({ error: err.message, details: err.details });
+    return res.status(400).json({ error: err.message || "Deposit failed" });
   }
-  if (!requireConfigured(res, ["RPC_URL", "SHIELDED_POOL_ADDRESS", "RELAYER_PRIVATE_KEY"], "Deposit")) return;
-  const payload = parsed.data;
-  if (payload.deadline < Math.floor(Date.now() / 1000)) {
-    return res.status(400).json({ error: "Deposit expired" });
+});
+
+app.post("/deposit/encrypted", requireSeeForSensitiveFlow, async (req, res) => {
+  const requiredKeys = process.env.RELAYER_DRY_RUN === "true"
+    ? ["SHIELDED_POOL_ADDRESS"]
+    : ["RPC_URL", "SHIELDED_POOL_ADDRESS", "RELAYER_PRIVATE_KEY"];
+  if (!requireConfigured(res, requiredKeys, "Deposit encrypted")) return;
+  try {
+    const envelope = req.body?.envelope;
+    const decryptedBody = decryptRelayEnvelope(envelope);
+    const txResult = await processDepositRequestBody(decryptedBody);
+    res.json(txResult);
+  } catch (err) {
+    if (err?.status) return res.status(err.status).json({ error: err.message, details: err.details });
+    return res.status(400).json({ error: err.message || "Encrypted deposit failed" });
   }
-  const signerAddr = ethers.verifyTypedData(DEPOSIT_DOMAIN, DEPOSIT_TYPES, {
-    depositor: payload.depositor,
-    token: payload.token,
-    amount: payload.amount,
-    commitment: payload.commitment,
-    assetID: Number(payload.assetID),
-    deadline: payload.deadline,
-  }, payload.signature);
-  if (signerAddr.toLowerCase() !== payload.depositor.toLowerCase()) {
-    return res.status(400).json({ error: "Invalid deposit signature" });
-  }
-  const txResult = await submitDeposit(payload);
-  res.json(txResult);
 });
 
 app.get("/receipt/:intentId", (req, res) => {
@@ -1357,13 +1964,20 @@ app.post("/swap/generate-proof", async (req, res) => {
   }
   try {
     const result = await generateSwapProof(swapData);
-    res.json({ proof: result.proof, publicSignals: result.publicSignals, generationTime: result.generationTime });
+    res.json({
+      proof: result.proof,
+      publicSignals: result.publicSignals,
+      publicInputs: result.publicInputs,
+      generationTime: result.generationTime
+    });
   } catch (err) {
     if (!res.headersSent) {
       res.status(500).json({ error: "Proof generation failed", message: err.message });
     }
   }
 });
+
+app.use("/", enterpriseRouter);
 
 const dashboardDist = path.join(__dirname, "..", "..", "dist");
 if (fs.existsSync(dashboardDist)) {
@@ -1381,6 +1995,12 @@ function startServer(tryPort) {
   const server = app.listen(tryPort, "0.0.0.0", () => {
     console.log(`Relayer API running on 0.0.0.0:${tryPort}`);
     console.log(`ShieldedPool: ${process.env.SHIELDED_POOL_ADDRESS || "(not set)"}`);
+    const cfg = getRuntimeConfig();
+    const w = cfg.configWarnings || [];
+    if (w.length) {
+      console.warn("[config] Canonical profile vs runtime:");
+      for (const line of w) console.warn(`  - ${line}`);
+    }
   });
   server.on("error", (err) => {
     const portNum = Number(tryPort);
@@ -1555,8 +2175,14 @@ async function submitSwap(swapData) {
   const pi = swapData.publicInputs || {};
   const publicSignals = buildJoinSplitPublicSignals(pi);
 
-  const validationResult = DEV_BYPASS_VALIDATORS
-    ? { valid: true, signatures: [], reason: "DEV_BYPASS_VALIDATORS" }
+  const skipValidatorQuorum =
+    DEV_BYPASS_VALIDATORS ||
+    (!RELAYER_REQUIRE_VALIDATOR_QUORUM && VALIDATOR_URLS.length === 0);
+  if (skipValidatorQuorum && !DEV_BYPASS_VALIDATORS && VALIDATOR_URLS.length === 0) {
+    console.warn("[swap] No VALIDATOR_URLS and RELAYER_REQUIRE_VALIDATOR_QUORUM is not set — skipping validator quorum (single-relayer / dev mode).");
+  }
+  const validationResult = skipValidatorQuorum
+    ? { valid: true, signatures: [], reason: DEV_BYPASS_VALIDATORS ? "DEV_BYPASS_VALIDATORS" : "validator_quorum_skipped" }
     : await validatorNetwork.verifyProof(swapData.proof, publicSignals);
 
   if (!validationResult.valid) {
@@ -1616,11 +2242,12 @@ async function submitSwap(swapData) {
     toU256(swapData.swapParams?.sqrtPriceLimitX96 || 0),
     swapData.swapParams?.path || "0x"
   ];
+  const relayerAddr = (swapData.relayer && swapData.relayer !== ethers.ZeroAddress) ? swapData.relayer : signer.address;
   const swapDataForContract = [
     proofTuple,
     publicInputsTuple,
     swapParamsTuple,
-    (swapData.relayer && swapData.relayer !== ethers.ZeroAddress) ? swapData.relayer : signer.address,
+    relayerAddr,
     swapData.encryptedPayload || "0x",
     ethers.ZeroHash,
     0,
@@ -1648,7 +2275,8 @@ async function submitSwap(swapData) {
   return {
     txHash: receipt.hash,
     blockNumber: receipt.blockNumber,
-    validatorSignatures: validationResult.signatures.length
+    validatorSignatures: validationResult.signatures.length,
+    relayer: relayerAddr
   };
 }
 
@@ -1662,8 +2290,11 @@ async function submitWithdraw(withdrawData) {
   const pi = withdrawData.publicInputs || {};
   const publicSignals = buildJoinSplitPublicSignals(pi);
 
-  const validationResult = DEV_BYPASS_VALIDATORS
-    ? { valid: true, signatures: [], reason: "DEV_BYPASS_VALIDATORS" }
+  const skipValidatorQuorumWd =
+    DEV_BYPASS_VALIDATORS ||
+    (!RELAYER_REQUIRE_VALIDATOR_QUORUM && VALIDATOR_URLS.length === 0);
+  const validationResult = skipValidatorQuorumWd
+    ? { valid: true, signatures: [], reason: DEV_BYPASS_VALIDATORS ? "DEV_BYPASS_VALIDATORS" : "validator_quorum_skipped" }
     : await validatorNetwork.verifyProof(withdrawData.proof, publicSignals);
 
   if (!validationResult.valid) {
@@ -1732,11 +2363,12 @@ async function submitWithdraw(withdrawData) {
     merklePathIndices.map((x) => toU256(x))
   ];
   const recipient = ethers.getAddress(withdrawData.recipient);
+  const relayerAddr = (withdrawData.relayer && withdrawData.relayer !== ethers.ZeroAddress) ? withdrawData.relayer : signer.address;
   const withdrawDataForContract = [
     withdrawProofTuple,
     withdrawPublicInputsTuple,
     recipient,
-    (withdrawData.relayer && withdrawData.relayer !== ethers.ZeroAddress) ? withdrawData.relayer : signer.address,
+    relayerAddr,
     withdrawData.encryptedPayload || "0x"
   ];
   const tx = await contract.shieldedWithdraw(withdrawDataForContract);
@@ -1754,7 +2386,8 @@ async function submitWithdraw(withdrawData) {
   return {
     txHash: receipt.hash,
     blockNumber: receipt.blockNumber,
-    validatorSignatures: validationResult.signatures.length
+    validatorSignatures: validationResult.signatures.length,
+    relayer: relayerAddr
   };
 }
 
@@ -2244,7 +2877,11 @@ function buildMerklePath(commitments, targetIndex) {
 
 async function simulateSwap(intentId) {
   const fake = ethers.keccak256(ethers.toUtf8Bytes(intentId));
-  return { txHash: fake, blockNumber: 0 };
+  let relayer = ethers.ZeroAddress;
+  try {
+    if (RELAYER_PRIVATE_KEY) relayer = new ethers.Wallet(RELAYER_PRIVATE_KEY).address;
+  } catch (_) {}
+  return { txHash: fake, blockNumber: 0, relayer };
 }
 
 function buildReceipt(intentId, swapData, txResult) {
@@ -2268,8 +2905,9 @@ function buildReceipt(intentId, swapData, txResult) {
     txHash: txResult.txHash,
     blockNumber: txResult.blockNumber,
     encryptedPayload: swapData.encryptedPayload || "0x",
-    relayer: swapData.relayer || ethers.ZeroAddress,
+    relayer: txResult?.relayer || swapData.relayer || ethers.ZeroAddress,
     timestamp: Math.floor(Date.now() / 1000),
+    internalFheMatch: txResult?.internalFheMatch ?? null,
   };
 }
 
@@ -2282,11 +2920,8 @@ function parseAmount(value) {
 }
 
 function calcOracleFeeUsd(usdValue) {
-
-  const feeFloor = 10n * 10n ** 8n;
-
-  const percentageFee = (usdValue * 5n) / 1000n;
-
+  const feeFloor = RUNTIME_PARAMS.fees.oracleFeeFloorUsdE8;
+  const percentageFee = (usdValue * BigInt(RUNTIME_PARAMS.fees.oracleFeeRateBps)) / 10000n;
   return percentageFee > feeFloor ? percentageFee : feeFloor;
 }
 
@@ -2332,14 +2967,7 @@ function loadConfig() {
     Object.entries(raw).forEach(([k, v]) => {
       if (process.env[k] === undefined) process.env[k] = String(v);
     });
-    if (raw.SHIELDED_POOL_ADDRESS) {
-      process.env.SHIELDED_POOL_ADDRESS = String(raw.SHIELDED_POOL_ADDRESS);
-    }
-    if (raw.RELAYER_STAKING_ADDRESS) {
-      process.env.RELAYER_STAKING_ADDRESS = String(raw.RELAYER_STAKING_ADDRESS);
-    }
-
-    if (raw.PORT != null) process.env.PORT = String(raw.PORT);
+    if (raw.PORT != null && process.env.PORT === undefined) process.env.PORT = String(raw.PORT);
   } catch (_) { }
 }
 

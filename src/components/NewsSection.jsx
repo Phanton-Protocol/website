@@ -1,26 +1,9 @@
-import { BLOG_URL } from '../config';
+import { Link } from 'react-router-dom';
+import { motion } from 'framer-motion';
+import { blogPosts } from '../data/blogPosts';
 
 const NewsSection = () => {
-    const newsItems = [
-        {
-            title: "Phantom shielded pool live on BNB Testnet",
-            date: "FEB 24, 2026",
-            category: "ANNOUNCEMENT",
-            excerpt: "The first public deployment of the Phantom shielded pool and relayer is now available on BNB Chain testnet for early users and integration partners."
-        },
-        {
-            title: "Per‑wallet reporting keys for tax and audit",
-            date: "FEB 20, 2026",
-            category: "PRODUCT",
-            excerpt: "Users and companies can now generate revocable keys that expose only one wallet’s history — ideal for accountants, lawyers, and compliance teams."
-        },
-        {
-            title: "Payroll runs from the shielded pool",
-            date: "FEB 15, 2026",
-            category: "USE CASE",
-            excerpt: "Phantom introduces a wallet‑only payroll flow: fund once, create a run, and send out salaries from the pool while keeping public salary data off‑chain."
-        }
-    ];
+    const newsItems = blogPosts.slice(0, 3);
 
     return (
         <section className="section" id="news">
@@ -32,17 +15,15 @@ const NewsSection = () => {
                             Latest<br /><em>broadcasts.</em>
                         </h2>
                     </div>
-                    <a href={BLOG_URL} target="_blank" rel="noopener noreferrer" className="btn-outline">
+                    <Link to="/blog" className="btn-outline">
                         View All Logs
-                    </a>
+                    </Link>
                 </div>
 
                 <div style={{ display: 'flex', flexDirection: 'column' }}>
                     {newsItems.map((news, idx) => (
                         <motion.a
-                            href={BLOG_URL}
-                            target="_blank"
-                            rel="noopener noreferrer"
+                            href={`/blog/${news.slug}`}
                             key={idx}
                             initial={{ opacity: 0, y: 20 }}
                             whileInView={{ opacity: 1, y: 0 }}

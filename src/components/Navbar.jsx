@@ -1,30 +1,108 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { DAPP_URL } from '../config';
-import logoImg from '../assets/logo.jpg';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { EPAPER_PUBLIC_URL } from '../config';
+import logoImg from '../assets/logo.svg';
 
-const navLinks = [
-  { name: 'Who it\'s for', href: '#who-its-for' },
-  { name: 'Relayers', href: '#relayers' },
-  { name: 'User DApp', href: '#/user' },
-  { name: 'Relayer / Staker', href: '#/relayer' },
-  { name: 'Build / SDK', href: '#sdk' },
-  { name: 'Architecture', href: '#architecture' },
-  { name: 'Technology', href: '#technology' },
-  { name: 'Privacy', href: '#security' },
-  { name: 'Fees', href: '#fees' },
-  { name: 'Roadmap', href: '#roadmap' },
+const primaryLinks = [
+    { name: 'ForInvestors', sectionId: 'investors', oneWordLabel: true },
+    { name: 'Who it\'s for', sectionId: 'who-its-for' },
+    { name: 'Relayers', sectionId: 'relayers' },
+    { name: 'Architecture', sectionId: 'architecture' },
+    { name: 'Technology', sectionId: 'technology' },
+    { name: 'Fees', sectionId: 'fees' },
+    { name: 'Roadmap', sectionId: 'roadmap' },
+    { name: 'Backers & Partners', sectionId: 'backers-partners' },
+    { name: 'Newsletter', sectionId: 'newsletter' },
 ];
+
+const moreLinks = [
+    { name: 'Trade (DApp Console)', to: '/user' },
+    { name: 'Internal Matching', to: '/trade' },
+    { name: 'Relayer (Stake)', to: '/relayer' },
+    { name: 'Payroll (Coming Soon)', to: '/enterprise/payroll' },
+    { name: 'Governance', to: '/enterprise/governance' },
+];
+
+const SECTION_SCROLL_LINE = 132;
 
 const Navbar = () => {
     const [scrolled, setScrolled] = useState(false);
     const [open, setOpen] = useState(false);
+    const [activeSection, setActiveSection] = useState('');
+    const navigate = useNavigate();
+    const location = useLocation();
 
     useEffect(() => {
         const onScroll = () => setScrolled(window.scrollY > 40);
         window.addEventListener('scroll', onScroll);
         return () => window.removeEventListener('scroll', onScroll);
     }, []);
+
+    useEffect(() => {
+        if (location.pathname !== '/') {
+            setActiveSection('');
+            return;
+        }
+
+        const sectionEntries = primaryLinks
+            .filter((l) => l.sectionId)
+            .map((l) => ({ id: l.sectionId, el: document.getElementById(l.sectionId) }))
+            .filter((x) => x.el)
+            .sort((a, b) => a.el.offsetTop - b.el.offsetTop);
+
+        const updateActive = () => {
+            let next = '';
+            for (const { id, el } of sectionEntries) {
+                if (el.getBoundingClientRect().top <= SECTION_SCROLL_LINE) {
+                    next = id;
+                }
+            }
+            setActiveSection((prev) => (prev === next ? prev : next));
+        };
+
+        updateActive();
+        window.addEventListener('scroll', updateActive, { passive: true });
+        window.addEventListener('resize', updateActive, { passive: true });
+        return () => {
+            window.removeEventListener('scroll', updateActive);
+            window.removeEventListener('resize', updateActive);
+        };
+    }, [location.pathname]);
+
+    const scrollToSection = (sectionId) => {
+        if (!sectionId) return;
+        const target = document.getElementById(sectionId);
+        if (target) {
+            target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+    };
+
+    const handleSectionNav = (e, sectionId) => {
+        e.preventDefault();
+        setOpen(false);
+
+        if (location.pathname === '/') {
+            scrollToSection(sectionId);
+            return;
+        }
+
+        navigate('/');
+        let attempts = 0;
+        const maxAttempts = 25;
+        const tryScroll = () => {
+            attempts += 1;
+            const target = document.getElementById(sectionId);
+            if (target) {
+                target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                return;
+            }
+            if (attempts < maxAttempts) {
+                window.setTimeout(tryScroll, 40);
+            }
+        };
+        window.setTimeout(tryScroll, 40);
+    };
 
     return (
         <motion.nav
@@ -47,25 +125,32 @@ const Navbar = () => {
         >
             <div className="container nav-container">
                 {/* Logo */}
-                <a
-                    href="/"
+                <Link
+                    to="/"
                     className="nav-brand"
                     style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', textDecoration: 'none', flexShrink: 0 }}
-                    onClick={() => window.scrollTo(0, 0)}
+                    onClick={() => {
+                        setOpen(false);
+                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }}
                 >
                     <img
                         src={logoImg}
                         alt="Phantom Protocol"
                         style={{
-                            width: 32,
-                            height: 32,
+                            width: 40,
+                            height: 40,
                             objectFit: 'contain',
-                            borderRadius: '50%',
+                            borderRadius: '10px',
+                            background: 'rgba(0,0,0,0.78)',
+                            padding: '5px',
+                            border: '1px solid rgba(255,255,255,0.16)',
+                            boxShadow: '0 0 18px rgba(0,0,0,0.55)',
                         }}
                     />
                     <span style={{
                         fontFamily: 'var(--font-mono)',
-                        fontSize: '0.75rem',
+                        fontSize: 'var(--nav-brand-size)',
                         letterSpacing: '0.12em',
                         textTransform: 'uppercase',
                         color: '#ffffff',
@@ -74,66 +159,102 @@ const Navbar = () => {
                     }}>
                         PHANTOM<span style={{ color: 'var(--cyan)' }}>.</span>PROTOCOL
                     </span>
-                </a>
+                </Link>
 
-                {/* Desktop Links - tighter so all fit on one line */}
-                <div className="nav-links hidden-mobile" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '1.5rem', flex: '1 1 auto', minWidth: 0, maxWidth: '100%' }}>
-                    {navLinks.map(link => (
-                        <a
-                            key={link.name}
-                            href={link.href}
-                            className="hover-underline"
-                            style={{
-                                fontFamily: 'var(--font-mono)',
-                                fontSize: '0.6rem',
-                                letterSpacing: '0.1em',
-                                textTransform: 'uppercase',
-                                color: '#ffffff',
-                                fontWeight: 500,
-                                textDecoration: 'none',
-                                transition: 'color 0.3s',
-                                whiteSpace: 'nowrap',
-                            }}
-                            onMouseEnter={e => e.target.style.color = '#fff'}
-                            onMouseLeave={e => e.target.style.color = '#ffffff'}
-                        >
-                            {link.name}
-                        </a>
+                {/* Desktop links */}
+                <div className="nav-links nav-links--primary nav-desktop-only">
+                    {primaryLinks.map((link) => (
+                        link.to ? (
+                            <Link
+                                key={link.name}
+                                to={link.to}
+                                className="hover-underline"
+                                style={{
+                                    fontFamily: 'var(--font-mono)',
+                                    fontSize: 'var(--nav-link-size)',
+                                    letterSpacing: '0.1em',
+                                    textTransform: 'uppercase',
+                                    color: '#ffffff',
+                                    fontWeight: 500,
+                                    textDecoration: 'none',
+                                    transition: 'color 0.3s',
+                                    whiteSpace: 'nowrap',
+                                    flex: '0 0 auto',
+                                }}
+                                onMouseEnter={(e) => { e.target.style.color = '#fff'; }}
+                                onMouseLeave={(e) => { e.target.style.color = '#ffffff'; }}
+                            >
+                                {link.name}
+                            </Link>
+                        ) : (
+                            <a
+                                key={link.sectionId}
+                                href={`#${link.sectionId}`}
+                                className={`hover-underline${link.oneWordLabel ? ' nav-link--oneword' : ''}`}
+                                style={{
+                                    fontFamily: 'var(--font-mono)',
+                                    fontSize: 'var(--nav-link-size)',
+                                    letterSpacing: link.oneWordLabel ? '0.04em' : '0.1em',
+                                    textTransform: link.oneWordLabel ? 'none' : 'uppercase',
+                                    color: activeSection === link.sectionId ? 'var(--cyan)' : '#ffffff',
+                                    fontWeight: activeSection === link.sectionId ? 600 : 500,
+                                    textDecoration: 'none',
+                                    transition: 'color 0.25s ease, text-shadow 0.25s ease',
+                                    whiteSpace: 'nowrap',
+                                    flex: '0 0 auto',
+                                    textShadow: activeSection === link.sectionId ? '0 0 14px rgba(0, 229, 199, 0.35)' : 'none',
+                                }}
+                                onClick={(e) => handleSectionNav(e, link.sectionId)}
+                                onMouseEnter={(e) => {
+                                    e.currentTarget.style.color = 'var(--cyan)';
+                                }}
+                                onMouseLeave={(e) => {
+                                    e.currentTarget.style.color = activeSection === link.sectionId ? 'var(--cyan)' : '#ffffff';
+                                }}
+                            >
+                                {link.name}
+                            </a>
+                        )
                     ))}
                 </div>
 
-                {/* CTA - don't shrink */}
+                {/* Actions */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexShrink: 0 }} className="nav-cta">
-                    <a
-                        href="#"
-                        className="btn-outline hidden-mobile"
-                        style={{ fontSize: '0.65rem', padding: '0.6rem 1.2rem', color: '#fff', borderColor: 'rgba(255,255,255,0.5)' }}
-                    >
-                        Read Whitepaper
-                    </a>
-                    <a
-                        href={DAPP_URL}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="hidden-mobile"
+                    <button
+                        type="button"
+                        className="nav-desktop-only"
+                        onClick={() => setOpen(!open)}
                         style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.45rem',
+                            background: 'rgba(255,255,255,0.06)',
+                            border: '1px solid rgba(255,255,255,0.22)',
+                            color: '#fff',
                             fontFamily: 'var(--font-mono)',
-                            fontSize: '0.65rem',
-                            letterSpacing: '0.12em',
+                            fontSize: 'var(--btn-text-size)',
+                            letterSpacing: '0.1em',
                             textTransform: 'uppercase',
-                            background: 'var(--cyan)',
-                            color: '#0a0a0a',
-                            padding: '0.6rem 1.2rem',
-                            textDecoration: 'none',
-                            fontWeight: 600,
-                            transition: 'opacity 0.3s, box-shadow 0.3s',
+                            padding: 'clamp(0.5rem, 1.2vw, 0.6rem) clamp(0.85rem, 1.8vw, 1rem)',
+                            cursor: 'pointer',
                         }}
-                        onMouseEnter={e => { e.target.style.opacity = '0.9'; e.target.style.boxShadow = '0 0 24px rgba(0,229,199,0.35)'; }}
-                        onMouseLeave={e => { e.target.style.opacity = '1'; e.target.style.boxShadow = 'none'; }}
                     >
-                        Open DApp
+                        More
+                        <span style={{ display: 'inline-flex', flexDirection: 'column', gap: '3px' }}>
+                            <span style={{ display: 'block', width: 12, height: 1, background: '#fff' }} />
+                            <span style={{ display: 'block', width: 12, height: 1, background: '#fff' }} />
+                            <span style={{ display: 'block', width: 12, height: 1, background: '#fff' }} />
+                        </span>
+                    </button>
+                    <a
+                        href={EPAPER_PUBLIC_URL}
+                        className="btn-outline nav-desktop-only"
+                        style={{ fontSize: 'var(--btn-text-size)', padding: 'clamp(0.5rem, 1.2vw, 0.6rem) clamp(0.9rem, 2vw, 1.2rem)', color: '#fff', borderColor: 'rgba(255,255,255,0.5)' }}
+                    >
+                        Read E-Paper
                     </a>
                     <button
+                        type="button"
                         style={{
                             display: 'none',
                             background: 'none',
@@ -142,7 +263,7 @@ const Navbar = () => {
                             color: '#fff',
                             padding: '0.5rem',
                         }}
-                        className="show-mobile"
+                        className="nav-mobile-only"
                         onClick={() => setOpen(!open)}
                     >
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
@@ -168,41 +289,98 @@ const Navbar = () => {
                             overflow: 'hidden',
                         }}
                     >
-                        <div className="container" style={{ padding: '2rem var(--pad)', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-                            {navLinks.map(link => (
-                                <a
-                                    key={link.name}
-                                    href={link.href}
-                                    onClick={() => setOpen(false)}
-                                    style={{
-                                        fontFamily: 'var(--font-mono)',
-                                        fontSize: '0.8rem',
-                                        letterSpacing: '0.15em',
-                                        textTransform: 'uppercase',
-                                        color: 'rgba(255, 255, 255, 0.95)',
-                                        fontWeight: 500,
-                                        textDecoration: 'none',
-                                    }}
-                                >
-                                    {link.name}
-                                </a>
-                            ))}
+                        <div
+                            className="container nav-drawer-inner"
+                            style={{
+                                paddingTop: 'max(1.25rem, env(safe-area-inset-top))',
+                                paddingBottom: 'max(2rem, env(safe-area-inset-bottom))',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: '1.25rem',
+                                maxHeight: 'min(78vh, 100dvh - 5rem)',
+                                overflowY: 'auto',
+                                WebkitOverflowScrolling: 'touch',
+                            }}
+                        >
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                                {primaryLinks.map((link) => (
+                                    <a
+                                        key={link.sectionId}
+                                        href={`#${link.sectionId}`}
+                                        onClick={(e) => handleSectionNav(e, link.sectionId)}
+                                        style={{
+                                            fontFamily: 'var(--font-mono)',
+                                            fontSize: 'var(--nav-drawer-size)',
+                                            letterSpacing: link.oneWordLabel ? '0.06em' : '0.12em',
+                                            textTransform: link.oneWordLabel ? 'none' : 'uppercase',
+                                            color: location.pathname === '/' && activeSection === link.sectionId ? 'var(--cyan)' : 'rgba(255, 255, 255, 0.95)',
+                                            fontWeight: location.pathname === '/' && activeSection === link.sectionId ? 600 : 500,
+                                            textDecoration: 'none',
+                                            lineHeight: 1.35,
+                                        }}
+                                    >
+                                        {link.name}
+                                    </a>
+                                ))}
+                            </div>
+                            <div style={{ height: 1, background: 'rgba(255,255,255,0.12)', margin: '0.15rem 0' }} />
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                                {moreLinks.map((link) => (
+                                    link.to ? (
+                                        <Link
+                                            key={link.name}
+                                            to={link.to}
+                                            onClick={() => setOpen(false)}
+                                            style={{
+                                                fontFamily: 'var(--font-mono)',
+                                                fontSize: 'var(--nav-drawer-size)',
+                                                letterSpacing: '0.12em',
+                                                textTransform: 'uppercase',
+                                                color: 'rgba(255, 255, 255, 0.95)',
+                                                fontWeight: 500,
+                                                textDecoration: 'none',
+                                                lineHeight: 1.35,
+                                            }}
+                                        >
+                                            {link.name}
+                                        </Link>
+                                    ) : (
+                                        <a
+                                            key={link.name}
+                                            href={`#${link.sectionId}`}
+                                            onClick={(e) => handleSectionNav(e, link.sectionId)}
+                                            style={{
+                                                fontFamily: 'var(--font-mono)',
+                                                fontSize: 'var(--nav-drawer-size)',
+                                                letterSpacing: '0.12em',
+                                                textTransform: 'uppercase',
+                                                color: 'rgba(255, 255, 255, 0.95)',
+                                                fontWeight: 500,
+                                                textDecoration: 'none',
+                                                lineHeight: 1.35,
+                                            }}
+                                        >
+                                            {link.name}
+                                        </a>
+                                    )
+                                ))}
+                            </div>
                             <a
-                                href={DAPP_URL}
-                                target="_blank"
-                                rel="noopener noreferrer"
+                                href={EPAPER_PUBLIC_URL}
                                 onClick={() => setOpen(false)}
                                 style={{
                                     fontFamily: 'var(--font-mono)',
-                                    fontSize: '0.8rem',
-                                    letterSpacing: '0.15em',
+                                    fontSize: 'var(--nav-drawer-size)',
+                                    letterSpacing: '0.12em',
                                     textTransform: 'uppercase',
                                     color: 'var(--cyan)',
+                                    fontWeight: 600,
                                     textDecoration: 'none',
-                                    marginTop: '0.5rem',
+                                    lineHeight: 1.35,
+                                    marginTop: '0.25rem',
                                 }}
                             >
-                                Open DApp →
+                                Read E-Paper
                             </a>
                         </div>
                     </motion.div>
@@ -218,44 +396,39 @@ const Navbar = () => {
           justify-content: space-between;
           gap: 1rem;
         }
-        @media (min-width: 1321px) {
-          .nav-container { flex-wrap: nowrap; }
-          .nav-links {
-            overflow-x: auto;
-            overscroll-behavior-x: contain;
-            scrollbar-width: none;
-            -ms-overflow-style: none;
-            justify-content: center;
-          }
-          .nav-links::-webkit-scrollbar { display: none; }
+        .nav-links--primary {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          flex: 1 1 auto;
+          min-width: 0;
+          max-width: 100%;
+          flex-wrap: wrap;
+          row-gap: 0.3rem;
+          column-gap: clamp(0.4rem, 0.9vw, 0.72rem);
+          padding-left: 0.2rem;
+          padding-right: 0.2rem;
         }
-        @media (max-width: 1320px) and (min-width: 769px) {
-          .nav-container {
-            display: grid;
-            grid-template-columns: minmax(0, 1fr) auto;
-            grid-template-rows: auto auto;
-            gap: 0.65rem 1rem;
-            align-items: center;
+        @media (min-width: 1200px) and (max-width: 1439px) {
+          .nav-links--primary {
+            column-gap: clamp(0.35rem, 0.65vw, 0.55rem);
+            row-gap: 0.25rem;
           }
-          .nav-brand { grid-column: 1; grid-row: 1; min-width: 0; }
-          .nav-cta { grid-column: 2; grid-row: 1; justify-self: end; }
-          .nav-links {
-            grid-column: 1 / -1;
-            grid-row: 2;
-            flex-wrap: wrap;
-            justify-content: center;
-            gap: 0.65rem 1.1rem !important;
-            max-width: 100%;
+          .nav-links--primary a:not(.nav-link--oneword) { letter-spacing: 0.06em !important; }
+        }
+        @media (min-width: 1440px) {
+          .nav-links--primary {
+            flex-wrap: nowrap;
+            column-gap: clamp(0.5rem, 1vw, 0.8rem);
           }
-          .nav-links a { font-size: 0.55rem !important; letter-spacing: 0.08em !important; }
         }
-        .nav-links a { overflow: visible; }
-        @media (max-width: 768px) {
-          .hidden-mobile { display: none !important; }
-          .show-mobile   { display: block !important; }
+        .nav-links--primary a { overflow: visible; }
+        @media (max-width: 1199px) {
+          .nav-desktop-only { display: none !important; }
+          .nav-mobile-only { display: flex !important; align-items: center; justify-content: center; }
         }
-        @media (min-width: 769px) {
-          .show-mobile { display: none !important; }
+        @media (min-width: 1200px) {
+          .nav-mobile-only { display: none !important; }
         }
       `}</style>
         </motion.nav>

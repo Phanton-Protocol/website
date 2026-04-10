@@ -1,9 +1,9 @@
 @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 
 :root {
-  --bg: #0a0a0a;
-  --bg-card: #121212;
-  --bg-card-hover: #181818;
+  --bg: #141418;
+  --bg-card: #1c1c22;
+  --bg-card-hover: #222228;
   --border: rgba(255, 255, 255, 0.22);
   --border-accent: rgba(0, 229, 199, 0.35);
 
@@ -18,14 +18,70 @@
   --font-body: 'Inter', sans-serif;
   --font-mono: 'JetBrains Mono', monospace;
 
-  --container: 1280px;
-  --pad: clamp(1.5rem, 5vw, 6rem);
+  --container: 100%;
+  --pad: clamp(1rem, 2.5vw, 2.5rem);
 
-  /* Designer-friendly type scale */
-  --body-size: 1.0625rem;
   --body-line: 1.72;
   --body-weight: 500;
-  --label-size: 0.7rem;
+  --body-size: clamp(0.9375rem, 0.35vw + 0.82rem, 1.25rem);
+  --label-size: clamp(0.5625rem, 0.22vw + 0.48rem, 0.8125rem);
+  --mono-size: clamp(0.65rem, 0.18vw + 0.58rem, 0.8125rem);
+  --btn-text-size: clamp(0.6rem, 0.2vw + 0.54rem, 0.78rem);
+  --nav-brand-size: clamp(0.65rem, 0.45vw + 0.52rem, 0.875rem);
+  --nav-drawer-size: clamp(0.8125rem, 2.2vw + 0.62rem, 1rem);
+  --nav-link-size: clamp(0.5rem, 0.16vw + 0.44rem, 0.75rem);
+
+  --whitepaper-h1: clamp(1.85rem, 7vw + 0.6rem, 5.5rem);
+  --whitepaper-h2: clamp(1.2rem, 3.8vw + 0.45rem, 2.5rem);
+  --whitepaper-h3: clamp(1.05rem, 2.8vw + 0.4rem, 1.75rem);
+  --whitepaper-h4: clamp(0.7rem, 1.2vw + 0.55rem, 1rem);
+  --whitepaper-body: clamp(0.9375rem, 0.35vw + 0.82rem, 1.125rem);
+  --whitepaper-subtitle: clamp(1rem, 2.2vw + 0.55rem, 1.2rem);
+  --whitepaper-scroll-margin: max(5.5rem, env(safe-area-inset-top, 0px) + 3.25rem);
+}
+
+@media (max-width: 639px) {
+  :root {
+    --whitepaper-h1: clamp(1.22rem, 5vw + 0.65rem, 1.85rem);
+    --whitepaper-h2: clamp(1rem, 2.6vw + 0.5rem, 1.55rem);
+    --whitepaper-h3: clamp(0.92rem, 2vw + 0.48rem, 1.22rem);
+    --whitepaper-subtitle: clamp(0.88rem, 1.6vw + 0.48rem, 1.02rem);
+    --whitepaper-body: clamp(0.9rem, 0.3vw + 0.78rem, 1.05rem);
+  }
+}
+
+.whitepaper-diagram-frame {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  margin: clamp(1.75rem, 5vw, 4rem) 0;
+  background: rgba(5, 5, 5, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  overflow: hidden;
+  position: relative;
+}
+
+.whitepaper-diagram-frame svg {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  height: auto;
+}
+
+@media (min-width: 1200px) and (max-width: 1439px) {
+  :root {
+    --label-size: clamp(0.5rem, 0.1vw + 0.42rem, 0.68rem);
+    --nav-brand-size: clamp(0.56rem, 0.22vw + 0.46rem, 0.76rem);
+    --btn-text-size: clamp(0.52rem, 0.1vw + 0.46rem, 0.7rem);
+    --nav-link-size: clamp(0.48rem, 0.08vw + 0.4rem, 0.65rem);
+  }
+}
+
+@media (max-width: 1199px) {
+  :root {
+    --nav-drawer-size: clamp(0.875rem, 3.2vw + 0.55rem, 1.05rem);
+  }
 }
 
 *,
@@ -38,6 +94,9 @@
 
 html {
   scroll-behavior: smooth;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: clip;
 }
 
 body {
@@ -49,7 +108,20 @@ body {
   line-height: var(--body-line);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  overflow-x: hidden;
+  overflow-x: clip;
+  cursor: auto;
+  width: 100%;
+  max-width: 100%;
+}
+
+#root {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: clip;
+}
+
+body.landing-cursor-hidden {
   cursor: none;
 }
 
@@ -87,7 +159,7 @@ body {
 
 /* ── CONTAINER ─────────────────────────────────────────────────── */
 .container {
-  max-width: var(--container);
+  max-width: none;
   margin: 0 auto;
   padding: 0 var(--pad);
   width: 100%;
@@ -104,7 +176,7 @@ body {
   letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--cyan);
-  margin-bottom: 2.5rem;
+  margin-bottom: clamp(1.25rem, 2.5vw, 2.5rem);
 }
 
 .section-label::after {
@@ -117,7 +189,7 @@ body {
 /* ── TYPOGRAPHY ────────────────────────────────────────────────── */
 .display-xl {
   font-family: var(--font-display);
-  font-size: clamp(3.5rem, 8vw, 8rem);
+  font-size: clamp(2.125rem, 5vw + 0.85rem, 9rem);
   line-height: 1;
   letter-spacing: -0.01em;
   font-weight: 400;
@@ -130,7 +202,7 @@ body {
 
 .display-lg {
   font-family: var(--font-display);
-  font-size: clamp(2.5rem, 5vw, 5rem);
+  font-size: clamp(1.625rem, 3.2vw + 0.9rem, 5.5rem);
   line-height: 1.05;
   font-weight: 400;
 }
@@ -142,7 +214,7 @@ body {
 
 .mono {
   font-family: var(--font-mono);
-  font-size: 0.75rem;
+  font-size: var(--mono-size);
   letter-spacing: 0.1em;
   text-transform: uppercase;
 }
@@ -160,13 +232,13 @@ body {
   align-items: center;
   gap: 0.5rem;
   font-family: var(--font-mono);
-  font-size: 0.7rem;
+  font-size: var(--btn-text-size);
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--text-primary);
   background: transparent;
   border: 1px solid rgba(255, 255, 255, 0.25);
-  padding: 0.75rem 1.5rem;
+  padding: clamp(0.55rem, 1vw, 0.75rem) clamp(1rem, 2.2vw, 1.5rem);
   cursor: pointer;
   text-decoration: none;
   transition: border-color 0.3s ease, color 0.3s ease, background 0.3s ease;
@@ -349,7 +421,7 @@ body {
 /* ── STAT ROW ────────────────────────────────────────────────── */
 .stat-value {
   font-family: var(--font-display);
-  font-size: clamp(2rem, 4vw, 3.5rem);
+  font-size: clamp(1.625rem, 2.8vw + 0.75rem, 4.25rem);
   line-height: 1;
   color: var(--text-primary);
 }
@@ -362,4 +434,145 @@ body {
   text-transform: uppercase;
   color: #ffffff;
   margin-top: 0.4rem;
+}
+
+/* ── APP PAGES (dapp / trade / operators) ───────────────────── */
+.app-page {
+  min-height: 100vh;
+  background-color: var(--bg);
+  background-image:
+    radial-gradient(ellipse 120% 80% at 50% -20%, rgba(0, 229, 199, 0.09), transparent 55%),
+    radial-gradient(ellipse 70% 50% at 100% 50%, rgba(0, 229, 199, 0.04), transparent 45%);
+}
+
+.app-page__inner {
+  margin: 0 auto;
+}
+
+.app-page__header {
+  margin-bottom: clamp(1.5rem, 4vw, 2.25rem);
+}
+
+.app-page__title {
+  margin-bottom: 0;
+}
+
+.app-page__title-compact {
+  font-family: var(--font-display);
+  font-size: clamp(1.65rem, 3.5vw + 0.65rem, 3.35rem);
+  line-height: 1.08;
+  font-weight: 400;
+  color: var(--text-primary);
+  margin: 0 0 0.5rem;
+}
+
+.app-page__title-compact em {
+  font-style: italic;
+  color: var(--cyan);
+}
+
+.app-page__subtitle {
+  max-width: 42rem;
+  color: rgba(255, 255, 255, 0.78);
+  font-size: clamp(0.9375rem, 0.4vw + 0.85rem, 1.125rem);
+  font-weight: 500;
+  line-height: 1.65;
+  margin: 0;
+}
+
+.app-page__body {
+  margin-bottom: clamp(2rem, 5vw, 3rem);
+}
+
+.app-page__inner--trade-wide {
+  max-width: var(--container);
+}
+
+.app-page__trade-centered {
+  width: 100%;
+  max-width: min(432px, 100%);
+  margin-left: auto;
+  margin-right: auto;
+  margin-bottom: clamp(1.25rem, 3vw, 2rem);
+}
+
+.app-page__trade-centered .section-label {
+  justify-content: center;
+  margin-bottom: 0.65rem;
+}
+
+.app-page__trade-centered .section-label::after {
+  display: none;
+}
+
+.app-page__header--trade {
+  margin-bottom: 1rem;
+  text-align: center;
+}
+
+.app-page__trade-centered .app-page__title-compact {
+  text-align: center;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.app-page__subtitle--trade {
+  max-width: 26rem;
+  margin-left: auto;
+  margin-right: auto;
+  text-align: center;
+  font-size: clamp(0.875rem, 0.35vw + 0.8rem, 1.0625rem);
+  line-height: 1.62;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.app-page__body--trade {
+  margin-bottom: 0;
+}
+
+.app-page__below-fold {
+  width: 100%;
+  max-width: min(920px, 100%);
+  margin-left: auto;
+  margin-right: auto;
+}
+
+@media (min-width: 768px) {
+  .app-page__trade-centered {
+    max-width: min(468px, 100%);
+  }
+}
+
+.app-page__footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem 1.75rem;
+  padding-top: 2rem;
+  border-top: 1px solid var(--border);
+  font-size: var(--label-size);
+  letter-spacing: 0.12em;
+}
+
+.app-page__footer-link {
+  color: rgba(255, 255, 255, 0.85);
+  text-decoration: none;
+  transition: color 0.25s ease;
+}
+
+.app-page__footer-link:hover {
+  color: var(--cyan);
+}
+
+@keyframes dapp-quote-pulse {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.dapp-quote-pulse {
+  animation: dapp-quote-pulse 1.1s ease-in-out infinite;
 }

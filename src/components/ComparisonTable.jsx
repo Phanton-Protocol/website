@@ -1,10 +1,12 @@
+import { motion } from 'framer-motion';
+
 const features = [
-  { name: 'Salary & payout privacy', phantom: 'Shielded pool', standard: 'Fully public ledger' },
-  { name: 'Per‑wallet reporting keys', phantom: 'Built‑in & revocable', standard: 'Rare / custom' },
-  { name: 'Sanctions / risk checks', phantom: 'Chainalysis sanctions screening', standard: 'Usually off‑chain, ad‑hoc' },
-  { name: 'Proof generation', phantom: 'Backend Rapidsnark (ZK) + fallback', standard: 'Browser or none' },
-  { name: 'Treasury move visibility', phantom: 'Aggregate only', standard: 'Every move visible' },
-  { name: 'Private order matching', phantom: 'OTC-style (in development)', standard: 'Public DEX only' },
+  { name: 'Private swaps on major DEX routers', phantom: 'Swap on main AMMs without exposing wallet address', standard: 'Most market solutions expose wallet and execution trail' },
+  { name: 'Use funds on any chain without bridging', phantom: 'Native flow on the chain where assets already sit', standard: 'Many privacy tools require bridge-first or siloed liquidity' },
+  { name: 'On-chain salary payouts', phantom: 'Send salaries privately on-chain', standard: 'Large organisations cannot move payroll on-chain because no private solution exists today' },
+  { name: 'Bank and institutional transaction privacy', phantom: 'Support account transfers and inter-bank settlement privately', standard: 'Existing rails can compromise institution and client privacy' },
+  { name: 'Internal matching without public footprint', phantom: 'Private internal matching with no public order trail', standard: 'Most alternatives route through visible on-chain order flow' },
+  { name: 'Compliance-ready privacy', phantom: 'Selective disclosure and sanctions screening built in', standard: 'Many privacy networks are difficult to align with compliance needs' },
 ];
 
 const ComparisonTable = () => (
@@ -21,7 +23,7 @@ const ComparisonTable = () => (
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', borderBottom: '1px solid var(--border)', paddingBottom: '1rem', marginBottom: '0' }}>
                 <div className="mono" style={{ color: 'var(--text-tertiary)' }}>FEATURE</div>
                 <div className="mono" style={{ color: 'var(--cyan)' }}>PHANTOM PROTOCOL</div>
-                <div className="mono" style={{ color: 'var(--text-tertiary)' }}>STANDARD DEFI</div>
+                <div className="mono" style={{ color: 'var(--text-tertiary)' }}>MARKET SOLUTIONS</div>
             </div>
 
             {features.map((f, i) => (
@@ -44,7 +46,7 @@ const ComparisonTable = () => (
                     <div style={{ color: '#fff', fontSize: 'var(--body-size)', fontWeight: 500 }}>{f.name}</div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
                         <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--cyan)', flexShrink: 0 }} />
-                        <span style={{ fontWeight: 600, color: '#fff', fontSize: '0.875rem' }}>{f.phantom}</span>
+                        <span style={{ color: '#fff', fontSize: 'var(--body-size)', fontWeight: 500 }}>{f.phantom}</span>
                     </div>
                     <div style={{ color: 'var(--text-tertiary)', fontSize: 'var(--body-size)', fontWeight: 500 }}>{f.standard}</div>
                 </motion.div>

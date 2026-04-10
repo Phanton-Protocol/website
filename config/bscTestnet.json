@@ -2,16 +2,16 @@
   "chainId": 97,
   "rpcUrl": "https://data-seed-prebsc-1-s1.binance.org:8545",
   "addresses": {
-    "shieldedPool": "",
-    "swapAdaptor": "",
+    "shieldedPool": "0xC6bdf5858e8D4C2fad09d0CA3cE356B2ace0ec99",
+    "swapAdaptor": "0x341a5CA83566688fCf05725Ca7AA6Dc35671ae35",
     "noteStorage": "",
-    "feeOracle": "",
-    "relayerStaking": ""
+    "feeOracle": "0x89Ca5cda0cB774D5b5F80e92a72D62237E4E5e4d",
+    "relayerStaking": "0xf68c0F35075c168289aF67E18698180b7F71a1e8"
   },
   "assets": [
     { "assetId": 0, "symbol": "WBNB", "decimals": 18, "address": "0xae13d989dac2f0debff460ac112a837c89baa7cd" },
-    { "assetId": 1, "symbol": "tBUSD", "decimals": 18, "address": "" },
-    { "assetId": 2, "symbol": "tUSDT", "decimals": 18, "address": "" },
+    { "assetId": 1, "symbol": "tBUSD", "decimals": 18, "address": "0x78867BbEeF44f2326bF8DDd1941a4439382EF2A7" },
+    { "assetId": 2, "symbol": "tUSDT", "decimals": 18, "address": "0x7EF95A0Fe8A5F4f9C1824fBf6656e2f95fA6Bf13" },
     { "assetId": 3, "symbol": "tUSDC", "decimals": 18, "address": "" }
   ]
 }

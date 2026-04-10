@@ -1,3 +1,5 @@
+import { motion } from 'framer-motion';
+
 const PrivacyExplainer = () => {
   const steps = [
     {
@@ -10,7 +12,7 @@ const PrivacyExplainer = () => {
     },
     {
       title: "Chainalysis sanctions screening",
-      desc: "Depositors and withdrawal recipients are screened via the Chainalysis API when configured. Phantom offers privacy on‑chain with the option to block sanctioned or high‑risk addresses."
+      desc: "Depositors are screened via the Chainalysis API when configured. Phantom keeps on-chain privacy while enforcing entry-point compliance checks."
     },
     {
       title: "Per‑wallet reporting keys",
@@ -88,7 +90,7 @@ const PrivacyExplainer = () => {
               <div style={{ marginBottom: '1.5rem' }}>
                 <span className="t-cyan">{">"}</span> Proof job queued <span className="t-white">[swap:0x7f3a...b812]</span><br />
                 <span className="t-dim">timestamp : 1709123844</span><br />
-                <span className="t-dim">type : PAYROLL_SWAP</span><br />
+                <span className="t-dim">type : DEPOSIT</span><br />
                 <span className="t-dim">company_wallet : 0xACME...C0MP</span>
               </div>
 
@@ -98,12 +100,6 @@ const PrivacyExplainer = () => {
                 <span className="t-green">✓ amount_conservation : valid</span><br />
                 <span className="t-green">✓ nullifier_unique : valid</span><br />
                 <span className="t-green">✓ ownership_proof : valid</span>
-              </div>
-
-              <div style={{ marginBottom: '1.5rem' }}>
-                <span className="t-cyan">{">"}</span> Compliance checks...<br />
-                <span className="t-dim">Chainalysis sanctions screening : enabled</span><br />
-                <span className="t-green">✓ tax_export_flag : enabled</span>
               </div>
 
               <div style={{ marginBottom: '1.5rem' }}>

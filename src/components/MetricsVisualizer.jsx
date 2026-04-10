@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { API_URL } from '../config';
+import { motion } from 'framer-motion';
 
 const defaultMetrics = [
   { label: "PHN_VOL_24H", value: "—", info: "ENCRYPTED" },

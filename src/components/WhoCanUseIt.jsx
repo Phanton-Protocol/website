@@ -1,10 +1,10 @@
-import { DAPP_URL } from '../config';
+import { motion } from 'framer-motion';
 
 const audiences = [
   {
-    tag: 'BANKS',
-    title: 'Banks & custodians',
-    body: 'Offer privacy-preserving settlement and treasury flows to clients. Phantom’s shielded pool and per-wallet reporting keys support audit and regulatory needs without exposing positions on-chain.',
+    tag: 'TRADERS',
+    title: 'Traders & market makers',
+    body: 'Swap and move size inside the pool with reduced on-chain footprint. OTC-style internal matching (in development): set the price you want to buy or sell at; when a counterparty comes with a matching order, you’re filled. No public order book, no price impact. Today you get shielded deposits, swaps via DEX, and withdrawals.',
   },
   {
     tag: 'INSTITUTIONS',
@@ -12,34 +12,27 @@ const audiences = [
     body: 'Execute payroll, rebalance treasuries, and manage payouts without broadcasting strategy or recipient lists. Selective disclosure keys let auditors and lawyers see only what they need.',
   },
   {
-    tag: 'TRADERS',
-    title: 'Traders & market makers',
-    body: 'Swap and move size inside the pool with reduced on-chain footprint. OTC-style internal matching (in development): set the price you want to buy or sell at; when a counterparty comes with a matching order, you’re filled. No public order book, no price impact. Today you get shielded deposits, swaps via DEX, and withdrawals.',
+    tag: 'BANKS (Saas)',
+    title: 'Banks & Custodians',
+    body: 'Offer Privacy preserving settlement and treasury flows to clinets. Users depositing crypto directly into there bank accounts without any third parties, Settlement within the Bank or a custodian without any on-chain footprint.',
   },
   {
-    tag: 'TEAMS',
-    title: 'Teams & treasuries',
-    body: 'Run payroll from a single deposit and distribute privately. OTC-style internal matching: set your price to sell (or buy) tokens or LP; when someone comes with the opposite order at a compatible price, you match inside the shielded pool — no public book, zero visible impact.',
-  },
-  {
-    tag: 'DEVELOPERS',
+    tag: 'DEVELOPERS SDK',
     title: 'Developers & builders',
     body: 'Build on-chain contracts, messaging apps, and treasury tools with our SDK and APIs. Relayer API for proofs and submissions; contract interfaces for ShieldedPool, NoteStorage, SwapAdaptor. See the Build / SDK section.',
   },
 ];
 
 const WhoCanUseIt = () => (
-  <section className="section" id="who-its-for">
+  <section className="section" id="who-its-for" style={{ scrollMarginTop: '8rem' }}>
     <div className="container">
       <div style={{ marginBottom: '4rem' }}>
         <div className="section-label">Who it's for</div>
         <h2 className="display-lg">
-          Built for <em>banks</em>, institutions,
-          <br />
-          traders, and teams.
+          Built for those who seeks compliant based privacy onchain
         </h2>
         <p style={{ color: '#fff', fontSize: 'var(--body-size)', fontWeight: 500, lineHeight: 'var(--body-line)', maxWidth: '560px', marginTop: '1.5rem' }}>
-          Phantom provides private, compliant rails for on-chain money — payroll, treasury, and OTC-style matching (set your price; when someone comes, you match) so size never hits the public book.
+          Phantom provides private, compliant rails for on-chain money — payroll, treasury, and OTC-style matching.
         </p>
       </div>
 
@@ -55,7 +48,6 @@ const WhoCanUseIt = () => (
             style={{
               display: 'flex',
               flexDirection: 'column',
-              gridColumn: audiences.length % 2 === 1 && i === audiences.length - 1 ? '1 / -1' : undefined,
             }}
           >
             <span style={{
@@ -84,35 +76,6 @@ const WhoCanUseIt = () => (
         ))}
       </div>
 
-      <motion.div
-        initial={{ opacity: 0 }}
-        whileInView={{ opacity: 1 }}
-        viewport={{ once: true }}
-        style={{ marginTop: '3rem', textAlign: 'center' }}
-      >
-        <a
-          href={DAPP_URL}
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{
-            fontFamily: 'var(--font-mono)',
-            fontSize: '0.7rem',
-            letterSpacing: '0.12em',
-            textTransform: 'uppercase',
-            background: 'var(--cyan)',
-            color: '#0a0a0a',
-            padding: '0.85rem 2rem',
-            textDecoration: 'none',
-            fontWeight: 600,
-            display: 'inline-block',
-            transition: 'opacity 0.3s, box-shadow 0.3s',
-          }}
-          onMouseEnter={e => { e.target.style.opacity = '0.9'; e.target.style.boxShadow = '0 0 28px rgba(0,229,199,0.35)'; }}
-          onMouseLeave={e => { e.target.style.opacity = '1'; e.target.style.boxShadow = 'none'; }}
-        >
-          Open DApp
-        </a>
-      </motion.div>
     </div>
   </section>
 );

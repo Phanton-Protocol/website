@@ -1,225 +1,520 @@
-Phantom Protocol
-Technical Whitepaper
+Phantom Protocol  
+Technical Whitepaper (Draft)
 
+Last updated: 2026-04-02
 
+This document is written as a protocol paper: it separates **what is specified** from **what is implemented today**. Where the repository currently contains mocked components (e.g., the current `/fhe` matching router), this is stated explicitly.
 
-Table of Contents
+## Abstract
 
-1. Abstract
-2. Motivation
-2a. How the Protocol Earns
-2b. How Relayers Earn
-2c. Who Can Use Phantom
-3. System Overview
-4. Notes, Commitments, and Nullifiers
-5. Merkle Tree
-6. Proof System
-7. Intent and Signature (EIP-712)
-8. Deposit
-9. Swap
-10. Withdrawal
-11. Payroll
-12. Reporting Keys
-13. Sanctions Screening
-14. Relayers and Staking
-15. Fees
-15a. Fee Structure in Full
-15b. How Phantom Works (End-to-End)
-15c. How Relayers Earn
-15d. Use Cases: What You Can Do
-16. Contracts
-17. API Endpoints
-18. Client and DApp
-19. FHE and Internal Matching (Detail)
-20. Validators (Optional)
-21. Deployment and Networks
-22. Roadmap
-Glossary (for general readers)
-23. Summary
+Phantom Protocol is a multi-asset shielded pool with a relayer-based transaction submission model. Users hold private “notes” that represent balances inside the pool; on-chain state consists of note commitments, a commitment-tree root, and spent-note nullifiers. User operations (deposit, swap, withdraw) are authorized by a zero-knowledge proof that enforces membership, nullifier uniqueness, and value conservation while hiding note plaintext. Relayers submit proofs and calldata, providing a separation between users and on-chain transaction senders. The system also includes operational modules used in deployments: (i) a typed-data intent format (EIP-712) used by the relayer backend, (ii) an enterprise API surface protected by an API key, and (iii) an optional “SEE” attestation gate for sensitive flows. This paper specifies the cryptographic model and transaction flows, and documents current implementation boundaries.
 
+## Reader’s guide
 
-1. Abstract
+This whitepaper is organized to support two audiences:
 
-Phantom Protocol is a multi-asset shielded pool and relayer network deployed on BNB Chain. Users deposit assets into a single pool and transact via zero-knowledge proofs. Deposits, swaps, withdrawals, and payroll leave only commitments and nullifiers on-chain; no party can link a commitment to a wallet or amount without the private note data. A backend prover generates Groth16 proofs using Rapidsnark where available and snarkjs as fallback, so heavy computation does not run in the browser. Per-wallet reporting keys allow selective disclosure to auditors and tax tools; keys are revocable. Optional sanctions screening runs on depositor and withdrawal recipient addresses via the Chainalysis API when configured. Swaps can execute inside the pool via OTC-style encrypted matching (FHE) or route through an external DEX (PancakeSwap). Signed intents are protected with FHE (or a TEE) so that neither relayers nor the backend ever see plaintext operation parameters. Relayers submit proofs and calldata; gas is paid from the user’s deposited balance (note) and sent to the relayer to pay for the transaction, so relayers do not bear gas cost. They do not see note contents or control user funds. Relayer registration requires staking the protocol token (PHN) in the relayer staking contract; stakers earn relayer fees and a share of protocol fees. This document describes the architecture, cryptography, flows, contracts, API, and deployment in full detail.
+- **Protocol readers** (cryptography, smart contracts): start at §3–§7 and §11.
+- **Builders and operators** (integrators, relayers): start at §7–§10.
 
+Throughout, we use the following tags:
 
-2. Motivation
+- **Specified**: normative behavior required for protocol correctness.
+- **Implemented**: behavior present in this repository as of the last updated date.
+- **Optional**: deployment-controlled or out-of-protocol module.
 
-Public blockchains expose every transfer. Treasury moves, payroll, and large swaps are visible to competitors, copy-traders, and the open internet. Institutions and teams need to move value without broadcasting strategy or recipient lists. At the same time, regulators and accountants often require audit trails. Phantom provides privacy on-chain with the option to reveal history per wallet via revocable reporting keys, and to screen depositor and withdrawal recipient addresses when compliance is required. The system is not a mixer: it is designed for ongoing payroll, treasury, and payout flows with optional compliance, not one-off anonymization.
+## Table of contents
 
+1. Introduction
+2. System model and goals
+3. Preliminaries and notation
+4. Architecture overview
+5. Data model: notes, commitments, nullifiers
+6. State: commitment tree and nullifier set
+7. Proof system and join-split statement
+8. Protocol flows
+   - 8.1 Deposit
+   - 8.2 Swap
+   - 8.3 Withdraw
+   - 8.4 Batch operations (payroll-style)
+9. Relayers and transaction submission
+10. Backend API surface (implemented)
+11. Operational modules (enterprise API, SEE gate)
+12. Economics and fees (parameterized)
+13. Security considerations and threat model
+14. Deployment and configuration
+15. Glossary
+16. References
 
-2a. How the Protocol Earns
+## 1. Introduction
 
-Token economics and revenue model. The protocol earns from two sources. First, every deposit into the shielded pool costs the user a flat fee of $2 in BNB. That fee is paid to the protocol (the deposit handler or fee oracle). Of this $2, $1.50 goes to the treasury and $0.50 to the relayer who submits the deposit—so a successful relayer receives $0.50 on every user deposit they process. Second, every swap pays a protocol fee: 0.1% of the swap amount when the swap goes through the DEX (PancakeSwap), and 0.2% when the swap is matched internally (OTC inside the pool). That fee is collected by the pool. Of that fee, 80% is distributed to PHN stakers (relayers and anyone who has staked the protocol token); the remaining 20% goes to the protocol treasury. So the protocol (treasury) earns: $1.50 per relayer-submitted deposit (or $2 if user-submitted and no relayer share), plus 20% of swap fees. FHE matching and internal swap fees are collected by the protocol; 80% is distributed monthly to PHN stakers and 20% to the treasury. The 80% that goes to stakers is what makes running a relayer and staking PHN attractive.
+Public ledgers make value movement observable by default. Phantom Protocol is designed for cases where a user or organization wants:
 
-| Fee type | Rate | To stakers | To treasury | To relayer |
-|----------|------|------------|-------------|------------|
-| Deposit | $2 flat (in BNB) | 0% | 75% ($1.50) | 25% ($0.50) per user deposit the relayer submits |
-| DEX swap | 0.1% of swap amount | — | to protocol | separate relayer fee |
-| Internal / FHE match swap | 0.2% of swap amount | 80% to stakers (distributed monthly) | 20% to treasury | — |
+- to move value without publishing per-user balances and transfer graphs, while
+- still settling against a public execution environment.
 
-Gas cost is always paid from the user’s balance: the circuit deducts the gas amount from the user’s note and that amount is sent to the relayer to pay for the transaction. Relayers do not pay gas out of pocket.
+The design follows the “note commitment + nullifier + Merkle membership proof” pattern used by shielded protocols (Zcash-style constructions) and private-execution systems (Aztec-style client-side proving with on-chain verification).
 
+### 1.1 What observers learn
 
-2b. How Relayers Earn
+**Specified.** For transactions that update private state, on-chain observers learn:
 
-Relayers earn in two ways. First, relayer fee: the relayer chooses a fee (for example 0.05% of the swap amount, or a flat 0.001 BNB per transaction) that the user pays when the relayer submits their deposit, swap, or withdrawal. The user sees this fee in the DApp before confirming. The relayer keeps 100% of this fee. Gas is paid from the user’s deposited balance: the circuit deducts the gas amount from the user’s note and that value is sent to the relayer to cover the cost of submitting the tx. The relayer does not pay gas out of pocket. Second, a successful relayer receives $0.50 on every user deposit they submit: of the $2 deposit fee, $1.50 goes to the treasury and $0.50 to the relayer who processes that deposit. So if a relayer processes 500 deposits in a month, they earn 500 × $0.50 = $250 from deposit fees alone, plus relayer fees and protocol fee share. Third, protocol fee share: 80% of all protocol swap fees (the 0.1% DEX fee and the 0.2% internal match fee) is distributed to everyone who has staked PHN. The staking contract allocates that 80% proportionally: your share equals your staked amount divided by total staked. So if you have staked 10% of all PHN staked, you receive 10% of that 80% of all swap fees. You claim these rewards in the DApp (Staking Hub) by calling claim; rewards are paid in the tokens that were collected (e.g. USDT, BNB). So a relayer who stakes PHN and runs a node earns (1) every relayer fee from every transaction they submit, (2) $0.50 on every user deposit they process, and (3) a proportional share of 80% of all protocol swap fees, claimable on demand. To become a relayer you must stake PHN at or above the minimum (the exact minimum is shown in the DApp), run the Phantom backend (or your own compatible server) with the same wallet that staked. Gas is paid from the user’s balance (the circuit deducts it and sends it to you to pay for the transaction), so you do not pay gas out of pocket. No approval or permission is required; anyone who meets the stake and runs the node can earn. Misbehavior (e.g. submitting invalid proofs) can result in slashing: loss of part of your staked PHN.
+- the current commitment-tree root before the state transition,
+- the new commitments appended by the transition (as hashes),
+- the nullifiers corresponding to consumed notes (as hashes),
+- and any explicitly public outputs (e.g., a withdrawal recipient and amount).
 
+They do **not** learn note owners, note plaintext amounts inside the pool, or which commitment corresponds to which user, beyond what is explicitly made public (notably: deposits from an EOA are public funding events).
 
-2c. Who Can Use Phantom
+### 1.2 State transitions
 
-Banks and custodians. Banks can offer clients privacy-preserving settlement and treasury flows. Client deposits, swaps, and withdrawals are not visible on a public ledger; only the pool is seen. At the same time, per-wallet reporting keys let the bank (or its auditors) export a given client's history when needed for compliance. Sanctions screening can be turned on so depositor and withdrawal addresses are checked against risk databases. Use case: private custody and settlement with the option to prove compliance.
+**Specified.** A shielded pool update is a single state transition: it consumes a set of input notes (by revealing their nullifiers), appends a set of output commitments to the accumulator, and advances the commitment-tree root. The pool contract accepts the transition only if the transaction carries a valid zero-knowledge proof \(\pi\) and public inputs \(x\) for the join-split statement (exact arity and public input layout are fixed by the deployed circuit).
 
-Institutions and funds. Hedge funds, family offices, and institutional treasuries can run payroll, rebalance portfolios, and execute large swaps without broadcasting strategy or size. Payroll: deposit once, then pay many recipients from the pool; the public chain does not see who got how much. Swaps: rebalance from stablecoins into volatile assets or vice versa inside the pool; no public order book sees the trade. Use case: institutional DeFi with privacy and optional audit trails.
+The proof and on-chain checks together require:
 
-Traders and market makers. Traders can swap size inside the pool with reduced on-chain footprint. When internal OTC matching is available, they set the price they want to buy or sell at; when a counterparty matches, the trade settles inside the pool with no public order book and no visible price impact. When no match exists, swaps route through the DEX (0.1% fee). Use case: large or sensitive trades without front-running or slippage from the open market.
+- **Merkle membership**: for each consumed note, the corresponding commitment is included under the declared historical root \(\mathsf{root}\) (the witness recomputes membership along the tree’s compression function).
+- **Nullifier correctness**: each published nullifier is derived from the spent note and owner secrets according to the domain-separated rule encoded in the circuit, and is bound to the same witness as the input commitments.
+- **Output well-formedness**: each new note is represented by a commitment consistent with the circuit’s note encoding (asset identifier, amount, per-note randomness, and owner binding).
+- **Value conservation**: for each asset (and any fee or public leg the statement exposes), inputs, outputs, and explicit public flows balance as required by the circuit; assets cannot be created inside the shielded transition.
+- **Single-spend**: no nullifier in the transaction may already appear in the on-chain nullifier set; after execution, the contract records the new nullifiers so they cannot be reused.
 
-Teams and treasuries. DAOs and companies can run payroll from a single deposit and pay employees or contractors privately. They can also exit token or LP positions via OTC matching: set the price to sell (or buy); when someone submits the opposite order at a compatible price, the trade settles inside the pool with zero visible impact on the ticker. Use case: payroll privacy and treasury exits without moving the market.
+On-chain enforcement is standard: the verifier contract checks \(\mathrm{Verify}(vk, \pi, x)\), validates auxiliary consistency rules (e.g. root progression, nullifier insertion), and reverts otherwise. Detailed constraints and witness layout are specified in §7 and the protocol flows in §8.
 
-Developers and builders. Anyone can build applications on top of Phantom using the SDK and APIs: dashboards, payroll tools, treasury managers, messaging or payment apps that settle through the pool, and trading bots or aggregators. The API provides quote, intent, swap, deposit, withdraw, and merkle proof endpoints; contract interfaces (ShieldedPool, NoteStorage, SwapAdaptor, RelayerStaking) are published. Use case: integrate private deposits, swaps, and withdrawals into your own product.
+### 1.3 Design constraints (practical)
 
+The protocol is built under practical constraints:
 
-3. System Overview
+- EVM execution costs require succinct verification (pairing-based verification) and efficient state updates.
+- Client UX motivates delegated submission via relayers and server-side synchronization APIs.
+- Production deployments may enforce operational safeguards (rate limiting, API keys, attestation gates).
 
-The system consists of a shielded pool contract, a note model, a relayer network, and optional validators. The pool holds multiple assets (BNB and ERC-20 tokens such as USDT, BUSD, USDC, CAKE, WBNB on BNB Chain). Users own notes: private records of balance, asset type, and ownership. A note is represented on-chain by a commitment; spending a note consumes it and publishes a nullifier so it cannot be spent again. The pool maintains an incremental Merkle tree of all commitments and a set of used nullifiers. Every state-changing operation (deposit, swap, withdraw) is authorized by a zero-knowledge proof that shows the input note(s) exist in the tree, the nullifiers are fresh, and the output commitments and amounts satisfy conservation and fee rules. Relayers submit proofs and calldata to the pool contract. Gas is paid from the user’s note: the circuit deducts the gas amount from the user’s balance and sends it to the relayer to pay for the transaction; relayers do not pay gas out of pocket. The backend exposes a REST API for quote, intent, swap, deposit, withdraw, merkle proof, health, telemetry, staking, tax reporting keys, and payroll. The DApp connects the user's wallet to this API and to the relayer for transaction submission.
+## 2. System model and goals
 
+### 2.1 Parties
 
-4. Notes, Commitments, and Nullifiers
+- **Users**: hold note secrets and request operations.
+- **Relayers**: submit transactions on-chain and may charge a fee.
+- **Pool contract(s)**: maintain a commitment-tree root and a nullifier set; verify proofs; move assets.
+- **Backend services**: generate proofs (or coordinate proof generation), serve quotes, and provide operational APIs.
 
-A note encodes: asset id (identifying which token in the pool), amount (in the token's smallest unit), a commitment blinding factor, and linkage to the owner's key material (so only the owner can spend it). The commitment is a hash of these fields; the exact construction uses a hash function compatible with the ZK circuit (e.g. MiMC or Poseidon). The commitment is published when the note is created and is inserted as a leaf in the pool's Merkle tree. The nullifier is derived from the note and the spend (e.g. a hash of the note and a nonce or the owner's key); it is published when the note is consumed. The contract stores the list of commitments in an incremental Merkle tree and maintains a mapping or set of used nullifiers. The ZK proof shows that (i) the input commitment is a leaf of the current tree and the prover knows a valid Merkle path to the root, (ii) the nullifier has not been used, (iii) the output commitments and amounts are consistent with the stated operation, fees, and conservation (input amount equals swap amount plus change plus protocol fee plus gas amount paid from user’s note where applicable). No party can link a commitment to a wallet or amount without the note data; the anonymity set is the set of all commitments in the tree.
+### 2.2 Goals
 
+- **Correctness**: assets cannot be created; spent notes cannot be spent twice.
+- **Ledger privacy**: observers learn only the public inputs (roots, nullifiers, and any explicitly public amounts).
+- **Composable settlement**: swaps can route via public DEX adapters or via internal mechanisms.
+- **Operational separation**: a relayer can submit without learning note secrets.
 
-5. Merkle Tree
+### 2.3 Non-goals
 
-The pool maintains an incremental Merkle tree of all note commitments. The tree has a fixed depth (e.g. 20 or 32); each leaf is a commitment. When a new note is created (deposit or as output of a swap/withdraw), its commitment is appended and the root is updated. The circuit takes the current root as a public input and proves that the spent commitment is a leaf with a valid path to that root. After the transaction, the contract updates the root to reflect the new commitments (swap output, change) and records the nullifiers. The Merkle tree library (e.g. IncrementalMerkleTree in the contracts) supports insertion and path computation. The backend or client fetches the current root and builds the Merkle path for the note being spent by querying the pool contract (commitmentCount, commitments(index)) or a backend endpoint that syncs state from chain and serves merkle proofs.
+- **Perfect network-layer anonymity**: this paper does not claim protection against global network observers.
+- **Censorship resistance guarantees**: a relayer can censor; multi-relayer designs mitigate this operationally.
+- **Universal compliance**: optional screening/attestation modules are deployment choices, not cryptographic guarantees.
 
+## 3. Preliminaries and notation
 
-6. Proof System
+Let:
 
-Proofs are Groth16. The circuit is a join-split style design: it takes one or more input notes (commitment, Merkle path to root), optional public inputs (root, nullifier, recipient, amounts, fee parameters), and private inputs (note data, blinding factors, owner key). It outputs one or more new notes (e.g. swap output note and change note) and enforces: balance conservation (input amount equals swap amount plus change plus protocol fee plus gas paid from user’s note), valid nullifier derivation, valid commitment derivation for outputs, and that the input commitment is in the tree at the given path. Verification is on-chain via a verifier contract (Groth16Verifier or adapter) that checks the pairing equation. Proof generation is off-chain. Phantom runs a backend prover using Rapidsnark where available (faster, native), with snarkjs as fallback, so users do not run heavy proving in the browser. The backend accepts proof requests (e.g. POST /prove or POST /swap/generate-proof with swap parameters and note data), runs the circuit, and returns the proof and calldata for the relayer to submit. The circuit is compiled from a high-level description (e.g. Circom); the verification key and proving key are deployed or configured for the backend.
+- \(H(\cdot)\) be a collision-resistant hash (instantiated in-circuit as needed).
+- \(\mathrm{MerkleHash}(\cdot,\cdot)\) be the compression function used in the commitment tree.
+- \(\mathrm{PRF}_k(\cdot)\) be a keyed pseudorandom function used to derive nullifiers.
 
+For a zk system, we use the standard interface:
 
-7. Intent and Signature (EIP-712)
+- \(\pi \leftarrow \mathrm{Prove}(pk, w, x)\)
+- \(b \leftarrow \mathrm{Verify}(vk, \pi, x)\)
 
-To authorize a swap or other operation, the user signs an intent using EIP-712 typed structured data. The intent includes the operation parameters (e.g. token in, token out, amount in, min amount out, fee, deadline). The domain is set to the chain id, the shielded pool contract address, and a domain name/version (e.g. ShadowDeFiRelayer version 1). The signature binds the user to the intent so that no one can alter parameters.
+where \(x\) are public inputs and \(w\) are witness values.
 
-To remove the security risk that any single party (including the backend) could decrypt and see intents, the signed intent is protected with Fully Homomorphic Encryption (FHE). The user encrypts the signed intent under an FHE public key. Only ciphertext is sent to the backend or relayer. The backend (or a dedicated FHE service) performs the necessary checks and proof-generation steps on the ciphertext: it can verify that the intent is valid and generate the zero-knowledge proof without ever decrypting the intent. No party—not the relayer, not the backend operator—ever has access to plaintext intents. Only the resulting proof and calldata are produced and sent to the relayer for submission. This closes both the relayer and the backend as single points of failure. If FHE is not yet deployed for the full flow, a fallback is to run decryption and proof generation inside a Trusted Execution Environment (TEE): the intent is encrypted for the TEE’s key, and only the enclave sees plaintext; the host (backend) never does. The intent and signature are also not posted on the public blockchain in any form; only the proof and its public inputs are on-chain, preserving on-chain privacy.
+### 3.1 Conventions
 
+- Concatenation is written \(\|\).
+- \(\mathbb{F}\) denotes the field used by the circuit.
+- All integers are interpreted as field elements only when explicitly reduced modulo the field prime.
+- “Collision resistance” and “PRF security” are understood in the standard cryptographic sense.
 
-8. Deposit
+### 3.2 Hash/PRF instantiation notes
 
-A user sends assets (native BNB or ERC-20) to the pool's deposit handler contract. For BNB, the user calls depositForBNB(depositor, commitment, assetID) and sends the deposit amount plus a fixed fee in BNB. For ERC-20, the user approves the handler and calls depositFor(depositor, token, amount, commitment, assetID). The handler charges a fixed fee ($2 in BNB per deposit, enforced by the fee oracle or handler logic); of this, $1.50 goes to the treasury and $0.50 to the relayer who submits the deposit—so a successful relayer receives $0.50 on every user deposit they process. The user (or client) computes a new note and its commitment before calling; the commitment is passed in the call and registered in the pool's Merkle tree. On-chain, the event is a deposit to the pool from the depositor address; the link between the depositor and the new note is not stored on-chain beyond that one-time deposit event. The client stores the note locally (or in encrypted form) for later use in swaps and withdrawals. Alternatively, Phantom supports a shadow-address flow: the user requests a one-time deposit address from the relayer (POST /shadow-address with depositor, token, amount, commitment, assetID, deadline and a signature). The relayer returns an address to which the user sends funds; a sweeper or the relayer then calls the deposit handler so the commitment is registered. This allows the depositor to avoid submitting the deposit transaction themselves.
+**Specified.** The protocol requires at least one hash that is efficient inside the circuit. Implementations commonly use algebraic hashes (MiMC, Poseidon, Rescue). The exact choice affects proving cost and on-chain verification assumptions.
 
+**Implemented.** The backend codebase includes a MiMC implementation (`mimc7`) used in certain codepaths. The circuits referenced in `circuits/` determine the authoritative instantiation.
 
-9. Swap
+## 4. Architecture overview
 
-Two execution paths exist.
+### 4.1 Components
 
-DEX route. The user specifies an input note, input amount (or full note), output asset, and minimum amount out (slippage). The client or backend requests a quote from the swap adaptor (POST /quote or direct call to the adaptor's getExpectedOutput). The adaptor uses the DEX (PancakeSwap) to compute the expected output for the given path (e.g. tokenIn to WBNB to tokenOut). The circuit burns the input note (or a portion) and mints an output note (swap result) and a change note (remainder), including protocol fee. The proof is generated by the backend and submitted by a relayer. The adaptor performs the actual DEX trade on-chain; the pool receives the output asset and credits the new note. Protocol fee for this path is 0.1% of the swap amount (swap fee numerator/denominator in the contract or fee oracle). The user also pays a relayer fee (if set); gas is paid from the user’s note—the circuit deducts the gas amount and sends it to the relayer to cover the transaction cost.
+The Phantom system consists of:
 
-Internal match (OTC). The user submits an order: asset in, asset out, amount in, minimum amount out (or desired price). Orders are stored encrypted (FHE) so that the matching engine can compare orders without learning exact amounts. When another order exists on the opposite side at a compatible price (e.g. one wants to sell X for Y at price P, the other wants to buy X for Y at price P or better), the matcher settles the trade inside the pool: two notes are consumed and two new notes are created, with no public order book. Protocol fee for internal match is 0.2%. If no match is found, the user can fall back to the DEX route. The FHE matching service (e.g. registerOrderAndTryMatch) and the FHE coprocessor or matching handler contract implement this flow; the backend may run a matching loop that checks for compatible orders and submits settlement transactions.
+- **Shielded pool contracts**: hold assets and enforce state transitions by verifying zk proofs and maintaining nullifiers and a commitment-tree root.
+- **DEX adapter (optional)**: a contract that performs a public swap via an AMM router for the DEX route.
+- **Relayer(s)**: submit pool transactions and pay gas, receiving reimbursement/fees depending on deployment policy.
+- **Backend services**: provide proof generation, chain state synchronization, quotes, and operational endpoints.
+- **Client application**: constructs requests, holds note secrets, and orchestrates proving/submission through relayers.
 
+### 4.2 Data and control flow (high level)
 
-10. Withdrawal
+**Specified.**
 
-The user specifies a note (or notes) to spend, a recipient address, and an amount. The circuit proves that the input note exists in the tree, the nullifier is new, and the output amount minus fees (protocol fee, relayer fee, gas paid from user’s note) is sent to the recipient. The relayer submits the proof and calldata; the pool contract executes the withdraw handler, which transfers assets (BNB or ERC-20) to the recipient. Withdrawal recipients can be screened when sanctions screening is enabled: the backend calls the Chainalysis API (or equivalent) with the recipient address and rejects the request if the address is sanctioned or high-risk. Screening is configurable (CHAINALYSIS_API_KEY in the backend environment); when disabled, no check is performed.
+1. User chooses an action (deposit/swap/withdraw).
+2. User (or wallet software) selects input notes and constructs an action request.
+3. A prover generates a proof \(\pi\) for the join-split statement with public inputs \(x\).
+4. A relayer submits \((\pi, x, \text{calldata})\) to the pool contract.
+5. The pool verifies \(\pi\), checks nullifiers are unused, updates root/commitments, and transfers any public outputs.
 
+**Implemented.** The repository currently follows this model with an Express backend and a set of REST endpoints; proof generation uses `snarkjs` in codepaths and circuit artifacts in `circuits/`.
 
-11. Payroll
+## 5. Data model: notes, commitments, nullifiers
 
-Payroll is a batch of withdrawals. A company (or DAO) deposits once into the pool, then creates a payroll run via the API (POST /payroll/run with company wallet and optional metadata). The run has a unique id and status (e.g. pending). The company then adds entries (POST or internal API for payroll entries: recipient address, amount, currency). Each entry has status (e.g. pending, paid). When the company is ready, each payout is executed as a withdrawal from the pool to that recipient: the company's note is spent (or a dedicated payroll note) and the recipient receives the funds. The API tracks runs and entries (GET /payroll/runs?wallet=..., GET /payroll/runs/:runId, GET /payroll/runs/:runId/entries). On-chain, only pool interactions are visible; the list of employees and amounts is not public. Employees can export their own history using a reporting key for tax or audit purposes.
+### 5.1 Notes
 
+A note represents a private claim on value inside the pool. At minimum, a note contains:
 
-12. Reporting Keys
+\[
+n := (\text{assetId}, v, \rho, \mathsf{owner})
+\]
 
-Each wallet can create one or more reporting keys. Creation: the user signs a message (e.g. "Phantom Protocol tax reporting key: ...") from their wallet; the backend verifies the signature and issues a key (random string) tied to that wallet address. The key is stored hashed (e.g. SHA-256) with the wallet address; the plaintext key is returned once to the user. To export history, the client sends the key (header X-Tax-Reporting-Key or query param) to GET /tax-export. The backend looks up the key hash: if it matches a user key, it returns only that wallet's transactions; if it matches an admin key, it can return all or filtered data. Keys can be revoked (POST /tax-reporting-keys/revoke); after revocation, the key no longer returns data. The pool's global anonymity set is unchanged; disclosure is per-wallet and optional.
+where \(v\) is the amount, \(\rho\) is per-note randomness, and \(\mathsf{owner}\) is information that allows only the owner to spend (e.g., a public key binding or address binding, depending on the circuit design).
 
+### 5.2 Commitments
 
-13. Sanctions Screening
+Each note is represented on-chain by a commitment \(cm\). A generic form is:
 
-When CHAINALYSIS_API_KEY is set in the backend environment, the relayer (or backend) calls the Chainalysis API for depositor addresses (e.g. on deposit or shadow-address flow) and withdrawal recipients (before submitting withdraw). The API returns risk/sanction status; if the address is sanctioned or high-risk, the backend rejects the request. The default API URL is https://public.chainalysis.com/api/v1; it can be overridden with CHAINALYSIS_API_URL. Screening does not require disclosure of note contents; only the on-chain address involved in deposit or withdrawal is checked. The /relayer endpoint returns chainalysisScreening: true when enabled.
+\[
+cm := H(\text{assetId} \,\|\, v \,\|\, \rho \,\|\, \mathsf{owner})
+\]
 
+The concrete instantiation must be compatible with the proving system (e.g., MiMC/Poseidon inside circuits).
 
-14. Relayers and Staking
+### 5.3 Nullifiers
 
-Relayers submit proofs and calldata to the pool. They do not see the user’s intent or operation parameters: intents are protected with FHE (or, as fallback, encrypted for a TEE), and the relayer receives only the proof and calldata from the backend or FHE service, so relayers never learn what swap or operation was requested. The backend operator also does not see plaintext intents when FHE (or TEE) is used. Gas is paid from the user’s balance (note): the circuit deducts the gas amount from the user’s note and sends it to the relayer to pay for the transaction; relayers do not pay gas out of pocket. They do not see note data (balances, note contents) or control funds. They may charge a fee to users (relayer fee), which is displayed in the DApp before the user confirms. They only submit transactions that are valid according to the contract. To register as a relayer, a node operator stakes the protocol token (PHN) in the relayer staking contract (RelayerRegistry or RelayerStaking). The pool contract may expose relayerRegistry() returning the staking contract address; if not set, the backend uses RELAYER_STAKING_ADDRESS from config. A minimum stake is required (minStake() on the staking contract); the exact amount is read from the contract and shown in the DApp. Stakers receive a share of protocol fees (e.g. 80% of swap fees distributed to stakers; the contract or fee distribution logic defines the split). Stakers can also claim pending rewards (claim(feeToken)). Slashing can apply for misbehavior (e.g. submitting invalid proofs); the staking contract or governance defines slashing conditions. The system can run with a single relayer (e.g. backend with RELAYER_PRIVATE_KEY) or with multiple relayers. Optional validator coordination: VALIDATOR_URLS can list other nodes that must attest or co-sign; DEV_BYPASS_VALIDATORS skips this for development. The backend exposes GET /relayer (relayer address, dryRun, bypassValidators, chainalysisScreening), GET /relayer/staking-status (staked balance, min stake, rewards), GET /staking/stats (totalStaked, minStake, protocolTokenAddress).
+To prevent double-spends, spending a note publishes a nullifier \(nf\) that is deterministic for that note and spend context:
 
+\[
+nf := \mathrm{PRF}_{sk_\mathsf{nf}}(\rho \,\|\, \text{domain})
+\]
 
-15. Fees
+where \(sk_\mathsf{nf}\) is a spending secret known to the note owner, and \(\text{domain}\) domain-separates nullifiers across contexts (e.g., pool instance, chain id, or action type).
 
-Deposit: fixed fee of $2 in BNB per deposit, paid at deposit time. The fee is enforced by the deposit handler or fee oracle (e.g. depositForBNB requires the msg.value to cover the deposit plus fee). Of this, $1.50 goes to the treasury and $0.50 to the relayer who submits the deposit—a successful relayer gets $0.50 on every user deposit. Swap via DEX: 0.1% of swap amount as protocol fee. Swap via internal OTC match: 0.2% of swap amount as protocol fee. Relayer fee: set by the relayer; shown in the DApp before confirmation. Protocol fees from swaps (DEX and internal/FHE match) are collected by the pool; 80% is distributed monthly to stakers, 20% to the treasury; the fee oracle (FeeOracle contract) or pool config defines this. Gas: gas is paid from the user’s balance. The circuit deducts the gas amount from the user’s note and sends it to the relayer to cover the cost of submitting the transaction. The relayer does not pay gas out of pocket.
+The protocol requires that:
 
+- a valid spend produces exactly one \(nf\) for the consumed note under the chosen domain, and
+- the on-chain nullifier set rejects repeats.
 
-15a. Fee Structure in Full
+## 6. State: commitment tree and nullifier set
 
-Who pays what: Every deposit costs the user a flat $2 equivalent in BNB at the time of deposit. That fee is paid to the protocol (deposit handler or fee oracle): $1.50 goes to the treasury and $0.50 to the relayer who submits the deposit. A successful relayer therefore receives $0.50 on every user deposit they process. Gas for submitting the deposit is paid from the user’s balance: the circuit deducts the gas amount from the user’s deposit/operation and sends it to the relayer to pay for the transaction. For swaps, the user pays the protocol fee (0.1% if the swap goes through the DEX, 0.2% if it is matched internally) and, optionally, a relayer fee. The protocol fee is taken from the swap amount before the user receives their output; it is collected by the pool and then split between the protocol treasury and PHN stakers (e.g. 20% to treasury, 80% to stakers). The relayer fee is set by the relayer (e.g. a percentage or a flat amount in the output token or in BNB); the user sees it in the DApp before signing and it is paid from the user's note or output as defined in the circuit. For withdrawals, the user may pay a protocol fee (if configured) and a relayer fee; gas is paid from the user’s note—the circuit deducts the gas amount and sends it to the relayer to cover the transaction cost. Gas: gas is always paid from the user’s balance. The circuit deducts the gas amount from the user’s note and sends it to the relayer to pay for the transaction. Relayers do not pay gas out of pocket. Relayers may also charge a relayer fee. Exact numbers: deposit $2 BNB (fixed; $1.50 to treasury, $0.50 to relayer who submits). FHE matching or internal swap: 0.2% fee, collected and distributed monthly—80% to stakers, 20% to treasury. Swap DEX 0.1% of swap amount to protocol (then 80% to stakers, 20% to treasury). Swap internal 0.2% of swap amount to protocol (same split). Relayer fee is variable and chosen by each relayer; it is displayed in the DApp so the user can compare or accept. Withdrawal protocol fee and relayer fee depend on deployment; when applicable they are shown before the user confirms.
+### 6.1 Commitment tree
 
+The pool maintains an append-only Merkle tree over commitments. Let the tree have fixed depth \(d\). Insertions append new leaves in order. A transaction proves membership of an input commitment \(cm_\text{in}\) by providing a Merkle path whose recomputed root equals the public input \(\mathsf{root}\).
 
-15b. How Phantom Works (End-to-End)
+**Specified (tree capacity and rollover).** For a fixed-depth tree, capacity is \(2^d\) leaves. If the active tree reaches capacity, new commitments MUST NOT be appended to that tree. Deployments MUST either:
 
-From the user's perspective: Connect a wallet (e.g. MetaMask) to the Phantom DApp on BNB Chain. Deposit: choose an asset and amount, pay the $2 BNB deposit fee; the DApp builds a private note and its commitment, then either you submit the deposit transaction to the pool's deposit handler or you use the shadow-address flow (request a one-time address from the API, send funds there, and the relayer registers your commitment). Your balance appears in the pool as a private note; the public chain only sees a deposit to the pool, not your identity linked to the note. Swap: choose token in, token out, amount, and minimum amount out. The DApp requests a quote from the backend (which uses the swap adaptor for the DEX path or checks for an internal match). You sign an intent (EIP-712) and the client protects it with FHE (or encrypts it for a TEE); neither the relayer nor the backend ever sees plaintext. Verification and proof generation run on ciphertext (or inside the TEE). The relayer submits only the resulting proof and calldata to the pool contract. The contract verifies the proof and executes the swap (either via the DEX adaptor or as an internal match). You receive new notes (swap output and change) in your portfolio; no one can see how much you swapped or at what price. Withdraw: choose a recipient address and amount. The backend (and optionally Chainalysis) checks the recipient; then the backend generates a proof that spends your note and sends the amount minus fees to the recipient. The relayer submits; the pool transfers assets to the recipient. On-chain, the transfer is from the pool to the recipient; the link between your note and your identity is not stored. From the system's perspective: The DApp talks to the Phantom API (quote, intent, swap, deposit, withdraw, merkle). The API runs a backend prover (Rapidsnark or snarkjs) that produces Groth16 proofs. The API is connected to a relayer (or is the relayer): a wallet that has staked PHN above the minimum and that submits the proofs and calldata to the pool contract. The pool contract holds all assets, stores the Merkle root of commitments and the set of nullifiers, and runs the verifier contract to check each proof. Only valid proofs update the root and transfer assets. Relayers never see the user's intent (it is protected with FHE or TEE so the backend doesn’t see it either) or note data; they only receive and submit the proof and calldata. Users keep their notes locally (or in encrypted storage); the Merkle path for a note is fetched from the API (which syncs state from the chain) when the user wants to spend it.
+- use a preconfigured larger fixed depth for the next deployment/circuit set, or
+- open a new tree epoch (new tree identifier) and continue appends there.
 
+Historical roots remain valid anchors for spends subject to the deployment's accepted-root policy. In multi-tree deployments, a spend references the corresponding root (and tree identifier if encoded by the circuit/public inputs).
 
-15c. How Relayers Earn
+### 6.2 Nullifier set
 
-Relayers have two sources of income. First, relayer fees: the relayer sets a fee (e.g. 0.05% of swap amount or a flat 0.001 BNB per transaction) that the user pays when submitting a deposit, swap, or withdraw. That fee is displayed in the DApp before the user signs. The fee is either deducted from the user's note in the circuit (and sent to the relayer's address) or agreed off-chain and paid in the same transaction. The relayer keeps 100% of this fee. For every user deposit they submit, the relayer also receives $0.50 from the $2 deposit fee (the other $1.50 goes to the treasury). FHE matching and internal swap fees are collected by the protocol; 80% is distributed monthly to stakers (relayers who stake PHN receive their share), 20% to the treasury. Gas cost is paid from the user’s balance: the circuit deducts the gas amount from the user’s note and sends it to the relayer to pay for the transaction. Second, protocol fee share: when the protocol collects fees from swaps (the 0.1% DEX fee and the 0.2% internal match fee), a large portion (e.g. 80%) is distributed to PHN stakers. The staking contract tracks how much each staker has staked and allocates the protocol fee share proportionally. Stakers claim their accumulated rewards by calling claim(feeToken) on the staking contract; the rewards are in the token that was collected (e.g. the swap output token). The more a relayer has staked, the larger their share of that 80%. The remaining 20% goes to the protocol treasury. So a relayer that stakes PHN and runs a node earns (1) every relayer fee from every transaction they submit, (2) $0.50 on every user deposit they process, and (3) 80% of the fee when they submit an FHE matching or internal swap (the other 20% goes to the treasury), plus any protocol fee share to stakers, claimable over time. They must maintain a server and the staked PHN; the minimum stake is read from the staking contract (minStake()) and shown in the DApp. No special permission is required: anyone who stakes at or above the minimum and runs the backend with their staking wallet as RELAYER_PRIVATE_KEY can register as a relayer and earn. Slashing can reduce or remove stake if the relayer submits invalid proofs or otherwise misbehaves; the exact conditions are defined in the staking contract.
+The pool maintains a set (or tree) of spent nullifiers. A transaction is valid only if its nullifier is not already present.
 
+## 7. Proof system and join-split statement
 
-15d. Use Cases: What You Can Do
+Phantom’s core zk statement is a join-split style constraint system. The exact arity (number of inputs/outputs) is a circuit choice; the security properties require at least:
 
-Private payroll. A company or DAO holds assets in the shielded pool. It creates a payroll run with a list of employee wallet addresses and amounts. Each payout is a withdrawal from the pool to that address. On the public chain, only the pool contract is seen moving funds to many addresses; the list of who is an employee and how much each earns is not public. Employees receive funds privately and can later create a reporting key to export their own transaction history for tax or audit. Use case: salary and contractor payments without exposing compensation to competitors or the public.
+- membership for each input note,
+- nullifier correctness for each input note,
+- output commitment correctness, and
+- value conservation up to explicit fees and public deltas.
 
-Treasury rebalancing. A treasury holds USDT, BNB, and other assets in the pool. It wants to rebalance from USDT into BNB or into a liquidity position. It swaps inside the pool via the DEX path or, when available, via internal OTC match. No public order book sees the size or direction of the trade; the treasury's strategy and size stay hidden. Use case: rebalancing without moving the market or signaling to copy-traders.
+### 7.1 Public inputs
 
-Large swaps and OTC matching. A team or fund wants to sell a large amount of a token (or LP) without slippage or visible price impact. With internal matching, they submit an order at their desired price (e.g. sell X token for Y stablecoin at price P). When a counterparty submits the opposite order at a compatible price, the two are matched inside the pool; the trade settles without ever hitting the public order book. No slippage from the open market and no visible impact on the ticker. Use case: treasury exits, token liquidations, and block trades with privacy.
+At minimum:
 
-Compliance and audit. A bank or institution needs to prove to regulators or auditors that certain flows are compliant. Phantom does not expose everyone's data; instead, each wallet can create one or more reporting keys. The wallet owner gives a key to their accountant, lawyer, or tax tool. That key allows export of only that wallet's full history (deposits, swaps, withdrawals) from the API. Auditors see exactly what they need and nothing else. Keys can be revoked at any time. Use case: selective disclosure for KYC/AML, tax reporting, and legal discovery without breaking the anonymity set for other users.
+\[
+x := (\mathsf{root}, nf_1,\dots,nf_k, cm^\text{out}_1,\dots,cm^\text{out}_m, \Delta_\text{public})
+\]
 
-Sanctions screening. When the protocol operator enables Chainalysis (or similar), depositor addresses and withdrawal recipients are checked against a sanctions/risk database before the transaction is submitted. Sanctioned or high-risk addresses are rejected. Screening is optional and configurable; it does not require users to reveal note contents, only the on-chain address used for deposit or withdrawal. Use case: compliance for institutions that must block bad actors while preserving privacy for others.
+where \(\Delta_\text{public}\) captures any explicitly public value movement (e.g., an on-chain withdrawal amount).
 
-Building applications. Developers can build on top of Phantom using the SDK and APIs. The relayer API exposes quote, intent, swap, deposit, withdraw, merkle proof, and more. Contract interfaces (ShieldedPool, NoteStorage, SwapAdaptor, RelayerStaking) are published with ABIs and deployment addresses. Use cases: custom dashboards, treasury tools, payroll runners, messaging or payment apps that settle through the pool, and trading bots or aggregators that submit swaps via the API and use internal matching when available.
+### 7.2 Witness
 
+\[
+w := (\text{input notes}, \text{Merkle paths}, sk_\mathsf{nf}, \rho\text{’s}, \text{output note secrets}, \text{fee parameters})
+\]
 
-16. Contracts
+### 7.3 Constraints
 
-Core contracts on BNB Chain (testnet chain id 97, mainnet 56) include: ShieldedPool (or ShieldedPoolUpgradeable, ShieldedPoolUpgradeableReduced): holds commitments, nullifiers, Merkle root, and delegates to handlers. DepositHandler: accepts BNB and ERC-20 deposits, charges fee, registers commitment. WithdrawHandler: executes withdrawals given proof and calldata. SwapHandler or equivalent: executes swaps (DEX or internal). Swap adaptor (PancakeSwapAdaptor): interfaces with PancakeSwap router for the DEX path. NoteStorage: may store commitment-to-note metadata off-chain or on-chain. FeeOracle: returns protocol fee for a given operation or amount. RelayerRegistry / RelayerStaking: PHN staking, min stake, reward distribution. Groth16Verifier or Groth16VerifierAdapter: on-chain proof verification. ComplianceModule: optional Chainalysis or compliance integration. FHE coprocessor or MatchingHandler: for internal FHE-based order matching. Deployment addresses are in deployment-config.json, backend config.json, and frontend public/config.json; they differ by network (testnet vs mainnet) and deployment run.
+For each input note:
 
+- **Membership**: \(\mathrm{MerkleRoot}(cm_\text{in}, path) = \mathsf{root}\)
+- **Nullifier**: \(nf = \mathrm{PRF}_{sk_\mathsf{nf}}(\rho \,\|\, \text{domain})\)
 
-17. API Endpoints
+For outputs:
 
-The backend exposes REST over HTTP. Health: GET /health. Quote: POST /quote (token in/out, amount; returns expected output, fees). Intent: POST /intent (create signed intent for swap). Swap: POST /swap (intent + proof data; returns receipt). Deposit: POST /deposit (payload with commitment, amount, etc.; or shadow flow POST /shadow-address, POST /shadow-sweep). Withdraw: POST /withdraw (withdrawData; screening applied if enabled). Portfolio: POST /portfolio/swap, POST /portfolio/deposit, POST /portfolio/withdraw (portfolio-note flows). Merkle: GET /merkle/:commitment (returns Merkle path and root for the commitment; backend may sync state from chain). Prove: POST /prove (generic proof submission). Swap proof: POST /swap/generate-proof (generates proof for swap). Relayer: GET /relayer (relayer info, chainalysis flag). Relayer staking: GET /relayer/staking-status, GET /staking/stats. Validator: GET /relayer/validator-status. Telemetry: GET /telemetry (anonymity set, node count, swap count 24h, volume). Tax: POST /tax-reporting-keys (create key), POST /tax-reporting-keys/revoke, GET /tax-export?key=... Payroll: POST /payroll/run, GET /payroll/runs, GET /payroll/runs/:id, and entry endpoints. Deposit fee: GET /deposit/required-fee-bnb. Swap fee: GET /portfolio/swap-fee. Receipt: GET /receipt/:intentId. History: GET /history/:address. Verification key: GET /verification-key. FHE: /fhe/public-key, /fhe/encrypt (when FHE service is running). All relevant endpoints are documented in the backend code and in the Phantom SDK/docs for integration.
+- **Commitment correctness**: \(cm^\text{out}_i = H(\cdots)\)
 
+For value conservation (single-asset illustrative form):
 
-18. Client and DApp
+\[
+\sum v_\text{in} = \sum v_\text{out} + \mathsf{fee}_\text{protocol} + \mathsf{fee}_\text{relayer} + \Delta_\text{public}
+\]
 
-The DApp (frontend) connects to the user's wallet (e.g. MetaMask) and to the backend API. It loads contract addresses from /config.json (or env at build time). The user selects chain (BNB testnet 97 or mainnet 56), connects wallet, then can deposit, swap, or withdraw. For deposit, the DApp constructs the note and commitment, calls the deposit handler or uses the shadow-address flow. For swap, the user enters token in/out, amount, min amount out; the DApp requests a quote, the user signs an intent, the backend generates the proof, and the relayer submits. For withdraw, the user enters recipient and amount; the DApp builds the proof request and submits. The DApp also supports portfolio view (balances in the pool), staking (stake/unstake PHN, claim rewards), payroll (create run, add entries, execute payouts), and tax reporting (create/revoke key, export). Config keys: shieldedPoolAddress, noteStorageAddress, swapAdaptorAddress, relayerStakingAddress, feeOracleAddress, depositHandlerAddress, verifierAddress, protocolTokenAddress. The frontend uses the same API base (VITE_API_URL or default production URL) for all requests.
+Multi-asset variants either restrict a join-split to a single asset per action, or enforce conservation per-asset inside the circuit.
 
+### 7.4 Public inputs by action type
 
-19. FHE and Internal Matching (Detail)
+**Specified.** The join-split statement must include enough public inputs for the contract to update state deterministically:
 
-Internal matching allows two parties to swap inside the pool without routing through the DEX. Orders are stored with encrypted amounts (FHE) so that the matcher can determine compatibility (e.g. order A sells X for Y at min amount M, order B buys X for Y at max amount M or better) without learning exact amounts. The same FHE (or TEE) approach is used for **intent privacy**: signed intents are encrypted so that verification and proof generation can run without any party—including the backend—ever seeing plaintext (see §7). The FHE service (e.g. Microsoft SEAL via backend) provides encryption and possibly comparison on ciphertexts. When a match is found, the backend (or matching contract) executes a settlement transaction: two notes are spent (one from each side) and two new notes are created (swap output for each party). Protocol fee is 0.2%. The flow is OTC-style: there is no public order book; orders are visible only to the matching logic. If no counterparty is available, the user's swap falls back to the DEX route (0.1% fee). The FHE coprocessor contract (FHECoprocessor) or matching handler may be invoked on-chain for verification of match results; the exact design depends on the deployment (in-development vs production).
+- \(\mathsf{root}\): a recent commitment-tree root (anchor).
+- \(nf_i\): nullifiers for each consumed note.
+- \(cm^\text{out}_j\): commitments for newly-created notes appended to the tree.
+- Any public transfer outputs (recipient, token, amount) for withdrawals.
+- Any public DEX route parameters required by a swap adapter (depending on design).
 
+**Implemented.** The exact public input ordering and calldata encoding are determined by the circuit and verifier contract deployed for a given network.
 
-20. Validators (Optional)
+### 7.5 Verification on-chain
 
-The backend can be configured with VALIDATOR_URLS: a list of other nodes that must attest or co-sign before a transaction is submitted. The validator network checks health of each URL and may require a threshold (e.g. 66%) to approve. When DEV_BYPASS_VALIDATORS is true or VALIDATOR_URLS is empty, the relayer submits without validator coordination. GET /relayer/validator-status returns bypassed: true/false and the list of validators and their status. This allows a multi-party relayer setup where no single node can submit without consensus.
+**Specified.**
 
+On receiving a transaction, the pool contract must:
 
-21. Deployment and Networks
+1. verify the zk proof for the given public inputs,
+2. check each \(nf_i\) is not already spent,
+3. mark each \(nf_i\) as spent, and
+4. append each \(cm^\text{out}_j\) into the commitment tree, updating the root accordingly,
+5. execute any public transfers (withdraw) and/or invoke adapters (DEX swap) only after proof verification.
 
-Phantom is deployed on BNB Chain testnet (chain id 97, RPC e.g. https://data-seed-prebsc-1-s1.binance.org:8545) and can be deployed on BNB Chain mainnet (chain id 56). Contract addresses differ by network and deployment; backend config (config.json or environment variables) and frontend config.json must match the target chain. Key env vars: RPC_URL, CHAIN_ID, SHIELDED_POOL_ADDRESS, NOTE_STORAGE_ADDRESS, SWAP_ADAPTOR_ADDRESS, RELAYER_STAKING_ADDRESS, RELAYER_PRIVATE_KEY, OFFCHAIN_ORACLE_ADDRESS (fee oracle), ORACLE_SIGNER_PRIVATE_KEY, CHAINALYSIS_API_KEY (optional), VALIDATOR_URLS (optional), DEV_BYPASS_VALIDATORS, RELAYER_DRY_RUN. The DApp and API are available at the production URL (e.g. https://phantom-protocol.onrender.com); the marketing site and docs are separate. Tokens supported on testnet include WBNB, tBUSD, tUSDT, tUSDC, tCAKE, tBTCB, tETH, tDAI (asset ids 0–8); the pool and adaptor support multiple assets via asset id mapping.
+## 8. Protocol flows
 
+This section describes the high-level flows. Concrete calldata formats and endpoints are documented in code; the cryptographic requirements are as in §7.
 
-22. Roadmap
+### 8.1 Deposit
 
-Genesis: whitepaper, ZK engine design, institutional framework. Shielded pool init: FHE-based encrypted matching, testnet deployment, selective disclosure keys (reporting keys). Omnichain flux: cross-chain obfuscation, DEX aggregator integration, institutional SDK release. The roadmap is subject to change; current focus is testnet stability, internal matching, and SDK/docs for builders.
+User deposits an asset into the pool and creates a new note commitment \(cm\) inserted into the tree. The user stores the corresponding note secret material locally (or in an encrypted wallet store).
 
+If a relayer submits the deposit transaction on behalf of a user, the relayer learns the public deposit parameters visible on-chain, but does not learn the note secret material.
 
-Glossary (for general readers)
+#### 8.1.1 Deposit (formalized)
 
-BNB Chain: The blockchain Phantom runs on (testnet and mainnet). PHN: The protocol token; staking it lets you earn a share of swap fees and, if you run a relayer, submit transactions. Relayer: A service that submits your deposit, swap, or withdrawal to the blockchain. It does not see your intent (intents are protected with FHE or TEE so neither the relayer nor the backend sees plaintext), your balance, or your note data; it only receives and submits the proof and calldata. Gas is paid from your deposited balance (note); the deducted amount is sent to the relayer to pay for the transaction. the relayer earns $0.50 on every user deposit they process; as stakers they receive a share of the 80% of FHE/internal swap fees distributed monthly to stakers. They can also charge you a relayer fee. Note: Your private record of a balance in the pool; only you can spend it; the chain stores only a "commitment" (a hash), not the amount or owner. Commitment: A cryptographic fingerprint of a note, stored in the pool so the system can check the note exists without revealing it. Nullifier: A value published when you spend a note, so the same note cannot be spent twice. Shielded pool: The smart contract that holds all deposited assets and the list of commitments and nullifiers; your balance is in the pool but not visible. Zero-knowledge proof (ZK proof): A proof that a transaction is valid (e.g. you have the funds and the math adds up) without revealing the amounts or which note you spent. DEX: Decentralized exchange (e.g. PancakeSwap); Phantom can route a swap through the DEX or match it internally. Internal match (OTC): When two users want to swap at compatible prices, Phantom can settle the trade inside the pool with no public order book. Reporting key: A key you create to let someone (e.g. your accountant) export only your transaction history from Phantom. Intent: The operation parameters (e.g. token in/out, amount, deadline) that the user signs with EIP-712. The signed intent is protected with FHE (or, as fallback, encrypted for a TEE): only ciphertext is sent to the backend; verification and proof generation run on ciphertext (or inside the TEE) so that no party—including the backend—ever sees plaintext. The relayer receives only the proof and calldata. The intent is not posted on the public chain. Staking: Locking PHN in the protocol's staking contract; stakers earn a share of protocol swap fees.
+**Specified.** A deposit creates one new note \(n_\text{out}\) and commitment \(cm_\text{out}\) with:
 
+\[
+cm_\text{out} = H(\text{assetId}, v, \rho, \mathsf{owner})
+\]
 
-23. Summary
+and appends \(cm_\text{out}\) to the commitment tree. Deposits are public funding events and therefore do not provide anonymity with respect to the funding address; they serve to increase the anonymity set for subsequent private spends inside the pool.
 
-Phantom provides a shielded pool and relayer network for private deposits, swaps, withdrawals, and payroll on BNB Chain. Zero-knowledge proofs (Groth16) ensure correctness without revealing note ownership or amounts. The Merkle tree of commitments and the nullifier set prevent double spends; the circuit enforces balance conservation and fees. Backend proving (Rapidsnark/snarkjs) keeps the user experience practical. Per-wallet reporting keys and optional Chainalysis sanctions screening support compliance. Internal OTC-style matching (FHE) allows swaps without a public order book; when no match exists, swaps route through PancakeSwap. Fees: $2 BNB per deposit ($1.50 treasury, $0.50 to relayer who submits); 0.1% DEX swap, 0.2% internal swap. FHE matching and internal swap fees are collected and 80% is distributed monthly to stakers, 20% to treasury. Relayers set their own fee and earn $0.50 per user deposit; as stakers they receive their share of the monthly staker distribution. Relayers are permissionless subject to PHN stake; the staking contract enforces minimum stake and distributes rewards. Contracts, API, and DApp are deployed and documented; the SDK and contract interfaces allow third-party applications to integrate with the pool.
+### 8.2 Swap
+
+Two swap modes are supported at the system level:
+
+- **DEX route (public execution)**: a swap adapter performs a public swap (e.g., via an AMM router). The join-split proves the user’s spend and produces output commitments reflecting the swap result and change.
+- **Internal matching (optional module)**: a matching service can pair opposite orders and settle inside the pool via proof-authorized state updates.
+
+The repository currently includes a matching router under `/fhe` that accepts “encrypted” payloads for UX purposes; its current implementation is explicitly a deterministic/mock placeholder and should not be treated as a cryptographic FHE construction.
+
+#### 8.2.1 DEX route (public execution)
+
+**Specified.** A DEX-route swap consists of:
+
+- consuming one or more input notes,
+- invoking a public swap adapter to exchange assets held by the pool, and
+- creating output notes that represent the swap result (and any change).
+
+The join-split constraints must ensure that the user-authorized spend covers:
+
+- the input asset amount routed to the adapter,
+- any protocol fee deducted by the pool,
+- and any relayer fee or gas reimbursement policy (if encoded in-circuit).
+
+#### 8.2.2 Internal matching (optional module)
+
+**Optional.** Internal matching can be modeled as a two-party join-split: two users each spend an input note in one asset and receive an output note in the other asset. The protocol can support this as a special case of the join-split statement, without invoking an external DEX.
+
+**Implemented (current repo state).** The `/fhe` routes implement:
+
+- `POST /fhe/encrypt`: returns an opaque payload for UI purposes,
+- `POST /fhe/order`: registers an “encrypted” order and may match it against a reverse pair in memory,
+
+but do not implement homomorphic encryption or any cryptographic confidentiality guarantees.
+
+### 8.3 Withdraw
+
+A withdraw consumes a note and produces:
+
+- a nullifier \(nf\) recorded on-chain, and
+- a public asset transfer from the pool to a recipient.
+
+The proof enforces that the withdrawn value is covered by the note(s) and fees.
+
+#### 8.3.1 Withdraw (formalized)
+
+**Specified.** A withdrawal makes a public transfer from pool custody to a recipient, while keeping the provenance of funds private inside the pool. The public output includes at least:
+
+- recipient address \(r\),
+- token/asset identifier,
+- amount \(a\).
+
+The proof must ensure \(a\) is covered by the spent notes under the protocol’s fee rules.
+
+### 8.4 Batch operations (payroll-style)
+
+**Optional.** A “payroll run” is a batch of withdrawals executed over time. It is not a distinct cryptographic primitive: each payout is a normal withdraw proof, and batching is an application-layer orchestration.
+
+**Implemented.** The repository contains enterprise and ledger-related API surfaces; the exact payroll endpoints and storage semantics depend on the enterprise router implementation.
+
+## 9. Relayers and transaction submission
+
+### 9.1 Motivation for relayers
+
+Relayers provide a consistent transaction submission layer:
+
+- users avoid managing per-operation gas funding in the same address that funds deposits,
+- applications can route through multiple relayers for uptime,
+- operators can apply policy controls (rate limits, allowlists, attestation gates).
+
+### 9.2 Relayer trust model
+
+**Specified.** Relayers must not be able to forge spends: they do not hold note secrets and cannot create valid proofs without the witness. They can, however:
+
+- censor or delay user requests,
+- selectively include/exclude transactions,
+- observe public metadata (timing, recipient for withdrawals, DEX calldata for public swaps).
+
+### 9.3 Replay protection (backend layer)
+
+**Implemented.** The backend maintains a replay cache with TTL to prevent repeated submission of identical requests within a window.
+
+## 10. Backend API surface (implemented)
+
+This section documents the backend as implemented in `phantom-relayer-dashboard/backend`. It is an integration interface, not a consensus-critical component.
+
+### 10.1 Environment and production gates
+
+**Implemented.** Production startup can be configured to fail if unsafe development bypasses are enabled and if required environment variables are missing. See `PRODUCTION-READY.md` for the enforced gates and required variables.
+
+### 10.2 Key endpoint families (overview)
+
+**Implemented (non-exhaustive).**
+
+- **Health/readiness**: `/health`, `/ready`
+- **Relayer metadata**: `/relayer`, staking/status endpoints
+- **FHE mock router**: `/fhe/public-key`, `/fhe/encrypt`, `/fhe/order`, `/fhe/health`
+- **Enterprise routes**: `/enterprise/*` (also mounted at `/` in the current backend)
+- **SEE**: `/see/config`, `/see/verify` and sensitive-flow requirements when enabled
+
+## 11. Operational modules (enterprise API, SEE gate)
+
+The relayer backend uses typed structured data signatures to authenticate user requests and reduce parameter malleability.
+
+### 11.1 Swap intent type (current backend implementation)
+
+In the backend implementation, a swap intent includes fields:
+
+- `nullifier: bytes32`
+- `minOutputAmount: uint256`
+- `protocolFee: uint256`
+- `gasRefund: uint256`
+- `deadline: uint256`
+
+These are signed under an EIP-712 domain (name `"ShadowDeFiRelayer"`, version `"1"`, chain id, and verifying contract set to the shielded pool address).
+
+The intent signature is an authentication and anti-tampering mechanism for relayer coordination; it is not, by itself, a privacy mechanism.
+
+### 11.2 Enterprise API key protection
+
+The backend supports an enterprise API surface that can require an `X-Enterprise-API-Key` header when configured.
+
+### 11.3 SEE attestation gate
+
+Deployments can require a “SEE” attestation for sensitive endpoints (deposit/swap/withdraw). The current backend verifies an attestation document and signature (HMAC-based) under shared-secret configuration.
+
+These modules affect **who is allowed to request a transaction via the backend**; they do not change the on-chain zk statement.
+
+## 12. Economics and fees (parameterized)
+
+This section defines a fee model in a parameterized way. Deployments should publish their current parameters as configuration and/or on-chain constants.
+
+### 12.1 Fee parameters
+
+Let:
+
+- \(\phi_\text{deposit}\): a deposit fee (could be flat or proportional).
+- \(\phi_\text{swap}\): a swap fee rate (basis points).
+- \(\phi_\text{relayer}\): a relayer fee (flat or proportional).
+
+### 12.2 Where fees are charged
+
+**Specified.**
+
+- Deposit fees are public at deposit time.
+- Swap fees may be accounted inside the join-split constraints (deducted from outputs) or via explicit on-chain accounting.
+- Withdrawal fees may be charged similarly.
+
+**Implemented.** The repo contains configuration and enterprise surfaces related to fees and operational accounting; the authoritative economic parameters for a given deployment must be defined by the deployed contracts and backend config.
+
+## 13. Security considerations and threat model
+
+### 13.1 Adversaries
+
+- **Chain observer**: sees all calldata, events, and state roots.
+- **Malicious relayer**: can censor, reorder, and front-run within the limits of public information.
+- **Compromised backend**: can exfiltrate user-provided secrets if the client submits them; can deny service; can lie in API responses.
+- **Smart contract attacker**: attempts to exploit state update bugs, verifier bugs, or reentrancy.
+
+### 13.2 Core security claims (conditional)
+
+**Specified.** Assuming:
+
+- zk soundness,
+- correct circuit constraints,
+- binding commitments and collision-resistant hashes,
+- correct contract verification and state updates,
+
+then:
+
+- double-spending is prevented by nullifier uniqueness,
+- value cannot be created from nothing (conservation),
+- note owners and internal transfer graphs remain private except for explicitly public outputs.
+
+### 13.3 Privacy limits
+
+- Deposits are public funding events.
+- Withdrawals are public recipient/amount events.
+- Timing, gas usage, and public swap adapter calls leak metadata.
+
+## 14. Deployment and configuration
+
+This section is a checklist-style summary of operational configuration surfaces.
+
+**Implemented.**
+
+- `RPC_URL`, `CHAIN_ID`, `SHIELDED_POOL_ADDRESS`, `RELAYER_PRIVATE_KEY`
+- `CORS_ORIGINS`
+- `DEV_BYPASS_VALIDATORS`, `DEV_BYPASS_PROOFS` (blocked in production per the production readiness gates)
+- `SEE_MODE`, `SEE_SHARED_SECRET` (when SEE enabled)
+- `ENTERPRISE_API_KEY` (to protect enterprise endpoints when set)
+
+## 15. Glossary
+
+- **Note**: private record representing value inside the pool.
+- **Commitment (cm)**: hash committed on-chain representing a note.
+- **Nullifier (nf)**: hash committed on-chain when a note is spent, preventing double spend.
+- **Anchor / root**: commitment-tree root used as a membership reference point.
+- **Join-split**: circuit pattern that consumes notes and creates new notes under conservation constraints.
+- **Relayer**: third party that submits transactions; does not have note secrets.
+- **SEE**: deployment module that can gate sensitive requests behind an attestation check.
+
+## 16. References
+
+This repository includes:
+
+- A relayer backend (`phantom-relayer-dashboard/backend`) implementing:
+  - EIP-712 typed-data domains and intent types
+  - proof generation plumbing (using `snarkjs` in codepaths; circuits and keys are referenced from `circuits/`)
+  - validator-network coordination (optional)
+  - enterprise routes and SEE gating
+  - a `/fhe` router containing mocked “encryption” and order matching for development UX
+- A frontend that calls backend endpoints (e.g., `src/api/phantomApi.js`) including `/fhe/public-key`, `/fhe/encrypt`, `/fhe/order`.
+
+Any claim of “FHE-secured intent privacy” requires a concrete, audited cryptographic instantiation. The present `/fhe` router is not such an instantiation.
+

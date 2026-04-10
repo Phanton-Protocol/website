@@ -15,7 +15,7 @@ class Particle {
         this.speed = 0.5 + Math.random() * 1.5;
         this.size = 10 + Math.random() * 10;
         this.text = Array.from({ length: 4 }, () => HEX_CHARS[Math.floor(Math.random() * 16)]).join('');
-        this.opacity = Math.random() * 0.5 + 0.1;
+        this.opacity = Math.random() * 0.2 + 0.05;
         this.isBroken = false;
         this.brokenTimer = 0;
     }
@@ -127,7 +127,7 @@ const DataInterceptionBackground = () => {
                 height: '100%',
                 pointerEvents: 'none',
                 zIndex: 0,
-                opacity: 0.25,
+                opacity: 0.12,
                 mixBlendMode: 'screen',
             }}
         />
