@@ -92,6 +92,7 @@ struct PublicInputs {
  * - changeAmount: 6 BNB (stays in pool as new note)
  * - protocolFee + gasRefund: deducted from input
  */
+/// @dev Groth16 verifier receives nine `Fr`-reduced values; see `ShieldedPool._joinSplitPublicInputsToArray` and `circuits/CIRCUITS.md`.
 struct JoinSplitPublicInputs {
     bytes32 nullifier;              // Hash of spent note (prevents double-spending)
     bytes32 inputCommitment;        // Commitment of the note being spent

@@ -67,7 +67,9 @@ export async function deployVerifiersAndSwapAdaptor(): Promise<InfraAddresses> {
 
   let groth16Addr = process.env.JOIN_SPLIT_GROTH16_ADDRESS?.trim();
   if (!groth16Addr) {
-    const Groth16 = await ethers.getContractFactory("Groth16Verifier");
+    const Groth16 = await ethers.getContractFactory(
+      "contracts/_full/verifiers/JoinSplitVerifier.sol:Groth16Verifier"
+    );
     const groth16 = await Groth16.deploy();
     await groth16.waitForDeployment();
     groth16Addr = await groth16.getAddress();

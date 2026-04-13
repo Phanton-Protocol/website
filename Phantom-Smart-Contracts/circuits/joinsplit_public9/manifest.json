@@ -1,0 +1,48 @@
+{
+  "circuit": "joinsplit_public9",
+  "description": "MVP public-signal layout only; binds 9 outputs to private inputs. Production must replace with soundness constraints.",
+  "circom": "2.2.3",
+  "snarkjs": "0.7.5",
+  "curve": "bn128",
+  "publicSignals": 9,
+  "publicSignalOrder": [
+    "nullifier (bytes32 as uint256)",
+    "inputCommitment (bytes32 as uint256)",
+    "outputCommitmentSwap (bytes32 as uint256)",
+    "outputCommitmentChange (bytes32 as uint256)",
+    "merkleRoot (bytes32 as uint256)",
+    "outputAmountSwap (uint256)",
+    "minOutputAmountSwap (uint256)",
+    "protocolFee (uint256)",
+    "gasRefund (uint256)"
+  ],
+  "onChainReference": "ShieldedPool._joinSplitPublicInputsToArray",
+  "artifacts": {
+    "circomSource": {
+      "path": "circuits/joinsplit_public9/joinsplit_public9.circom",
+      "sha256": "ce5f2579d9c298247e69c587e2868d774ddb8ddf6d70b07608c47e432b81fdf2"
+    },
+    "wasm": {
+      "path": "circuits/joinsplit_public9/build/joinsplit_public9_js/joinsplit_public9.wasm",
+      "sha256": "713751bef3cd68b74faa16297e0e912c7ede190cc1c0290d532a1546ebbe266a"
+    },
+    "zkeyFinal": {
+      "path": "circuits/joinsplit_public9/circuit_final.zkey",
+      "sha256": "2e755d90ff0946ee210115ea05dc1cdb508ede8cb3863390ec84ac281820833f"
+    },
+    "verificationKeyJson": {
+      "path": "circuits/joinsplit_public9/verification_key.json",
+      "sha256": "7eb1186f12d13e77a45cf4429371d38fc9ff2855237f3b7a5b265721008f9345"
+    },
+    "powersOfTau": {
+      "path": "circuits/trusted_setup/pot8_bn128_pow8_final.ptau",
+      "sha256": "79bdce6e3365f5b9af7ac6b14d0a717ff3653dc11136a6bf7d346a3aed1c0dbd",
+      "note": "Local dev pot (snarkjs powersoftau new bn128 8 + 1 contribution). Use Hermez/challenge ceremony for production."
+    },
+    "solidityVerifier": {
+      "path": "contracts/_full/verifiers/JoinSplitVerifier.sol",
+      "contractName": "Groth16Verifier",
+      "generatedBy": "snarkjs zkey export solidityverifier"
+    }
+  }
+}

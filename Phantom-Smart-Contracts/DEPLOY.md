@@ -18,6 +18,12 @@
 
    Or from **`core/`**: `HH_FULL=1 npm run compile:full`
 
+## Join-split Groth16 (Module 2)
+
+- Public signal order / `Fr` reduction: **`circuits/CIRCUITS.md`**
+- Pinned wasm / zkey / vk hashes: **`circuits/joinsplit_public9/manifest.json`**
+- Regenerate verifier + zkey (after Circom edits): `npm run circuit:build:joinsplit` then update manifest hashes and run `HH_FULL=1 npm test`.
+
 ## Deploy profiles (Module 1)
 
 | `DEPLOY_PROFILE` | Verifiers | Swap adaptor |

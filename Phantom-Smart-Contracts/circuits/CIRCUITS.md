@@ -1,0 +1,55 @@
+# Join-split Groth16 (Module 2)
+
+## On-chain public input vector (canonical)
+
+`ShieldedPool._joinSplitPublicInputsToArray` passes **exactly nine** `uint256` values to `IVerifier.verifyProof` (via `Groth16VerifierAdapter`). These must match the Groth16 circuit’s public outputs **in order**.
+
+| Index | Solidity source field | Type | Notes |
+|------:|------------------------|------|--------|
+| 0 | `inputs.nullifier` | `bytes32` → `uint256` | |
+| 1 | `inputs.inputCommitment` | `bytes32` → `uint256` | |
+| 2 | `inputs.outputCommitmentSwap` | `bytes32` → `uint256` | |
+| 3 | `inputs.outputCommitmentChange` | `bytes32` → `uint256` | |
+| 4 | `inputs.merkleRoot` | `bytes32` → `uint256` | |
+| 5 | `inputs.outputAmountSwap` | `uint256` | |
+| 6 | `inputs.minOutputAmountSwap` | `uint256` | |
+| 7 | `inputs.protocolFee` | `uint256` | |
+| 8 | `inputs.gasRefund` | `uint256` | |
+
+**Field reduction:** `ShieldedPool._joinSplitPublicInputsToArray` (and handler helpers) pass each value as `uint256(...) % SNARK_SCALAR_FIELD` so calldata matches Circom’s `Fr` semantics (same reduction snarkjs uses in public signals). Merkle / nullifier logic still uses the full `bytes32` keys from `JoinSplitPublicInputs`.
+
+`JoinSplitPublicInputs` also carries **private-to-verifier** fields used only by the pool (`inputAssetID`, amounts, Merkle path, etc.). Those are **not** fed into the Groth16 verifier on-chain; the pool checks them separately (conservation, Merkle, fees).
+
+**Note:** `ShieldedPoolUpgradeable` uses a **29-element** public vector for join-split (includes Merkle path indices in-circuit). That path is not covered by `joinsplit_public9`; only the **non-upgradeable `ShieldedPool`** 9-signal layout matches this artifact.
+
+## Circom: `joinsplit_public9`
+
+- Source: `circuits/joinsplit_public9/joinsplit_public9.circom`
+- Nine **public outputs** in the same order as the table above; nine private inputs copy through (`in_*`).
+- **MVP scope:** proves nothing about note soundness—only alignment + toolchain. Replace with a real join-split circuit before mainnet.
+
+## Pinning & artifacts
+
+See `circuits/joinsplit_public9/manifest.json` for `sha256` of `circom`, `wasm`, `zkey`, `verification_key.json`, and committed `pot8` file.
+
+Relayers should load `manifest.json`, verify hashes, then use the pinned `wasm` + `circuit_final.zkey` for proving.
+
+## Rebuild (local)
+
+Requires **Circom 2.x** (`circom --version`) and **snarkjs** (`npm install` in this package).
+
+```bash
+cd core/Phantom-Smart-Contracts
+npm run circuit:build:joinsplit
+```
+
+This recompiles the circuit, runs Groth16 setup (needs `circuits/trusted_setup/pot8_bn128_pow8_final.ptau` or regenerates a local pot—see script), contributes a new `circuit_final.zkey`, exports `verification_key.json` and overwrites `contracts/_full/verifiers/JoinSplitVerifier.sol`. **After any rebuild**, refresh `manifest.json` hashes and run `HH_FULL=1 npm test`.
+
+## Prove / verify (CLI)
+
+```bash
+# witness input: JSON map of all `in_*` private signals (decimal strings)
+node -e "const snarkjs=require('snarkjs');(async()=>{...})()"
+```
+
+See `scripts/circuits/build-joinsplit-public9.sh` for the exact `snarkjs` steps.

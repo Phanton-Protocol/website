@@ -41,6 +41,10 @@ contract ShieldedPool is IShieldedPool, ReentrancyGuard {
     uint256 public constant MAX_ASSETS = 256; // Support up to 256 different assets
     uint256 public constant PORTFOLIO_ASSET_COUNT = 9; // Fixed portfolio vector size
 
+    /// @dev BN128 scalar field order (Circom / Groth16 `Fr`); public inputs must match field reduction.
+    uint256 internal constant SNARK_SCALAR_FIELD =
+        21888242871839275222246405745257275088548364400416034343698204186575808495617;
+
     // ============ State Variables ============
     IVerifier public immutable verifier;
     IVerifier public immutable portfolioVerifier;
@@ -982,19 +986,21 @@ contract ShieldedPool is IShieldedPool, ReentrancyGuard {
      * @dev Used by ThresholdVerifier to verify validator signatures
      */
     function _joinSplitPublicInputsToArray(JoinSplitPublicInputs memory inputs) internal pure returns (uint256[] memory) {
-        // Must match the circuit public input order:
+        // Must match Groth16 public signal order (see circuits/CIRCUITS.md + manifest.json):
         // [nullifier, inputCommitment, outputCommitmentSwap, outputCommitmentChange, merkleRoot,
-        //  outputAmountSwapPublic, minOutputAmountSwap, protocolFee, gasRefund]
+        //  outputAmountSwap, minOutputAmountSwap, protocolFee, gasRefund]
         uint256[] memory arr = new uint256[](9);
-        arr[0] = uint256(inputs.nullifier);
-        arr[1] = uint256(inputs.inputCommitment);
-        arr[2] = uint256(inputs.outputCommitmentSwap);
-        arr[3] = uint256(inputs.outputCommitmentChange);
-        arr[4] = uint256(inputs.merkleRoot);
-        arr[5] = inputs.outputAmountSwap;
-        arr[6] = inputs.minOutputAmountSwap;
-        arr[7] = inputs.protocolFee;
-        arr[8] = inputs.gasRefund;
+        unchecked {
+            arr[0] = uint256(inputs.nullifier) % SNARK_SCALAR_FIELD;
+            arr[1] = uint256(inputs.inputCommitment) % SNARK_SCALAR_FIELD;
+            arr[2] = uint256(inputs.outputCommitmentSwap) % SNARK_SCALAR_FIELD;
+            arr[3] = uint256(inputs.outputCommitmentChange) % SNARK_SCALAR_FIELD;
+            arr[4] = uint256(inputs.merkleRoot) % SNARK_SCALAR_FIELD;
+            arr[5] = inputs.outputAmountSwap % SNARK_SCALAR_FIELD;
+            arr[6] = inputs.minOutputAmountSwap % SNARK_SCALAR_FIELD;
+            arr[7] = inputs.protocolFee % SNARK_SCALAR_FIELD;
+            arr[8] = inputs.gasRefund % SNARK_SCALAR_FIELD;
+        }
         return arr;
     }
 

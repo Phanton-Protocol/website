@@ -1,0 +1,6 @@
+# Local trusted-setup intermediates (keep circuits/trusted_setup/pot8_bn128_pow8_final.ptau committed)
+/pot8_0000.ptau
+/pot8_0001.ptau
+/pot8_final.ptau
+/circuit_0000.zkey
+/.tools/

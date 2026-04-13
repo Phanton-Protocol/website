@@ -20,6 +20,9 @@ contract WithdrawHandler {
     IVerifier public immutable thresholdVerifier;
     IFeeOracle public immutable feeOracle;
     IRelayerRegistry public immutable relayerRegistry;
+
+    uint256 internal constant SNARK_SCALAR_FIELD =
+        21888242871839275222246405745257275088548364400416034343698204186575808495617;
     
     modifier onlyShieldedPool() {
         require(msg.sender == address(shieldedPool), "WithdrawHandler: only ShieldedPool");
@@ -126,15 +129,17 @@ contract WithdrawHandler {
         // [nullifier, inputCommitment, outputCommitmentSwap, outputCommitmentChange, merkleRoot,
         //  outputAmountSwapPublic, minOutputAmountSwap, protocolFee, gasRefund]
         uint256[] memory publicInputs = new uint256[](9);
-        publicInputs[0] = uint256(inputs.nullifier);
-        publicInputs[1] = uint256(inputs.inputCommitment);
-        publicInputs[2] = uint256(inputs.outputCommitmentSwap);
-        publicInputs[3] = uint256(inputs.outputCommitmentChange);
-        publicInputs[4] = uint256(inputs.merkleRoot);
-        publicInputs[5] = inputs.outputAmountSwap;
-        publicInputs[6] = inputs.minOutputAmountSwap;
-        publicInputs[7] = inputs.protocolFee;
-        publicInputs[8] = inputs.gasRefund;
+        unchecked {
+            publicInputs[0] = uint256(inputs.nullifier) % SNARK_SCALAR_FIELD;
+            publicInputs[1] = uint256(inputs.inputCommitment) % SNARK_SCALAR_FIELD;
+            publicInputs[2] = uint256(inputs.outputCommitmentSwap) % SNARK_SCALAR_FIELD;
+            publicInputs[3] = uint256(inputs.outputCommitmentChange) % SNARK_SCALAR_FIELD;
+            publicInputs[4] = uint256(inputs.merkleRoot) % SNARK_SCALAR_FIELD;
+            publicInputs[5] = inputs.outputAmountSwap % SNARK_SCALAR_FIELD;
+            publicInputs[6] = inputs.minOutputAmountSwap % SNARK_SCALAR_FIELD;
+            publicInputs[7] = inputs.protocolFee % SNARK_SCALAR_FIELD;
+            publicInputs[8] = inputs.gasRefund % SNARK_SCALAR_FIELD;
+        }
         return publicInputs;
     }
 }
