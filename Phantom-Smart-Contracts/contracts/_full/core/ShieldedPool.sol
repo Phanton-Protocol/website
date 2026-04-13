@@ -14,6 +14,8 @@ import "../libraries/IncrementalMerkleTree.sol";
 import "./ComplianceModule.sol";
 import "./TransactionHistory.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 /**
  * @title ShieldedPool
@@ -30,6 +32,7 @@ import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 contract ShieldedPool is IShieldedPool, ReentrancyGuard {
     using MerkleTree for bytes32;
     using IncrementalMerkleTree for IncrementalMerkleTree.Tree;
+    using SafeERC20 for IERC20;
 
     error PoolErr(uint8 code);
 
@@ -1044,6 +1047,11 @@ contract ShieldedPool is IShieldedPool, ReentrancyGuard {
     ) internal {
         if (amount == 0 || commitment == bytes32(0) || depositor == address(0)) revert PoolErr(27);
         if (depositHandler == address(0)) revert PoolErr(28);
+
+        // ERC20: pull tokens into pool before handler finalizes Merkle state (depositor must approve this contract)
+        if (token != address(0)) {
+            IERC20(token).safeTransferFrom(depositor, address(this), amount);
+        }
         
         // Delegate all processing to handler (reduces stack depth)
         IDepositHandler(depositHandler).processDeposit(
@@ -1343,10 +1351,4 @@ contract ShieldedPool is IShieldedPool, ReentrancyGuard {
     
     event SwapCommitted(bytes32 indexed commitment, uint256 deadline);
     event MEVProtectionVerified(bytes32 indexed commitment, uint256 deadline, uint256 nonce);
-}
-
-interface IERC20 {
-    function transfer(address to, uint256 amount) external returns (bool);
-    function transferFrom(address from, address to, uint256 amount) external returns (bool);
-    function approve(address spender, uint256 amount) external returns (bool);
 }

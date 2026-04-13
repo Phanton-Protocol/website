@@ -3,6 +3,7 @@ pragma solidity ^0.8.20;
 
 import "../interfaces/IFeeOracle.sol";
 import "../interfaces/IOffchainPriceOracle.sol";
+import "../interfaces/AggregatorV3Interface.sol";
 
 /**
  * @title FeeOracle
@@ -20,6 +21,8 @@ contract FeeOracle is IFeeOracle {
     uint256 public constant FEE_PERCENTAGE = 5; // 0.5% = 5 basis points (scaled by 1000)
     uint256 public constant BASIS_POINTS = 1000;
     uint256 public constant PRICE_FEED_DECIMALS = 8;
+    /// @dev Max age for Chainlink answer (MVP testnet-friendly; tighten for mainnet)
+    uint256 public constant MAX_FEED_AGE_SECONDS = 24 hours;
 
     address public owner;
 
@@ -33,7 +36,7 @@ contract FeeOracle is IFeeOracle {
 
     constructor() {
         owner = msg.sender;
-        // Set default BNB price feed
+        // Mainnet BNB/USD — override on testnet via setPriceFeed(address(0), <testnet feed>)
         priceFeeds[address(0)] = BNB_USD_FEED;
     }
 
@@ -77,15 +80,34 @@ contract FeeOracle is IFeeOracle {
         }
 
         address feed = priceFeeds[token];
-        require(feed != address(0), "FeeOracle: price feed not set");
-        
-        // In production, this would call Chainlink aggregator
-        // For now, returning a placeholder calculation
-        // Actual implementation: (int256 price, , , , ) = AggregatorV3Interface(feed).latestRoundData();
-        // usdValue = (amount * uint256(price)) / (10 ** (18 - PRICE_FEED_DECIMALS));
-        
-        // Placeholder: Chainlink integration not enabled
-        return 0;
+        if (feed == address(0)) {
+            return 0;
+        }
+        if (feed.code.length == 0) {
+            // Misconfigured address (e.g. mainnet feed on local node) — behave like unset
+            return 0;
+        }
+
+        try AggregatorV3Interface(feed).latestRoundData() returns (
+            uint80,
+            int256 answer,
+            uint256,
+            uint256 updatedAt,
+            uint80
+        ) {
+            if (answer <= 0) {
+                return 0;
+            }
+            if (block.timestamp - updatedAt > MAX_FEED_AGE_SECONDS) {
+                return 0;
+            }
+            uint8 feedDecimals = AggregatorV3Interface(feed).decimals();
+            uint256 tokenDecimals = _getTokenDecimals(token);
+            // USD value with 8 decimals: amount * price / 10^(tokenDec + feedDec - 8)
+            return (amount * uint256(answer)) / (10 ** (tokenDecimals + feedDecimals - PRICE_FEED_DECIMALS));
+        } catch {
+            return 0;
+        }
     }
 
     /**

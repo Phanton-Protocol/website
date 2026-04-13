@@ -1,13 +1,17 @@
 /**
- * Phase 1 — Deploy mocks + core ShieldedPool (non-upgradeable).
- *
- * Libraries (MerkleTree, IncrementalMerkleTree, etc.) are linked at compile time into ShieldedPool; no separate library deployment.
+ * Phase 1 — Deploy core ShieldedPool (non-upgradeable) + infrastructure.
  *
  * Prerequisite: HH_FULL=1 npm run compile
+ *
+ * Profiles (DEPLOY_PROFILE):
+ * - dev (default): MockVerifier x2 + MockSwapAdaptor
+ * - staging | production: Groth16Verifier + Groth16VerifierAdapter + PancakeSwapAdaptor(PANCAKE_ROUTER, WBNB_ADDRESS)
+ *   Optional: JOIN_SPLIT_GROTH16_ADDRESS to reuse an existing verifier.
  */
 import * as fs from "fs";
 import * as path from "path";
 import hre from "hardhat";
+import { deployVerifiersAndSwapAdaptor } from "./deployInfrastructure";
 
 const { ethers, network } = hre;
 
@@ -48,49 +52,29 @@ async function main() {
 
   console.log("Network:", network.name, "chainId:", chainId.toString());
   console.log("Deployer:", deployer.address);
+  console.log("DEPLOY_PROFILE:", process.env.DEPLOY_PROFILE || "dev");
 
-  // 1) Verifiers — MockVerifier always returns true (testnet / dev only)
-  const MockVerifier = await ethers.getContractFactory("MockVerifier");
-  const joinSplitVerifier = await MockVerifier.deploy();
-  await joinSplitVerifier.waitForDeployment();
-  const joinSplitAddr = await joinSplitVerifier.getAddress();
+  const infra = await deployVerifiersAndSwapAdaptor();
 
-  const thresholdVerifier = await MockVerifier.deploy();
-  await thresholdVerifier.waitForDeployment();
-  const thresholdAddr = await thresholdVerifier.getAddress();
-
-  // Portfolio verifier may equal join-split per ShieldedPool constructor
-  const portfolioVerifierAddr = joinSplitAddr;
-
-  // 2) Swap adaptor (mock 1:1)
-  const MockSwapAdaptor = await ethers.getContractFactory("MockSwapAdaptor");
-  const swapAdaptor = await MockSwapAdaptor.deploy();
-  await swapAdaptor.waitForDeployment();
-  const swapAdaptorAddr = await swapAdaptor.getAddress();
-
-  // 3) Fee oracle (standalone; optional Chainlink feeds configured later)
   const FeeOracle = await ethers.getContractFactory("FeeOracle");
   const feeOracle = await FeeOracle.deploy();
   await feeOracle.waitForDeployment();
   const feeOracleAddr = await feeOracle.getAddress();
 
-  // 4) Relayer registry (owner = deployer)
   const RelayerRegistry = await ethers.getContractFactory("RelayerRegistry");
   const relayerRegistry = await RelayerRegistry.deploy();
   await relayerRegistry.waitForDeployment();
   const relayerRegistryAddr = await relayerRegistry.getAddress();
 
-  // Register deployer as relayer so onlyRelayer paths work in tests
   const regTx = await relayerRegistry.registerRelayer(deployer.address);
   await regTx.wait();
 
-  // 5) ShieldedPool — primary deployable for current non-upgradeable architecture
   const ShieldedPool = await ethers.getContractFactory("ShieldedPool");
   const shieldedPool = await ShieldedPool.deploy(
-    joinSplitAddr,
-    portfolioVerifierAddr,
-    thresholdAddr,
-    swapAdaptorAddr,
+    infra.joinSplit,
+    infra.portfolio,
+    infra.threshold,
+    infra.swapAdaptor,
     feeOracleAddr,
     relayerRegistryAddr
   );
@@ -98,14 +82,22 @@ async function main() {
   const shieldedPoolAddr = await shieldedPool.getAddress();
 
   const contracts: Record<string, string> = {
-    mockVerifierJoinSplit: joinSplitAddr,
-    mockVerifierPortfolio: portfolioVerifierAddr,
-    mockVerifierThreshold: thresholdAddr,
-    mockSwapAdaptor: swapAdaptorAddr,
+    joinSplitVerifier: infra.joinSplit,
+    portfolioVerifier: infra.portfolio,
+    thresholdVerifier: infra.threshold,
+    swapAdaptor: infra.swapAdaptor,
     feeOracle: feeOracleAddr,
     relayerRegistry: relayerRegistryAddr,
     shieldedPool: shieldedPoolAddr,
   };
+  if (infra.groth16Verifier) {
+    contracts.groth16Verifier = infra.groth16Verifier;
+  }
+  if (infra.mockJoinSplit) {
+    contracts.mockVerifierJoinSplit = infra.mockJoinSplit;
+    contracts.mockVerifierThreshold = infra.mockThreshold!;
+    contracts.mockSwapAdaptor = infra.mockSwapAdaptor!;
+  }
 
   const out = saveDeployment(
     network.name,

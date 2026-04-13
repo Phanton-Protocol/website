@@ -1,12 +1,14 @@
 /**
- * Single-run deploy: core + handlers (for local `hardhat` network where each `hardhat run` resets state).
- * On persistent networks (bscTestnet / bsc), you can use deploy-core.ts then deploy-handlers.ts instead.
+ * Single-run deploy: core + handlers (local hardhat: one process).
  *
  * Prerequisite: HH_FULL=1 npm run compile
+ *
+ * DEPLOY_PROFILE=dev|staging|production — see deploy-core.ts
  */
 import * as fs from "fs";
 import * as path from "path";
 import hre from "hardhat";
+import { deployVerifiersAndSwapAdaptor } from "./deployInfrastructure";
 
 const { ethers, network } = hre;
 
@@ -47,22 +49,9 @@ async function main() {
 
   console.log("Network:", network.name, "chainId:", chainId.toString());
   console.log("Deployer:", deployer.address);
+  console.log("DEPLOY_PROFILE:", process.env.DEPLOY_PROFILE || "dev");
 
-  const MockVerifier = await ethers.getContractFactory("MockVerifier");
-  const joinSplitVerifier = await MockVerifier.deploy();
-  await joinSplitVerifier.waitForDeployment();
-  const joinSplitAddr = await joinSplitVerifier.getAddress();
-
-  const thresholdVerifier = await MockVerifier.deploy();
-  await thresholdVerifier.waitForDeployment();
-  const thresholdAddr = await thresholdVerifier.getAddress();
-
-  const portfolioVerifierAddr = joinSplitAddr;
-
-  const MockSwapAdaptor = await ethers.getContractFactory("MockSwapAdaptor");
-  const swapAdaptor = await MockSwapAdaptor.deploy();
-  await swapAdaptor.waitForDeployment();
-  const swapAdaptorAddr = await swapAdaptor.getAddress();
+  const infra = await deployVerifiersAndSwapAdaptor();
 
   const FeeOracle = await ethers.getContractFactory("FeeOracle");
   const feeOracle = await FeeOracle.deploy();
@@ -78,10 +67,10 @@ async function main() {
 
   const ShieldedPool = await ethers.getContractFactory("ShieldedPool");
   const shieldedPool = await ShieldedPool.deploy(
-    joinSplitAddr,
-    portfolioVerifierAddr,
-    thresholdAddr,
-    swapAdaptorAddr,
+    infra.joinSplit,
+    infra.portfolio,
+    infra.threshold,
+    infra.swapAdaptor,
     feeOracleAddr,
     relayerRegistryAddr
   );
@@ -89,11 +78,7 @@ async function main() {
   const shieldedPoolAddr = await shieldedPool.getAddress();
 
   const DepositHandler = await ethers.getContractFactory("DepositHandler");
-  const depositHandler = await DepositHandler.deploy(
-    shieldedPoolAddr,
-    feeOracleAddr,
-    relayerRegistryAddr
-  );
+  const depositHandler = await DepositHandler.deploy(shieldedPoolAddr, feeOracleAddr, relayerRegistryAddr);
   await depositHandler.waitForDeployment();
   const depositHandlerAddr = await depositHandler.getAddress();
 
@@ -107,16 +92,24 @@ async function main() {
   await (await pool.setTransactionHistory(txHistoryAddr)).wait();
 
   const contracts: Record<string, string> = {
-    mockVerifierJoinSplit: joinSplitAddr,
-    mockVerifierPortfolio: portfolioVerifierAddr,
-    mockVerifierThreshold: thresholdAddr,
-    mockSwapAdaptor: swapAdaptorAddr,
+    joinSplitVerifier: infra.joinSplit,
+    portfolioVerifier: infra.portfolio,
+    thresholdVerifier: infra.threshold,
+    swapAdaptor: infra.swapAdaptor,
     feeOracle: feeOracleAddr,
     relayerRegistry: relayerRegistryAddr,
     shieldedPool: shieldedPoolAddr,
     depositHandler: depositHandlerAddr,
     transactionHistory: txHistoryAddr,
   };
+  if (infra.groth16Verifier) {
+    contracts.groth16Verifier = infra.groth16Verifier;
+  }
+  if (infra.mockJoinSplit) {
+    contracts.mockVerifierJoinSplit = infra.mockJoinSplit;
+    contracts.mockVerifierThreshold = infra.mockThreshold!;
+    contracts.mockSwapAdaptor = infra.mockSwapAdaptor!;
+  }
 
   const out = saveDeployment(
     network.name,
