@@ -4,7 +4,7 @@ This document is the single technical reference for developers working on Phanto
 
 **What this document gives you:** Architecture, data model (notes, commitments, nullifiers, Merkle tree), full contract list and roles, complete API endpoint list, config and env reference, deployment and networks, and where everything lives in the repo. Together with WHITEPAPER.md and the codebase, this is enough to onboard and integrate.
 
-**What you still need from the codebase:** Exact API request/response bodies (JSON field names, types), note construction (byte layout, hash function, commitment formula), circuit public/private input order and names, contract method signatures and events (use ABIs in `artifacts/contracts/`), asset id → token address mapping, EIP-712 domain and type hashes for intents, and where proof generation is invoked in the backend. For testing, run the project’s test suite and use testnet faucets for BNB; details are in the repo (e.g. DAPP-SETUP.md, backend/frontend READMEs if present). Use this spec as the map; use the code and ABIs for implementation-level detail.
+**What you still need from the codebase:** Exact API request/response bodies (JSON field names, types), note construction (byte layout, hash function, commitment formula), circuit public/private input order and names, contract method signatures and events (use ABIs in `Phantom-Smart-Contracts/artifacts/contracts/` after `npm run compile` from `core/`), asset id → token address mapping, EIP-712 domain and type hashes for intents, and where proof generation is invoked in the backend. For testing, run the project’s test suite and use testnet faucets for BNB; details are in the repo (e.g. DAPP-SETUP.md, backend/frontend READMEs if present). Use this spec as the map; use the code and ABIs for implementation-level detail.
 
 
 ## 1. Purpose and scope
@@ -23,15 +23,17 @@ Phantom Protocol is a multi-asset shielded pool and relayer network on BNB Chain
 
 ## 2. Repository and project structure
 
+In **`core/`**, the canonical Solidity tree and Hardhat project are **`Phantom-Smart-Contracts/`** (`contracts/`, `test/`, `scripts/deploy/`, `deployments/`, compiled output under `Phantom-Smart-Contracts/artifacts/`). See `Phantom-Smart-Contracts/DEPLOY.md` and `core/README.md`.
+
 - **backend/** — Node.js API server: proof generation, relayer submission, quote/swap/deposit/withdraw, merkle proofs, payroll, tax keys, telemetry. Entry: `backend/src/index.js`. Port default 5050 (or `PORT`).
 - **frontend/** — React/Vite DApp: wallet connect, deposit/swap/withdraw, portfolio, staking, payroll, tax reporting. Build output: `frontend/dist`. Uses `VITE_API_URL` and runtime `/config.json` for contract addresses.
-- **contracts/** — Solidity: core pool, handlers, adaptors, verifier, staking, FHE. Built with Hardhat. Artifacts in `artifacts/contracts/`.
-- **deployments/** — Deployment outputs (e.g. `complete-system.json`) with contract addresses per network.
-- **deploy/** — Deploy scripts and `.env` for deployer/RPC.
+- **contracts/** — In this monorepo layout: **`Phantom-Smart-Contracts/contracts/`** (Solidity: pool, handlers, adaptors, verifiers, etc.). Built with Hardhat; artifacts in **`Phantom-Smart-Contracts/artifacts/contracts/`**.
+- **deployments/** — In **`Phantom-Smart-Contracts/deployments/`** (e.g. `hardhat.json`, `bscTestnet.json`) with contract addresses per network.
+- **deploy/** — Deploy scripts: **`Phantom-Smart-Contracts/scripts/deploy/`**; env in **`core/.env`** (see `core/.env.example`).
 - **validators/** — Optional validator nodes (validator-1, validator-2, validator-3) for multi-party relayer setups.
 - **Website/** — Marketing site (separate from DApp).
 - **WHITEPAPER.md** — Product and technical whitepaper (includes Reader’s guide and Table of Contents).
-- **DAPP-SETUP.md** — How to run backend + frontend locally. **DEPLOY-SETUP.md** — Render/Vercel deployment options.
+- **DAPP-SETUP.md** — How to run backend + frontend locally. **`Phantom-Smart-Contracts/DEPLOY-SETUP.md`** — Render/Vercel deployment options (paths under `core/`).
 
 Config files that must stay in sync across backend, frontend, and chain:
 
@@ -116,7 +118,7 @@ Deployment targets: BNB Chain testnet (chain id 97), mainnet (56). Addresses liv
 - **ShadowAddressFactory / ShadowSweeper** — Shadow-address deposit flow.
 - **ProtocolToken** — PHN (protocol token).
 
-Interfaces (in `contracts/interfaces/`): IShieldedPool, IWithdrawHandler, IFeeOracle, IPancakeSwapAdaptor, IRelayerRegistry, IVerifier, IMatchingHandler, IOffchainPriceOracle. ABIs in `artifacts/contracts/`.
+Interfaces (in `Phantom-Smart-Contracts/contracts/.../interfaces/`): IShieldedPool, IWithdrawHandler, IFeeOracle, IPancakeSwapAdaptor, IRelayerRegistry, IVerifier, IMatchingHandler, IOffchainPriceOracle. ABIs in `Phantom-Smart-Contracts/artifacts/contracts/`.
 
 
 ## 7. Backend API (full endpoint list)
@@ -291,17 +293,17 @@ Backend code and Phantom SDK/docs contain full request/response shapes and integ
 
 **Frontend:** `cd frontend && npm install && VITE_API_URL=http://localhost:5050 npm run dev` (or `npm run build` for production). Keep `frontend/public/config.json` in sync with backend/chain.
 
-**Deploy:** See DEPLOY-SETUP.md for Render (full app or static site) and Vercel (frontend only; backend elsewhere). Render one-service option: build command installs backend + frontend deps and builds frontend; start command `node backend/src/index.js`.
+**Deploy:** See `Phantom-Smart-Contracts/DEPLOY-SETUP.md` for Render (full app or static site) and Vercel (frontend only; backend elsewhere). Render one-service option: build command installs backend + frontend deps and builds frontend; start command `node backend/src/index.js`.
 
 
 ## 16. References
 
 - **WHITEPAPER.md** — Full technical whitepaper (architecture, cryptography, flows, fees, use cases, glossary). Use Table of Contents and Reader’s guide for navigation.
 - **DAPP-SETUP.md** — Backend + frontend local setup and config sync.
-- **DEPLOY-SETUP.md** — Render and Vercel deployment options.
+- **`Phantom-Smart-Contracts/DEPLOY-SETUP.md`** — Render and Vercel deployment options.
 - **deployments/complete-system.json** — Example deployment addresses (testnet).
 - **deploy/.env**, **validators/*/\.env** — Example env for deployer and validators.
-- **artifacts/contracts/** — Compiled contract ABIs and artifacts (Hardhat).
-- **contracts/interfaces/** — Solidity interfaces for integration.
+- **Phantom-Smart-Contracts/artifacts/contracts/** — Compiled contract ABIs and artifacts (Hardhat).
+- **Phantom-Smart-Contracts/contracts/interfaces/** — Solidity interfaces for integration.
 
 For integration, use the same RPC and contract set across backend, frontend, and any scripts; then deposit → swap → withdraw and relayer/staking flows should work end-to-end.

@@ -24,9 +24,11 @@ dist-ssr
 *.sw?
 
 .vercel
+# Secrets and local env (see .env.example)
 .env
 .env*.local
 
+# Hardhat build outputs
 artifacts/
 cache/
 
