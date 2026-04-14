@@ -94,8 +94,8 @@ contract DepositHandler {
             require(!module.isBlocked(depositor), "DepositHandler: blocked address");
         }
         
-        // Calculate and process fee
-        uint256 depositFeeBNB = _calculateDepositFeeDirect(token, amount, value);
+        // Calculate and process fee (ERC20 depositFor from relayer may pass msg.value=0; direct deposit still requires BNB fee)
+        uint256 depositFeeBNB = _calculateDepositFeeDirect(token, amount, value, relayer);
         _processAndDistributeFee(depositFeeBNB);
         
         // Call back to ShieldedPool to update tree and notes (reduces stack depth)
@@ -112,13 +112,20 @@ contract DepositHandler {
     
     // ============ Internal Functions ============
     
-    function _calculateDepositFeeDirect(address token, uint256 amount, uint256 value) private pure returns (uint256) {
+    function _calculateDepositFeeDirect(
+        address token,
+        uint256 amount,
+        uint256 value,
+        address relayer
+    ) private pure returns (uint256) {
         if (token == address(0)) {
             require(value >= amount, "DepositHandler: insufficient value");
             uint256 fee = value - amount;
             // Allow fee == 0 so depositForBNB (amount == msg.value) and direct deposit() both work
             return fee;
         }
+        // ERC20: ShieldedPool.depositFor passes value=0; relayer is non-zero. MVP allows zero BNB fee on that path.
+        if (relayer != address(0) && value == 0) return 0;
         require(value > 0, "DepositHandler: deposit fee required");
         return value;
     }

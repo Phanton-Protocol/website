@@ -73,3 +73,11 @@ Once backend and frontend point at the same RPC and contract set, the full flow 
 - Encrypted-at-rest note APIs: `/notes/from-deposit`, `/notes/:noteId`, `/notes`
 - Merkle self-check APIs: `/merkle/index/:index`, `/merkle/self-check/:commitment`
 - CLI self-check: `cd phantom-relayer-dashboard/backend && npm run merkle:selfcheck -- 0x<commitment>`
+
+## Module 4 relayer sheltered deposit
+
+- **Flow:** user approves `ShieldedPool` for ERC20; backend relayer wallet calls `depositFor` (no user ZK proof). See `phantom-relayer-dashboard/backend/MODULE4-RELAYER-DEPOSIT.md`.
+- **Endpoints:** `POST /relayer/deposit/session`, `POST /relayer/deposit/submit`, `GET /relayer/deposit/status`
+- **Env:** `RELAYER_PRIVATE_KEY` must be registered on `RelayerRegistry` (`isRelayer`); optional `MODULE4_DEPOSIT_API_SECRET` / `MODULE4_PUBLIC_SUBMIT` for submit auth; `MODULE4_MAX_BNB_WEI` for BNB cap.
+- **Contracts test:** `cd Phantom-Smart-Contracts && HH_FULL=1 npx hardhat test test/depositFor.erc20.relayer.test.cjs`
+- **Integration script:** `node phantom-relayer-dashboard/backend/scripts/module4-deposit-integration.cjs` (set `API_URL`, `TOKEN`, `AMOUNT`, etc.)

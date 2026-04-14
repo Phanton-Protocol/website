@@ -22,7 +22,11 @@ const {
   getCommitment,
   saveEncryptedNote,
   getEncryptedNote,
-  listEncryptedNotesByOwner
+  listEncryptedNotesByOwner,
+  saveDepositSession,
+  getDepositSessionByIdempotencyKey,
+  getDepositSessionBySessionId,
+  saveDepositTxReceipt
 } = require("./db");
 const { mimc7 } = require("./mimc7");
 const { canonicalizeNote, noteIdFromCanonical } = require("./noteModel");
@@ -36,6 +40,12 @@ const { registerOrderAndTryMatch, getFheMatchMode } = require("./fheMatchingServ
 const { createEnterpriseRouter } = require("./enterpriseRoutes");
 const { getSeeConfig, verifyAttestation, requireSeeForSensitiveFlow } = require("./seeGuard");
 const { computeCanonicalAlignmentWarnings } = require("./configAlignment");
+const {
+  assertRelayerRegistered,
+  sendDepositForErc20,
+  sendDepositForBnb,
+  logModule4
+} = require("./module4Deposit");
 
 const app = express();
 app.use(express.json({ limit: "2mb" }));
@@ -57,6 +67,20 @@ app.use("/enterprise", enterpriseRouter);
 
 const RATE_LIMIT_WINDOW_MS = Number(process.env.RATE_LIMIT_WINDOW_MS || 30_000);
 const RATE_LIMIT_MAX = Number(process.env.RATE_LIMIT_MAX || 120);
+const MODULE4_DEPOSIT_API_SECRET = process.env.MODULE4_DEPOSIT_API_SECRET || "";
+const MODULE4_PUBLIC_SUBMIT =
+  process.env.MODULE4_PUBLIC_SUBMIT === "true" ||
+  (process.env.NODE_ENV !== "production" && process.env.MODULE4_PUBLIC_SUBMIT !== "false");
+const MODULE4_SESSION_TTL_MS = Number(process.env.MODULE4_SESSION_TTL_MS || 15 * 60 * 1000);
+const MODULE4_RATE_WINDOW_MS = Number(process.env.MODULE4_RATE_WINDOW_MS || 60_000);
+const MODULE4_RATE_MAX = Number(process.env.MODULE4_RATE_MAX || 40);
+const MODULE4_MAX_BNB_WEI = (() => {
+  try {
+    return BigInt(process.env.MODULE4_MAX_BNB_WEI || "50000000000000000");
+  } catch {
+    return 50000000000000000n;
+  }
+})();
 const rlBuckets = new Map();
 function rateLimit(req, res, next) {
   const key = req.ip || req.headers["x-forwarded-for"] || "unknown";
@@ -74,6 +98,40 @@ function rateLimit(req, res, next) {
   return next();
 }
 app.use(rateLimit);
+
+const module4RlBuckets = new Map();
+function module4RateLimit(req, res, next) {
+  const key = `m4:${req.ip || req.headers["x-forwarded-for"] || "unknown"}`;
+  const now = Date.now();
+  const bucket = module4RlBuckets.get(key) || { resetAt: now + MODULE4_RATE_WINDOW_MS, count: 0 };
+  if (now > bucket.resetAt) {
+    bucket.resetAt = now + MODULE4_RATE_WINDOW_MS;
+    bucket.count = 0;
+  }
+  bucket.count += 1;
+  module4RlBuckets.set(key, bucket);
+  if (bucket.count > MODULE4_RATE_MAX) {
+    return res.status(429).json({ error: "module4_rate_limited", retryAfterMs: bucket.resetAt - now });
+  }
+  return next();
+}
+
+function requireModule4SubmitAuth(req, res, next) {
+  if (MODULE4_PUBLIC_SUBMIT) return next();
+  if (!MODULE4_DEPOSIT_API_SECRET) {
+    if (process.env.NODE_ENV === "production") {
+      return res.status(503).json({ error: "module4_submit_requires_MODULE4_DEPOSIT_API_SECRET_or_MODULE4_PUBLIC_SUBMIT" });
+    }
+    console.warn("[module4] submit allowed without auth (dev only; set MODULE4_DEPOSIT_API_SECRET for staging)");
+    return next();
+  }
+  const h = req.headers.authorization || "";
+  const token = h.startsWith("Bearer ") ? h.slice(7) : req.headers["x-module4-secret"];
+  if (token !== MODULE4_DEPOSIT_API_SECRET) {
+    return res.status(401).json({ error: "invalid_module4_auth" });
+  }
+  return next();
+}
 
 const RELAYER_ENC_PRIVATE_KEY_PEM = process.env.RELAYER_ENC_PRIVATE_KEY_PEM || "";
 let relayerEncPublicKeyPem = "";
@@ -859,6 +917,29 @@ const noteFromDepositSchema = z.object({
   }),
 }).passthrough();
 
+const depositSessionSchema = z.object({
+  idempotencyKey: z.string().min(8).max(128),
+  depositor: z.string().refine((s) => ethers.isAddress(s)),
+  mode: z.enum(["erc20", "bnb"]),
+  token: z.string().optional(),
+  amount: z.string().optional(),
+  assetId: z.union([z.string(), z.number()]),
+});
+
+const depositSubmitSchema = z.object({
+  sessionId: z.string().min(8),
+  sessionToken: z.string().min(16),
+  idempotencyKey: z.string().min(8),
+  commitment: z.string(),
+  note: z.object({
+    assetId: z.union([z.string(), z.number()]).optional(),
+    assetID: z.union([z.string(), z.number()]).optional(),
+    amount: z.union([z.string(), z.number()]),
+    blindingFactor: z.union([z.string(), z.number()]),
+    ownerPublicKey: z.union([z.string(), z.number()]),
+  }),
+});
+
 function noteAuthOwner(req) {
   return String(req.query.ownerAddress || req.headers["x-owner-address"] || "").trim().toLowerCase();
 }
@@ -885,58 +966,374 @@ async function parseDepositEventFromReceipt(txHash) {
   return { receipt, depositEvt };
 }
 
+async function persistNoteFromDepositReceipt(txHash, noteInput, ownerAddressOverride, opts = {}) {
+  getNotesEncryptionKey();
+  const { receipt, depositEvt } = await parseDepositEventFromReceipt(txHash);
+  const onChainCommitment = String(depositEvt.args.commitment).toLowerCase();
+  const canonical = canonicalizeNote({
+    assetId: noteInput.assetId ?? noteInput.assetID ?? Number(depositEvt.args.assetID),
+    amount: noteInput.amount,
+    blindingFactor: noteInput.blindingFactor,
+    ownerPublicKey: noteInput.ownerPublicKey,
+  });
+
+  if (canonical.commitment.toLowerCase() !== onChainCommitment) {
+    const err = new Error("Note commitment mismatch with Deposit event");
+    err.code = "COMMITMENT_MISMATCH";
+    err.expectedCommitment = onChainCommitment;
+    err.providedCommitment = canonical.commitment.toLowerCase();
+    throw err;
+  }
+
+  const ownerAddress = (ownerAddressOverride || String(depositEvt.args.depositor)).toLowerCase();
+  const noteId = noteIdFromCanonical(canonical, `${String(receipt.hash).toLowerCase()}:${ownerAddress}`);
+  const encryptedPayload = encryptJsonAtRest({
+    note: canonical,
+    txHash: receipt.hash,
+    blockNumber: receipt.blockNumber,
+    depositor: String(depositEvt.args.depositor),
+    token: String(depositEvt.args.token),
+    assetId: String(depositEvt.args.assetID),
+    amount: String(depositEvt.args.amount),
+    commitmentIndex: Number(depositEvt.args.commitmentIndex),
+    storedAt: new Date().toISOString(),
+    ...(opts.module4 ? { module4: true } : {}),
+  });
+
+  saveEncryptedNote(db, noteId, ownerAddress, canonical.commitment, receipt.hash, encryptedPayload);
+  saveCommitment(db, Number(depositEvt.args.commitmentIndex), canonical.commitment, receipt.hash);
+
+  return {
+    noteId,
+    ownerAddress,
+    commitment: canonical.commitment,
+    commitmentIndex: Number(depositEvt.args.commitmentIndex),
+    txHash: receipt.hash,
+    blockNumber: receipt.blockNumber,
+    schema: canonical.schema,
+  };
+}
+
 app.post("/notes/from-deposit", async (req, res) => {
   const parsed = noteFromDepositSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: "Invalid request", details: parsed.error.flatten() });
   try {
-    getNotesEncryptionKey(); // fail early with actionable message if key missing
     const { txHash, note } = parsed.data;
-    const { receipt, depositEvt } = await parseDepositEventFromReceipt(txHash);
-    const onChainCommitment = String(depositEvt.args.commitment).toLowerCase();
-    const canonical = canonicalizeNote({
-      assetId: note.assetId ?? note.assetID ?? Number(depositEvt.args.assetID),
-      amount: note.amount,
-      blindingFactor: note.blindingFactor,
-      ownerPublicKey: note.ownerPublicKey,
-    });
-
-    if (canonical.commitment.toLowerCase() !== onChainCommitment) {
-      return res.status(400).json({
-        error: "Note commitment mismatch with Deposit event",
-        expectedCommitment: onChainCommitment,
-        providedCommitment: canonical.commitment.toLowerCase(),
-      });
-    }
-
-    const ownerAddress = (parsed.data.ownerAddress || String(depositEvt.args.depositor)).toLowerCase();
-    const noteId = noteIdFromCanonical(canonical, `${txHash.toLowerCase()}:${ownerAddress}`);
-    const encryptedPayload = encryptJsonAtRest({
-      note: canonical,
-      txHash: receipt.hash,
-      blockNumber: receipt.blockNumber,
-      depositor: String(depositEvt.args.depositor),
-      token: String(depositEvt.args.token),
-      assetId: String(depositEvt.args.assetID),
-      amount: String(depositEvt.args.amount),
-      commitmentIndex: Number(depositEvt.args.commitmentIndex),
-      storedAt: new Date().toISOString(),
-    });
-
-    saveEncryptedNote(db, noteId, ownerAddress, canonical.commitment, receipt.hash, encryptedPayload);
-    saveCommitment(db, Number(depositEvt.args.commitmentIndex), canonical.commitment, receipt.hash);
-
+    const ownerAddress = parsed.data.ownerAddress
+      ? String(parsed.data.ownerAddress).toLowerCase()
+      : undefined;
+    const out = await persistNoteFromDepositReceipt(txHash, note, ownerAddress);
     return res.json({
       ok: true,
-      noteId,
-      ownerAddress,
-      commitment: canonical.commitment,
-      commitmentIndex: Number(depositEvt.args.commitmentIndex),
-      txHash: receipt.hash,
-      blockNumber: receipt.blockNumber,
-      schema: canonical.schema,
+      ...out,
     });
   } catch (err) {
+    if (err.code === "COMMITMENT_MISMATCH") {
+      return res.status(400).json({
+        error: err.message,
+        expectedCommitment: err.expectedCommitment,
+        providedCommitment: err.providedCommitment,
+      });
+    }
     return res.status(400).json({ error: err.message || "Failed to store note from deposit" });
+  }
+});
+
+app.post("/relayer/deposit/session", module4RateLimit, async (req, res) => {
+  const parsed = depositSessionSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Invalid request", details: parsed.error.flatten() });
+  const { idempotencyKey, depositor, mode, assetId } = parsed.data;
+  const token = parsed.data.token ? String(parsed.data.token) : "";
+  const amount = parsed.data.amount != null ? String(parsed.data.amount) : "";
+
+  if (mode === "erc20") {
+    if (!token || !ethers.isAddress(token) || token === ethers.ZeroAddress) {
+      return res.status(400).json({ error: "erc20 mode requires token (non-zero address)" });
+    }
+    if (!amount || !/^\d+$/.test(amount) || BigInt(amount) <= 0n) {
+      return res.status(400).json({ error: "erc20 mode requires positive integer amount (token wei)" });
+    }
+  } else {
+    if (!amount || !/^\d+$/.test(amount) || BigInt(amount) <= 0n) {
+      return res.status(400).json({ error: "bnb mode requires positive integer amount (wei for depositForBNB)" });
+    }
+    if (BigInt(amount) > MODULE4_MAX_BNB_WEI) {
+      return res.status(400).json({
+        error: "bnb amount exceeds MODULE4_MAX_BNB_WEI cap",
+        maxWei: MODULE4_MAX_BNB_WEI.toString(),
+      });
+    }
+  }
+
+  const now = Date.now();
+  const existing = getDepositSessionByIdempotencyKey(db, idempotencyKey);
+  if (existing) {
+    if (existing.status === "submitted") {
+      return res.status(409).json({
+        error: "idempotency_key_already_completed",
+        sessionId: existing.sessionId,
+        txHash: existing.payload?.txHash || null,
+        noteId: existing.payload?.noteId || null,
+      });
+    }
+    if (existing.status === "pending" && now - existing.createdAt < MODULE4_SESSION_TTL_MS) {
+      logModule4("deposit.session.reuse", { idempotencyKey, sessionId: existing.sessionId });
+      return res.json({
+        ok: true,
+        sessionId: existing.sessionId,
+        sessionToken: existing.sessionToken,
+        depositor: existing.depositor.toLowerCase(),
+        mode: existing.mode,
+        assetId: existing.assetId,
+        expiresAt: existing.createdAt + MODULE4_SESSION_TTL_MS,
+        flow: "A",
+        instructions:
+          existing.mode === "erc20"
+            ? {
+                summary: "User approves ShieldedPool for token; relayer calls depositFor (no user ZK proof).",
+                approveSpender: SHIELDED_POOL_ADDRESS || null,
+                token: existing.token,
+                amount: existing.amount,
+              }
+            : {
+                summary: "Relayer sends BNB via depositForBNB; cap enforced by MODULE4_MAX_BNB_WEI.",
+                valueWei: existing.amount,
+              },
+      });
+    }
+  }
+
+  const sessionId = crypto.randomUUID();
+  const sessionToken = crypto.randomBytes(32).toString("hex");
+  const row = {
+    sessionId,
+    sessionToken,
+    idempotencyKey,
+    depositor: depositor.toLowerCase(),
+    mode,
+    token: mode === "erc20" ? ethers.getAddress(token) : null,
+    amount,
+    assetId: String(assetId),
+    status: "pending",
+    payload: {},
+    createdAt: now,
+    updatedAt: now,
+  };
+  saveDepositSession(db, row);
+  logModule4("deposit.session.created", { sessionId, mode, depositor: row.depositor });
+
+  return res.json({
+    ok: true,
+    sessionId,
+    sessionToken,
+    depositor: row.depositor,
+    mode,
+    assetId: row.assetId,
+    expiresAt: now + MODULE4_SESSION_TTL_MS,
+    flow: "A",
+    primaryMvpFlow: "erc20_user_approves_pool_relayer_depositFor",
+    instructions:
+      mode === "erc20"
+        ? {
+            summary:
+              "Flow A (MVP): user approves ShieldedPool as spender for token amount; relayer wallet calls depositFor(depositor, token, amount, commitment, assetID). User never builds ZK proofs.",
+            approveSpender: SHIELDED_POOL_ADDRESS || null,
+            token: row.token,
+            amount: row.amount,
+          }
+        : {
+            summary:
+              "BNB: relayer pays msg.value in depositForBNB (relayer must be registered). User reimburses relayer off-chain or via separate payment — abuse limited by MODULE4_MAX_BNB_WEI and rate limits.",
+            valueWei: row.amount,
+            maxWeiCap: MODULE4_MAX_BNB_WEI.toString(),
+          },
+  });
+});
+
+app.post("/relayer/deposit/submit", requireModule4SubmitAuth, module4RateLimit, async (req, res) => {
+  const parsed = depositSubmitSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Invalid request", details: parsed.error.flatten() });
+
+  if (RELAYER_DRY_RUN) {
+    return res.status(503).json({
+      error: "relayer_dry_run_blocks_module4",
+      hint: "Set RELAYER_DRY_RUN=false and configure RPC + RELAYER_PRIVATE_KEY for real deposits.",
+    });
+  }
+  if (!RELAYER_PRIVATE_KEY || !SHIELDED_POOL_ADDRESS || !RPC_URL) {
+    return res.status(503).json({ error: "RELAYER_PRIVATE_KEY, SHIELDED_POOL_ADDRESS, and RPC_URL are required" });
+  }
+
+  const { sessionId, sessionToken, idempotencyKey, commitment, note } = parsed.data;
+  const session = getDepositSessionBySessionId(db, sessionId);
+  if (!session) return res.status(404).json({ error: "session_not_found" });
+  if (session.sessionToken !== sessionToken) return res.status(403).json({ error: "invalid_session_token" });
+  if (session.idempotencyKey !== idempotencyKey) return res.status(400).json({ error: "idempotency_mismatch" });
+  if (session.status !== "pending") {
+    return res.status(409).json({ error: "session_not_pending", status: session.status });
+  }
+  if (Date.now() - session.createdAt > MODULE4_SESSION_TTL_MS) {
+    return res.status(410).json({ error: "session_expired" });
+  }
+
+  const depositor = session.depositor.toLowerCase();
+  if (String(note.amount) !== String(session.amount)) {
+    return res.status(400).json({ error: "note.amount must match session amount" });
+  }
+  const aid = String(note.assetId ?? note.assetID ?? session.assetId);
+  if (String(session.assetId) !== aid) {
+    return res.status(400).json({ error: "note assetId must match session assetId" });
+  }
+
+  const noteCommitment = canonicalizeNote({
+    assetId: aid,
+    amount: note.amount,
+    blindingFactor: note.blindingFactor,
+    ownerPublicKey: note.ownerPublicKey,
+  }).commitment.toLowerCase();
+  if (noteCommitment !== String(commitment).toLowerCase()) {
+    return res.status(400).json({ error: "commitment does not match canonical note fields" });
+  }
+
+  const provider = new ethers.JsonRpcProvider(RPC_URL);
+  const wallet = new ethers.Wallet(RELAYER_PRIVATE_KEY, provider);
+
+  try {
+    await assertRelayerRegistered(provider, SHIELDED_POOL_ADDRESS, wallet.address);
+  } catch (e) {
+    logModule4("deposit.submit.relayer_not_registered", { address: wallet.address, message: e.message });
+    return res.status(503).json({ error: e.message, code: e.code || "RELAYER_NOT_REGISTERED" });
+  }
+
+  let tx;
+  try {
+    if (session.mode === "erc20") {
+      tx = await sendDepositForErc20(wallet, SHIELDED_POOL_ADDRESS, {
+        depositor,
+        token: session.token,
+        amount: session.amount,
+        commitment,
+        assetID: session.assetId,
+      });
+    } else {
+      const valueWei = BigInt(session.amount);
+      tx = await sendDepositForBnb(wallet, SHIELDED_POOL_ADDRESS, {
+        depositor,
+        commitment,
+        assetID: session.assetId,
+        valueWei,
+      });
+    }
+  } catch (e) {
+    logModule4("deposit.submit.tx_failed", { message: e?.shortMessage || e?.message });
+    return res.status(400).json({ error: e?.shortMessage || e?.message || "deposit tx failed" });
+  }
+
+  let receipt;
+  try {
+    receipt = await tx.wait();
+  } catch (e) {
+    logModule4("deposit.submit.receipt_failed", { message: e?.message });
+    return res.status(500).json({ error: e?.message || "receipt wait failed" });
+  }
+
+  const txHash = receipt.hash;
+  try {
+    const receiptJson = JSON.stringify({
+      hash: receipt.hash,
+      blockNumber: receipt.blockNumber,
+      status: receipt.status,
+      gasUsed: receipt.gasUsed != null ? String(receipt.gasUsed) : null,
+    });
+    saveDepositTxReceipt(db, {
+      id: crypto.randomUUID(),
+      sessionId,
+      txHash,
+      receiptJson,
+    });
+  } catch (e) {
+    logModule4("deposit.submit.receipt_persist_failed", { message: e?.message });
+  }
+
+  let noteOut;
+  try {
+    noteOut = await persistNoteFromDepositReceipt(txHash, note, depositor, { module4: true });
+  } catch (e) {
+    if (e.code === "COMMITMENT_MISMATCH") {
+      return res.status(500).json({
+        error: "on_chain_commitment_mismatch_after_tx",
+        txHash,
+        expectedCommitment: e.expectedCommitment,
+        providedCommitment: e.providedCommitment,
+      });
+    }
+    return res.status(500).json({ error: e.message || "note persist failed", txHash });
+  }
+
+  const mergedPayload = {
+    ...session.payload,
+    txHash,
+    noteId: noteOut.noteId,
+    commitmentIndex: noteOut.commitmentIndex,
+  };
+  saveDepositSession(db, {
+    sessionId: session.sessionId,
+    sessionToken: session.sessionToken,
+    idempotencyKey: session.idempotencyKey,
+    depositor: session.depositor,
+    mode: session.mode,
+    token: session.token,
+    amount: session.amount,
+    assetId: session.assetId,
+    status: "submitted",
+    payload: mergedPayload,
+    createdAt: session.createdAt,
+    updatedAt: Date.now(),
+  });
+
+  logModule4("deposit.submit.ok", {
+    sessionId,
+    txHash,
+    commitmentIndex: noteOut.commitmentIndex,
+    noteId: noteOut.noteId,
+  });
+
+  return res.json({
+    ok: true,
+    txHash,
+    commitmentIndex: noteOut.commitmentIndex,
+    noteId: noteOut.noteId,
+    ownerAddress: noteOut.ownerAddress,
+    commitment: noteOut.commitment,
+    blockNumber: noteOut.blockNumber,
+    flow: "A",
+  });
+});
+
+app.get("/relayer/deposit/status", (req, res) => {
+  const sessionId = String(req.query.sessionId || "").trim();
+  const idempotencyKey = String(req.query.idempotencyKey || "").trim();
+  if (!sessionId && !idempotencyKey) {
+    return res.status(400).json({ error: "sessionId or idempotencyKey query required" });
+  }
+  try {
+    const row = sessionId
+      ? getDepositSessionBySessionId(db, sessionId)
+      : getDepositSessionByIdempotencyKey(db, idempotencyKey);
+    if (!row) return res.status(404).json({ error: "not_found" });
+    return res.json({
+      sessionId: row.sessionId,
+      status: row.status,
+      depositor: row.depositor,
+      mode: row.mode,
+      assetId: row.assetId,
+      expiresAt: row.createdAt + MODULE4_SESSION_TTL_MS,
+      txHash: row.payload?.txHash || null,
+      noteId: row.payload?.noteId || null,
+      commitmentIndex: row.payload?.commitmentIndex ?? null,
+    });
+  } catch (e) {
+    return res.status(500).json({ error: e.message || "status failed" });
   }
 });
 
@@ -1113,6 +1510,13 @@ app.get("/health", (req, res) => {
     notesEncryptionConfigured,
     missingForTx: cfg.missingForTx,
     configWarningCount: Array.isArray(cfg.configWarnings) ? cfg.configWarnings.length : 0,
+    module4: {
+      sessionTtlMs: MODULE4_SESSION_TTL_MS,
+      publicSubmit: MODULE4_PUBLIC_SUBMIT,
+      relayerDryRunBlocks: RELAYER_DRY_RUN,
+      ready:
+        !!(RELAYER_PRIVATE_KEY && SHIELDED_POOL_ADDRESS && RPC_URL) && !RELAYER_DRY_RUN,
+    },
   });
 });
 
@@ -1137,6 +1541,12 @@ app.get("/config", (req, res) => {
       encryption: "AES-256-GCM",
       keySource: notesKeySource,
       authModel: "minimal_owner_address_gate",
+    },
+    module4RelayerDeposit: {
+      sessionTtlMs: MODULE4_SESSION_TTL_MS,
+      publicSubmit: MODULE4_PUBLIC_SUBMIT,
+      maxBnbWei: MODULE4_MAX_BNB_WEI.toString(),
+      endpoints: ["/relayer/deposit/session", "/relayer/deposit/submit", "/relayer/deposit/status"],
     },
   });
 });

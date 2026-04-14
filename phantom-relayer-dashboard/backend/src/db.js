@@ -12,8 +12,16 @@ function initDbJson(dbPath) {
   const dataDir = path.join(dir, base + "_data");
   ensureDir(dataDir);
 
-  const tables = ["intents", "receipts", "quotes", "commitments", "notes"];
-  const keyCol = { intents: "intentId", receipts: "intentId", quotes: "id", commitments: "commitment", notes: "noteId" };
+  const tables = ["intents", "receipts", "quotes", "commitments", "notes", "deposit_sessions", "deposit_tx_receipts"];
+  const keyCol = {
+    intents: "intentId",
+    receipts: "intentId",
+    quotes: "id",
+    commitments: "commitment",
+    notes: "noteId",
+    deposit_sessions: "sessionId",
+    deposit_tx_receipts: "id",
+  };
 
   function loadTable(name) {
     const f = path.join(dataDir, name + ".json");
@@ -58,6 +66,42 @@ function initDbJson(dbPath) {
         saveTable("notes", rows);
       } else if (sqlLower.includes("delete from commitments")) {
         saveTable("commitments", []);
+      } else if (sqlLower.includes("insert or replace into deposit_sessions")) {
+        const [
+          sessionId,
+          sessionToken,
+          idempotencyKey,
+          depositor,
+          mode,
+          token,
+          amount,
+          assetId,
+          status,
+          payload,
+          createdAt,
+          updatedAt,
+        ] = args;
+        const rows = loadTable("deposit_sessions").filter((r) => r.sessionId !== sessionId);
+        rows.push({
+          sessionId,
+          sessionToken,
+          idempotencyKey,
+          depositor,
+          mode,
+          token,
+          amount,
+          assetId,
+          status,
+          payload,
+          createdAt,
+          updatedAt,
+        });
+        saveTable("deposit_sessions", rows);
+      } else if (sqlLower.includes("insert into deposit_tx_receipts")) {
+        const [id, sessionId, txHash, receiptJson, createdAt] = args;
+        const rows = loadTable("deposit_tx_receipts");
+        rows.push({ id, sessionId, txHash, receiptJson, createdAt });
+        saveTable("deposit_tx_receipts", rows);
       }
     };
     const get = (...args) => {
@@ -87,6 +131,14 @@ function initDbJson(dbPath) {
           (r) => String(r.commitment).toLowerCase() === String(commitment).toLowerCase()
         );
         return row ? { ...row } : undefined;
+      }
+      if (sqlLower.includes("from deposit_sessions where idempotencykey")) {
+        const [idempotencyKey] = args;
+        return loadTable("deposit_sessions").find((r) => r.idempotencyKey === idempotencyKey);
+      }
+      if (sqlLower.includes("from deposit_sessions where sessionid")) {
+        const [sessionId] = args;
+        return loadTable("deposit_sessions").find((r) => r.sessionId === sessionId);
       }
       return undefined;
     };
@@ -169,6 +221,27 @@ function initDb(dbPath) {
         payloadEnc TEXT NOT NULL,
         createdAt INTEGER NOT NULL,
         updatedAt INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS deposit_sessions (
+        sessionId TEXT PRIMARY KEY,
+        sessionToken TEXT NOT NULL,
+        idempotencyKey TEXT UNIQUE NOT NULL,
+        depositor TEXT NOT NULL,
+        mode TEXT NOT NULL,
+        token TEXT,
+        amount TEXT,
+        assetId TEXT NOT NULL,
+        status TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        createdAt INTEGER NOT NULL,
+        updatedAt INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS deposit_tx_receipts (
+        id TEXT PRIMARY KEY,
+        sessionId TEXT NOT NULL,
+        txHash TEXT NOT NULL,
+        receiptJson TEXT NOT NULL,
+        createdAt INTEGER NOT NULL
       );
     `);
     return db;
@@ -282,6 +355,47 @@ function listEncryptedNotesByOwner(db, ownerAddress, limit = 50) {
     .all(ownerAddress, limit);
 }
 
+function saveDepositSession(db, row) {
+  const stmt = db.prepare(
+    `INSERT OR REPLACE INTO deposit_sessions(
+      sessionId, sessionToken, idempotencyKey, depositor, mode, token, amount, assetId, status, payload, createdAt, updatedAt
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  );
+  stmt.run(
+    row.sessionId,
+    row.sessionToken,
+    row.idempotencyKey,
+    row.depositor,
+    row.mode,
+    row.token ?? null,
+    row.amount ?? null,
+    row.assetId,
+    row.status,
+    typeof row.payload === "string" ? row.payload : JSON.stringify(row.payload ?? {}),
+    row.createdAt,
+    row.updatedAt
+  );
+}
+
+function getDepositSessionByIdempotencyKey(db, idempotencyKey) {
+  const row = db.prepare("SELECT * FROM deposit_sessions WHERE idempotencyKey = ?").get(idempotencyKey);
+  if (!row) return null;
+  return { ...row, payload: JSON.parse(row.payload) };
+}
+
+function getDepositSessionBySessionId(db, sessionId) {
+  const row = db.prepare("SELECT * FROM deposit_sessions WHERE sessionId = ?").get(sessionId);
+  if (!row) return null;
+  return { ...row, payload: JSON.parse(row.payload) };
+}
+
+function saveDepositTxReceipt(db, { id, sessionId, txHash, receiptJson }) {
+  const stmt = db.prepare(
+    "INSERT INTO deposit_tx_receipts(id, sessionId, txHash, receiptJson, createdAt) VALUES (?, ?, ?, ?, ?)"
+  );
+  stmt.run(id, sessionId, txHash, receiptJson, Date.now());
+}
+
 module.exports = {
   initDb,
   saveIntent,
@@ -297,5 +411,9 @@ module.exports = {
   saveEncryptedNote,
   getEncryptedNote,
   findEncryptedNoteByCommitment,
-  listEncryptedNotesByOwner
+  listEncryptedNotesByOwner,
+  saveDepositSession,
+  getDepositSessionByIdempotencyKey,
+  getDepositSessionBySessionId,
+  saveDepositTxReceipt
 };
