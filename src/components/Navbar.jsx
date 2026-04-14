@@ -17,7 +17,7 @@ const primaryLinks = [
 ];
 
 const moreLinks = [
-    { name: 'Trade (DApp Console)', to: '/user' },
+    { name: 'Trade', to: '/trade' },
     { name: 'Internal Matching', to: '/trade' },
     { name: 'Relayer (Stake)', to: '/relayer' },
     { name: 'Payroll (Coming Soon)', to: '/enterprise/payroll' },

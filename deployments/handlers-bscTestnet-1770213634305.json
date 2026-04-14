@@ -1,0 +1,12 @@
+{
+  "network": "bscTestnet",
+  "chainId": 97,
+  "deployer": "0xE334af2021Bf3bF6A1777A611893d2D02A366F46",
+  "timestamp": "2026-02-04T14:00:34.304Z",
+  "contracts": {
+    "ShieldedPool": "0x979F0183085233781Abbf41853dCcc48E139Fc77",
+    "DepositHandler": "0xcD997d19F1e5a7bEA7c1F4148f6295DA46a6429a",
+    "SwapHandler": "0xF4F2E701f30BC495dffc6db12D72eE45C46c2d2C",
+    "WithdrawHandler": "0xd74E55ca78F7A54F7e6080775A53697AaD4eAe26"
+  }
+}

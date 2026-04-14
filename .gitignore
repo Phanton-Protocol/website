@@ -31,5 +31,6 @@ dist-ssr
 # Hardhat build outputs
 artifacts/
 cache/
+circuits/pot19_final.ptau
 
 ~$*

@@ -28,7 +28,7 @@ import WhitepaperPage from './components/WhitepaperPage';
 import OnePagerPage from './components/OnePagerPage';
 import { blogPosts } from './data/blogPosts';
 import logoUrl from './assets/logo.svg';
-import { RELAYER_DASHBOARD_URL, SOCIAL_LINKS } from './config';
+import { SOCIAL_LINKS } from './config';
 
 const DAppSection = lazy(() => import('./components/DAppSection'));
 const ProtocolUserDapp = lazy(() => import('./components/ProtocolUserDapp'));
@@ -74,25 +74,23 @@ function TradePage() {
   return (
     <div style={{ minHeight: '100vh' }}>
       <SeoHead
-        title="Phantom InternalMatching | Private Order Execution"
-        description="Use privacy-preserving internal matching in Phantom Protocol. Place orders and execute shielded matching flows on BNB Chain."
+        title="Phantom Trade Console | Shielded Deposit, Swap, Withdraw"
+        description="Use the Phantom trade console for shielded deposits, private swaps, and withdrawals on BNB Chain."
         path="/trade"
       />
       <Navbar />
       <Suspense fallback={<RouteLoader />}>
         <AppPageShell
-          label="InternalMatching"
-          title="InternalMatching"
-          compactTitle
-          subtitle="Place private limit orders, set your sell price, and match against counter orders privately."
-          tradeLandscape
+          label="Trade console"
+          title="Trade"
+          subtitle="Deposit to the shielded pool, swap privately, and withdraw from one console."
           belowTheFold={
             <div style={{ marginTop: 'clamp(2rem, 4vw, 3rem)' }}>
               <DAppSection embedded />
             </div>
           }
         >
-          <ProtocolUserDapp uiVariant="trade" />
+          <ProtocolUserDapp />
         </AppPageShell>
       </Suspense>
     </div>
@@ -334,7 +332,7 @@ function LandingPage({ mousePos, handleMouseMove }) {
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1.25rem 2rem', justifyContent: 'flex-end', alignItems: 'center' }}>
               <Link to="/trade" className="hover-underline" style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--label-size)', fontWeight: 500, color: 'var(--cyan)', letterSpacing: '0.1em', textTransform: 'uppercase', textDecoration: 'none' }}>
-                InternalMatching
+                Trade
               </Link>
               <Link to="/user" className="hover-underline" style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--label-size)', fontWeight: 500, color: '#fff', letterSpacing: '0.1em', textTransform: 'uppercase', textDecoration: 'none' }}>
                 Console
@@ -384,7 +382,7 @@ function App() {
   return (
     <Routes>
       <Route path="/" element={<LandingPage mousePos={mousePos} handleMouseMove={handleMouseMove} />} />
-      <Route path="/user" element={<Navigate to="/relayer" replace />} />
+      <Route path="/user" element={<Navigate to="/trade" replace />} />
       <Route path="/trade" element={<TradePage />} />
       <Route path="/e-paper" element={<WhitepaperPage />} />
       <Route path="/whitepaper" element={<Navigate to="/e-paper" replace />} />

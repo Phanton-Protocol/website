@@ -1,0 +1,864 @@
+Phantom Protocol E-Paper
+
+Privacy by Proof. Invisible by Design.
+
+1. Phantom Protocol Core
+        
+
+
+1.1 Core Model and Architecture
+
+
+Phantom Protocol delivers Confidentiality as a Service (CaaS), providing a high-performance privacy layer designed for the rigorous demands of professional traders, global banking institutions, and secure corporate payroll systems. By integrating advanced encryption within the blockchain financial ecosystem, we ensure that sensitive trade matching, institutional assets, and private salary data remain fully protected and discreet on-chain. SaaS for Direct On-Chain Banking that allows traditional financial institutions to handle on-chain transactions directly within their existing core banking systems. Instead of forcing users to move money to an external exchange. By integrating Secure Execution Environments (SEE), Zero-Knowledge Proofs (ZKP), and Fully Homomorphic Encryption (FHE), Phantom provides a platform transition that enables blockchain to move from a public ledger into a confidential execution environment for retail users, global enterprises, and sovereign entities.
+1.1.1 Core Components
+   * Shielded notes — Private records of pool ownership: asset, amount, blinding, and owner-controlled spend key material. Not stored on-chain.
+   * Commitments — On-chain hashes that commit to note contents without revealing them.
+   * Nullifiers — One-time spend tags derived from a note and its secrets; the contract rejects reuse to prevent double-spends.
+   * Incremental Merkle accumulator — Append-only commitment tree; the contract keeps a root; spends prove inclusion under a published root.
+   * Zero-knowledge validity proofs — Succinct proofs that a join-split–style transition is valid (conservation, membership, nullifiers) while keeping note data private.
+   * Relayer-based submission — Relayers broadcast pool txs and pay gas so user authorization can be separated from the on-chain sender address.
+   * FHE internal matching — Backend path for OTC-style matching on encrypted order payloads so counterparties can be paired without a public order book.
+   * SEE attestation gate — Deployment module that can require a verified attestation on sensitive API flows (e.g., deposit/swap/withdraw handlers); policy and integration control.
+   * The Compliance Firewall — Clean Pool standard via real-time Chainalysis screening, blocking illicit actors at the protocol’s edge
+
+
+.
+1.1.2 State Transitions
+A state transition is a single authorized update to the shielded pool: input notes are consumed (their nullifiers are revealed), new output commitments are appended, and the commitment-tree root moves forward. The contract accepts a transition only if the accompanying zero-knowledge proof and public inputs satisfy the protocol’s constraints.
+Specified. The following conditions are required for a valid transition:
+Input note membership. For each consumed note, the prover demonstrates that its commitment is included in the Merkle tree under the public historical root declared for the transaction.
+Correct nullifier derivation. Each published nullifier is derived from the corresponding input note and the owner’s spending secrets according to the domain-separated rule fixed by the circuit; the proof binds nullifiers to the same witness as the spent commitments.
+Well-formed output commitments. Every new note is represented by a commitment consistent with the note format enforced by the circuit (asset identifier, amount, per-note randomness, and owner binding as specified).
+Value conservation. Across inputs and outputs, value is conserved per asset (including any fees or public legs encoded as public inputs), so assets cannot be created inside the pool by the transition.
+Unused nullifier guarantee. No nullifier in the transaction may already exist in the on-chain nullifier set; upon success, newly revealed nullifiers are recorded so the same note cannot be spent twice.
+On-chain enforcement. The pool contract verifies a succinct proof against the verification key and the transaction’s public inputs (for example, prior and/or new roots, input nullifiers, output commitments, and any explicitly public withdrawal or routing data required by the flow). Failed verification or a duplicate nullifier causes the transaction to revert.
+
+
+
+
+1.2 Cryptographic Primitives and Formulas
+        1.2.1 Field Arithmetic
+All arithmetic is modulo p (integers mod p). Every note field, hash input, Merkle node, and public signal is interpreted in that field, with range constraints where integer soundness is required.
+​
+ MiMC7 Compression
+Phantom uses a two-input MiMC instance:
+MiMC7(x,k)∈Fp​
+matching phantom-relayer-dashboard/circuits/lib/mimc.circom and src/lib/mimc7.js (and the backend copy). The “7” is the exponent-7 map t↦t7 in the round function, not “7 rounds.” The implementation uses the full published round-constant schedule (91 round steps in mimc7.js: initial (x+k)7, then for i=1,…,90 update with k+Ci​, then a final +k).
+MiMC7 is used as the main algebraic compression inside the R1CS (commitments, nullifier, Merkle nodes).
+
+
+1.2.2 MiMC7
+The construction follows the standard MiMC7 round schedule over the BN254 scalar field. The round function uses an exponent-7 map; “7” does not mean “seven rounds.”
+MiMC7(x,k)∈Fp​ — use: MiMC7(x, k) is a field element mod p.
+1.3 Proof System
+Proving System: Groth16 Phantom’s primary join-split relation is proved with Groth16 on the BN254 curve (Ethereum alt_bn128 / bn128 in snarkjs artifacts). Proofs are constant size (three group elements in the usual encoding), and verification is a fixed pairing equation, suitable for on-chain checks via precompiles.
+________________
+
+
+The join-split verifier for a given circuit version exposes nine public inputs in a fixed order. Provers and on-chain verifiers must use the same ordering for that version.
+That drops verification_key.json, JoinSplitVerifier.sol, and verifyProof(..., uint[9] _pubSignals) while keeping the same meaning: nine public inputs, fixed order, must match between prover and verifier for that circuit version.
+
+
+
+
+
+
+Index
+	Symbol
+	Implementation Name
+	Description
+	0
+	nf
+	nullifier
+	Spend nullifier for the consumed input note
+	1
+	cm_in
+	inputCommitment
+	Commitment of the input note being spent
+	2
+	cm_out,swap
+	outputCommitmentSwap
+	Commitment of the swap output note
+	3
+	cm_out,change
+	outputCommitmentChange
+	Commitment of the change output note
+	4
+	root
+	merkleRoot
+	Merkle root under which cm_in is included
+	5
+	v_out,swap, pub
+	outputAmountSwapPublic
+	Plaintext amount of the swap output note, bound to cm_out, swap
+	6
+	v_min,out
+	minOutputAmountSwap
+	Minimum acceptable swap output amount (slippage floor)
+	7
+	fee_proto
+	protocolFee
+	Protocol fee term
+	8
+	refund_gas
+	gasRefund
+	Gas-refund term allocated from the input note
+	Names in proofs: Provers should use the exact JSON keys in zkProofs.js (nullifier, inputCommitment, outputCommitmentSwap, outputCommitmentChange, merkleRoot, outputAmountSwapPublic, minOutputAmountSwap, protocolFee, gasRefund). If the circuit or VK is regenerated, re-derive this table from the new verifier / publicSignals ordering.
+________________
+
+
+Value Conservation (Input Note Split) For the spent input note (single input asset), the circuit ties the input amount to the swap leg, change leg, protocol fee, and gas refund so that:
+inputAmount = swapAmount + changeAmount + protocolFee + gasRefund
+   * Scope: This equality is on the input asset’s note amount (how the input note is split). It does not by itself state a conservation law between two different assets when outputAssetIDSwap ≠ inputAssetID; cross-asset correctness is enforced by the rest of the statement (commitments, public swap amount, minOut, and routing logic), not by this single sum alone.
+   * Slippage: minOutputAmountSwap is a lower bound on the swap output amount; it is not added into the input-side sum above.
+   * Modular vs Integer: Amounts are field elements in Fp​. The meaningful “no inflation” property assumes the circuit also enforces range / non-negativity so this split holds as integer note values and cannot be satisfied via modular wraparound.
+
+
+
+
+1.4 TRANSACTION TYPES
+1.4.1 Deposit (Public → Shielded)
+Purpose: Move value from transparent custody into the shielded pool and register a new note.
+On-chain Flow:
+User sends tokens/native asset to the pool deposit path with a fresh commitment cm (and any fee the deployment charges). Which is moved through a shadow address to the pool.
+The contract verifies deposit rules, registers the asset if needed, and appends cm to the Merkle accumulator (new leaf/index, updated root).
+The user’s wallet stores the corresponding private note (amount, blinding, owner binding, asset id) off-chain.
+Privacy Note: The funding side is public: observers see who funded, which token, and deposit timing. The commitment hides the note’s internal fields, but the deposit itself is the natural boundary between transparent and shielded domains.
+
+
+1.4.2 Swap (DEX Route)
+Purpose: Exchange value while staying inside the pool’s note model, using an external liquidity venue for price discovery and settlement.
+Flow (Split View):
+Shielded Leg (ZK): The user spends a private input note (nullifier revealed, membership under root proved) and the join-split proof enforces correctness of output commitments (e.g., swap output + change), value split on the input asset (inputAmount = swapAmount + changeAmount + protocolFee + gasRefund), and slippage floor via minOutputAmountSwap vs public swap output amount.
+Public Leg (Adapter): A DEX adapter performs the on-chain swap (e.g., AMM router call). Calldata, pools touched, and timing are public metadata.
+Technical Note: The proof does not “validate the entire flow” inside zero knowledge: it validates the authorized shielded state transition; the DEX execution is explicitly public and must match whatever binding the pool enforces (calldata, min out, asset routing).
+
+
+1.4.3 Swap (Internal Matching Route)
+Purpose: Match two sides without routing through an external DEX when a compatible counterparty exists (OTC-style / internal settlement).
+Protocol Shape: Modeled as a two-sided shielded update: two input notes consumed (two nullifiers), new output notes created, still enforced by the same commitment/nullifier / Merkle rules, optionally without a public AMM step.
+Implementation Note: A confidential matching service (including FHE-style ciphertext matching) is a product/deployment layer. Current /the HTTP routers in the repository are development placeholders and not audited FHE cryptography claims until replaced by a verified FHE backend. Fallback: if no match, flows typically degrade to the DEX route.
+
+
+1.4.4 Withdrawal (Shielded → Public)
+Purpose: Destroy shielded claims and pay out to a transparent recipient.
+On-chain Flow:
+Consume the relevant input note(s) (nullifiers, membership, conservation in-circuit).
+The pool (or withdraw handler) transfers tokens/native to a public recipient address.
+Privacy Note: The recipient and payout amount (and fees) are necessarily public at the interface to the transparent ledger. What remains private is which prior commitments funded that payout, beyond what observers infer from timing and graph metadata.
+
+
+1.4.5 Batch Operations (Enterprise / Payroll-Style)
+Purpose: Run many payouts or treasury movements in an operationally efficient way.
+Cryptographic Status: Batching is not required to be a new primitive: in the baseline model, each payout is still a standard withdrawal-style proof with its own nullifiers and public outputs. “Batch” here means orchestration: scheduling, approvals, CSV/API ingestion, and enterprise APIs—not necessarily a single SNARK that pays N recipients in one proof.
+Deployment Note: On-chain batching of swaps or intents for gas reasons is orthogonal to payroll SaaS orchestration. Batch is treated as an application/contract feature unless an atomic multi-transfer circuit is explicitly specified.
+
+
+
+
+1.5 Merkle tree construction
+1.5.1 Tree specification
+The commitment tree is a binary Merkle tree used for membership of note commitments.
+Parameter        Value        Rationale
+Depth        10        2¹⁰ = 1,024 leaves in a full tree; path length is 10.
+Compression        MiMC7(left, right)        Circuit- and library-aligned hashing for leaves and internal nodes.
+Insertion        Append-only        Matches incremental tree updates and fixed-depth proofs.
+Root        Incremental update        : New commitments extend the tree; published root advances with the pool.
+
+
+Implementation note: Merkle libraries and structs in this codebase use fixed arrays of length 10 for siblings and direction bits. Any alternate “deeper tree” constant in a pool contract must stay consistent with that library and the circuit; the path length enforced here is 10.
+When Protocol opens a new tree Epoch historical Roots remain spendable.
+1.5.2 Parent node
+At each level:
+parent = MiMC7(leftChild, rightChild)
+with leftChild / rightChild chosen from the running hash and the sibling from the proof according to the path index.
+
+
+
+
+1.5.3 Merkle path verification
+To show a commitment is in the tree under root, the prover supplies:
+Leaf: commitment (field element encoded as bytes32 on-chain).
+Path: 10 sibling hashes (same order as levels from leaf toward root).
+Indices: 10 bits, each in {0, 1}: 0 if the current node is the left child at that level, 1 if it is the right child (equivalently: which side the sibling sits on when combining).
+Verification:
+hash := commitment
+for i := 0 .. 9:
+  if indices[i] == 0:
+    hash := MiMC7(hash, path[i])      // current is left child
+  else:
+    hash := MiMC7(path[i], hash)      // current is right child
+accept iff hash == root
+This matches the on-chain MerkleTree helper: recompute the root and compare to the stored pool root (and to the root asserted in public inputs as the contract requires).
+1.5.4 Circuit integration
+The circuit witnesses the same path: at each level it applies MiMC7 with the same left/right convention and constrains the result to equal the public Merkle root input (and ties the leaf to the input commitment in the join-split statement). Constraint totals depend on the exact Circom/R1CS build (MiMC7 round structure and gadget wiring); quote a precise number only from a compiled artifact (e.g. R1CS stats) for the deployed circuit version, not as a fixed “820” unless that build has been measured.
+
+
+1.6 Proof system specification
+1.6.1 Proving system
+Phantom uses Groth16, a pairing-based SNARK over BN254 (Ethereum alt_bn128 / bn128 in common tooling). In standard form it provides:
+Constant proof size: three group elements (two G1, one G2). In typical uncompressed encodings used on EVM stacks this is often on the order of ~256 bytes (exact packing depends on the verifier ABI and whether points are compressed).
+Verifier cost: approximately flat in the size of the witness; absolute gas depends on the deployed verifier contract, compiler settings, and hardfork pricing—quote a number only from measurement on the target deployment (order of low hundreds of thousands of gas is common for BN254 Groth16 verifiers, but it is not a protocol constant).
+Prover cost: practical off-browser (e.g. backend / Rapidsnark-class provers); in-browser proving may be possible but is deployment- and circuit-dependent.
+Groth16 requires a circuit-specific trusted setup. Security assumes the setup’s toxic waste is not recoverable (at least one honest participant in an MPC-style ceremony, or an equivalent trust model).
+Trusted-setup status: The join-split verifier for a given circuit version exposes nine public inputs in a fixed order. Provers and on-chain verifiers must use the same ordering for that version.
+That drops verification_key.json, JoinSplitVerifier.sol, and verifyProof(..., uint[9] _pubSignals) while keeping the same meaning: nine public inputs, fixed order, must match between prover and verifier for that circuit version.
+
+
+
+
+1.6.2 Join-split public inputs
+For the reference join-split circuit, there are nine public inputs. Order is fixed per circuit version; provers and on-chain verifiers must use the same ordering for that version.
+Index        Field (concept)        Implementation name (typical)        Description
+0        nullifier        nullifier        Spend nullifier for the consumed input note
+1        inputCommitment        inputCommitment        Commitment of the input note being spent
+2        outputCommitmentSwap        outputCommitmentSwap        Commitment of the swap-output note
+3        outputCommitmentChange        outputCommitmentChange        Commitment of the change note
+4        merkleRoot        merkleRoot        Merkle root under which inputCommitment is included
+5        outputAmountSwapPublic        outputAmountSwapPublic        Public amount bound to the swap leg (used for on-chain checks such as adapter/min-out binding; not “withdrawals only”)
+6        minOutputAmountSwap        minOutputAmountSwap        Minimum acceptable public swap output (slippage floor)
+7        protocolFee        protocolFee        Protocol fee term
+8        gasRefund        gasRefund        Gas-refund term allocated from the input note
+If the circuit or verification key is regenerated, re-derive this table from the new artifact’s public signal ordering and the Solidity verifier’s calldata layout.
+
+
+
+
+1.6.3 Witness components (private/internal to the proof)
+Typical private inputs (exact names follow the Circom template and may differ slightly from SDK field names):
+Input note fields: e.g. (inputAssetID, inputAmount, inputBlindingFactor, ownerKeyMaterial) — the last binds spend authority to the note encoding used by the circuit.
+Output swap note fields: (swapAssetID, swapAmount, swapBlindingFactor, swapOwnerKeyMaterial) (or equivalent).
+Output change note fields: (changeAssetID, changeAmount, changeBlindingFactor, changeOwnerKeyMaterial) (or equivalent).
+Merkle opening: merklePath[10], merklePathIndices[10] (depth 10 in the current Merkle library/circuit profile).
+These are not published as calldata in full; they appear only inside the witness, subject to the constraints below.
+
+
+
+
+
+
+1.6.4 Circuit constraints
+The circuit is summarized below at the level of protocol intent. Exact gadgets and signal names are authoritative in the Circom sources and the compiled R1CS.
+Input commitment integrity (example nested MiMC7 shape, as used in prover helpers):
+h1,in=MiMC7(inputAssetID,inputAmount)h 1,in =MiMC7(inputAssetID,inputAmount)
+h2,in=MiMC7(h1,in,inputBlindingFactor)h 2,in =MiMC7(h 1,in, inputBlindingFactor) cmin,computed=MiMC7(h2,in,ownerKeyMaterial)cm in,computed =MiMC7(h 2,in ,ownerKeyMaterial)Assert cmin,computedcm in,computed equals the public inputCommitment.
+Nullifier correctness :
+nfcomputed=MiMC7(inputCommitment,ownerKeyMaterial)nf computed
+ =MiMC7(inputCommitment,ownerKeyMaterial) (or the circuit’s domain-separated equivalent)
+Assert nfcomputednf computed equals the public nullifier.
+Merkle path validation: recompute the root from the leaf (inputCommitment) using merklePath / merklePathIndices with the same parent rule as §1.5.3; assert equality with the public merkleRoot.
+Output commitment formation: same commitment pattern for outputCommitmentSwap and outputCommitmentChange, with their respective private note fields, and assert equality to the corresponding public commitments.
+Value conservation (input note split, same asset):
+Input Amount=swapAmount+changeAmount+protocolFee+gasRefund
+inputAmount=swapAmount+changeAmount+protocolFee+gasRefund
+(as integer note values inside the circuit’s enforced range; not a cross-asset conservation law by itself).
+Range/integer soundness: amounts must be constrained so the split in (5) cannot be satisfied via mod-\(p\) wraparound. In practice this means explicit range checks (e.g. bit-length constraints), not merely treating field elements as “non-negative.”
+Slippage / public swap amount: the circuit ties the witness swap amount to the public swap amount signal and enforces the public inequality required by the statement—typically outputAmountSwapPublic >= minOutputAmountSwap (exact wiring is circuit-specific). On-chain, the pool/handler additionally enforces consistency with the DEX execution or routing policy where applicable.
+1.7 Transaction types and flows
+1.7.1 Deposit (public → shielded)
+Deposits move funds from the transparent interface into the pool though a shadow address and register a new commitment (new note leaf).
+User:
+Select the asset and amount to be represented by the commitment.
+Sample note randomness (e.g., blinding) and derive owner / spend binding consistent with the circuit (often called owner key material or public key hash in docs).
+Compute the commitment with the same nested MiMC7 shape as the circuit (conceptually):
+h1 = MiMC7(assetID, amount)
+h2 = MiMC7(h1, blinding)
+cm = MiMC7(h2, ownerKeyMaterial)
+ERC-20: approve the pool / deposit path for at least the deposit amount (and any fee policy the deployment uses).
+Native (BNB): send msg.value per the handler’s amount + fee rules.
+Submit through the pool’s deposit entry point (directly or via a relayer), subject to that deployment’s fees, compliance, and asset registration rules. Example (institutional / production target): deposits use a relayer-mediated flow with address screening Chainalysis at the transparent boundary, and a configured deposit fee, including shadow-address funding patterns where enabled.
+Contract processing :
+Validate depositor, token, amount, commitment, assetID per pool/handler rules (including compliance hooks).
+Pull native or ERC-20 into the pool; deposit fee is enforced per fee oracle/deployment policy .
+Append commitment to the incremental Merkle tree, update root and commitment index.
+Emit a Deposit-style event (in ShieldedPool this includes e.g. depositor, token, assetID, amount, commitment, commitmentIndex). The handler may emit DepositProcessed with overlapping fields.
+Privacy characteristics:
+Public by design: depositor address, token (or native path), on-chain amount, assetID, and commitment (and index) appear in logs / calldata.
+Hidden: the note’s blinding and exact internal encoding are not stored in plaintext on-chain; linkability of the commitment to future spends is limited to what the ZK statement and graph analysis allow.
+Later shielded activity (swaps/withdraws) does not have to reveal the original note plaintext on-chain.
+
+
+1.7.2 Swap (DEX route)
+Swaps spend a shielded input note and route the tradable leg through a public DEX adapter while the join-split Groth16 proof authorizes the shielded state change (new output commitments, fee split, nullifier).
+User / client preparation
+Select the input note to spend.
+Use a historical or current root policy consistent with the deployment (the proof must use a root the pool accepts for that transaction).
+Obtain a Merkle path for the input commitment.
+Set swap parameters: output asset(s), and the split of the input note into swap leg, change leg, protocol fee, and gas refund per the circuit.
+Build the swap and change output notes and produce a Groth16 proof with the nine public inputs.
+What the proof establishes (summary)
+The input commitment is a leaf under the public Merkle root (path verified in-circuit).
+The nullifier is correct for the spent note and owner binding per circuit rules.
+Output commitments for swap and change are well-formed.
+On the input asset,
+inputAmount = swapAmount + changeAmount + protocolFee + gasRefund
+with integer / range semantics as enforced by the circuit.
+Slippage: the public swap amount field (outputAmountSwapPublic) meets the minimum bound (minOutputAmountSwap) as the circuit defines; on-chain, the pool and adapter checks tie this to the actual DEX result.
+On-chain processing order (representative)
+Exact module names vary by deployment; the logical order is:
+Reject if the nullifier is already spent.
+Check the Merkle root in public inputs against the pool’s root rules for that call.
+If the deployment verifies membership on-chain, recompute the root from the leaf, path, and indices using MiMC7 as in section 1.5.
+Verify the Groth16 proof against the public input vector (and any optional extra verifier or validator policy if the deployment uses one).
+Execute the DEX adapter (public calldata, pools, timing).
+Check output amount and routing against the declared public binding.
+Append new commitment(s) and update the Merkle root.
+Record the nullifier as spent.
+Apply fee distribution and gas refund per deployment parameters.
+Fees (policy targets, governance / deployment dependent)
+The DEX-route swap fee is often described as 0.1% of the routed swap amount (fee_dex about 0.001 * swapAmount in basis-point form). Treat exact basis points and any oracle as parameters, not fixed protocol law, unless a given deployment fixes them.
+
+
+
+
+1.7.3 Swap (internal matching route)
+In the internal matching route, counterparty orders are matched without a public order book using FHE: parameters stay encrypted for matching, compatibility is evaluated on ciphertexts The protocol defines an allowlisted set of homomorphic programs., and results are settled as shielded pool transitions. A full two-sided match typically consumes two input notes (two nullifiers) and creates new output notes for each side; the exact transaction shape is deployment-specific. If no compatible counterparty is found within policy, flows fall back to the DEX route .
+Assurance: production FHE matching is covered by an independent cryptographic review (scheme choice, key lifecycle, and integration with settlement).
+Fee policy: internal match fee is often 0.2% of matched notional (about 0.002 × matchedAmount). Whether a trade is cheaper net of slippage than the DEX route depends on size and liquidity; there is no guarantee that internal matching is always cheaper.
+
+
+1.7.4 Withdrawal (shielded to the public)
+Withdrawals move value from the shielded pool to a transparent recipient. Like a swap, the user proves a valid spend of a shielded note; unlike a DEX swap, the public leg is a payout to an address on-chain, not routing through an AMM.
+Flow (compared to swap)
+The join-split proof authorizes spending the input note (membership, nullifier, conservation, output commitments as the circuit defines).
+Withdraw amount and recipient appear as public data at the transparent boundary.
+Change (if the circuit and client build a change note) stays inside the pool as a new commitment, same as in swap-style splits.
+Value conservation (input note split, typical)
+On the input asset, the spent note is split among withdrawal leg, change (if any), protocol fee, and gas refund:
+inputAmount = withdrawAmount + changeAmount + protocolFee + gasRefund
+Exact field names follow the circuit version; range constraints apply so this holds as integer note value, not mod-p wraparound.
+Privacy characteristics
+Public by necessity: recipient, asset, and withdrawn amount (and fees where exposed) are visible on-chain.
+Stays private: which prior commitment inside the tree was consumed is not revealed as plaintext note data; observers see nullifiers and commitments as hashes, not full note contents.
+Limits: Phantom does not claim impossible unlinkability to deposits or other withdrawals; timing, amount patterns, and graph metadata can support inference or heuristic linking. Phantom Protocol makes it mathimatically impossible to link. 
+Change note: if present, keeps residual value shielded under a new commitment.
+
+
+1.7.5 Batch/enterprise actions
+Enterprises often need many shielded operations (payroll, treasury runs, vendor payouts) with controlled approvals, audit trails, and predictable execution. Phantom treats batch at two levels:
+Application/orchestration 
+Each payout or spend can still be a standard shielded transaction (its own proof, nullifiers, and public outputs). Batch then means: grouped submission, parallel proof generation, scheduling, maker–checker approval, and idempotent APIs so operators do not manually drive each proof. This model does not require a new cryptographic primitive.
+On-chain atomicity 
+Some deployments may wrap multiple operations in a single on-chain batch or multicall so they succeed or revert together (all-or-nothing within that transaction). Whether true atomicity applies depends on the deployed batch contract and how the pool accepts calls. It is not assumed in the baseline note model unless explicitly specified.
+Enterprise API
+An enterprise-facing layer validates batch structure (limits, policies, screening at transparent boundaries where enabled), coordinates proof generation (including parallel workers where useful), and submits transactions through relayers or institutional signing paths. Gas may improve when many operations share submission patterns or calldata packing, but savings are deployment- and chain-dependent; batching does not automatically divide proof verification cost by N.
+Use cases
+Payroll-style many withdrawals to employee addresses (public recipients and amounts at the transparent leg).
+Complex multi-leg flows (e.g. rebalance plus payout) are modeled as ordered or atomic bundles per product design.
+
+
+
+
+1.8 Fee structure and economics
+Phantom generates revenue directly from usage.
+The fee structure includes:
+   * $2 deposit fee - $1.50 goes to the relayer reward pool and $0.50 to the successful relayer
+   * 0.10% protocol swap fee
+   * External DEX fees charged by the AMM of the DEX (External)
+   * 0.20% internal matching fee
+   * No withdrawal fees
+   * Payroll Fees (TBD)
+   * Banking Saas(TBD)
+Each part of this structure is designed to balance user cost and system sustainability.
+Fixed fees provide predictable revenue, while percentage fees scale with transaction size.
+Internal matching is one of the most important parts of the system. As more liquidity stays inside Phantom, more trades can happen internally. This reduces reliance on external platforms and allows the protocol to capture more value.
+Over time, this makes the system more efficient and increases revenue without needing more users. In addition, applications built on top of Phantom through SDK integrations also contribute to fee generation, further expanding the protocol’s revenue base beyond direct user activity.
+
+
+
+
+1.8.1 Fee distribution
+All fees are split:
+   * 80% to relayers
+   * 20% to the treasury
+Relayers earn in two ways.
+First, they receive a fixed $0.50 for each transaction. This gives them a stable base income tied directly to execution.
+Second, they receive a share of the total fees based on how much they contribute. This is distributed proportionally, meaning both transaction volume and transaction value influence earnings.
+This means:
+   * more transactions processed → more earnings
+   * higher value transactions → higher earnings
+For example:
+If the protocol generates $200,000 in fees:
+   * $160,000 goes to relayers
+   * $40,000 goes to the treasury
+A relayer responsible for 10% of activity would earn around $16,000, in addition to their fixed transaction fees.
+This structure rewards both effort and efficiency, ensuring that active and high-performing relayers are compensated accordingly.
+________________
+
+
+In addition to direct relayer earnings, Phantom Protocol supports a delegated participation model, allowing multiple participants to contribute stake to a single relayer and share in its rewards.
+Under this model:
+   * participants allocate $PPT to a relayer
+   * rewards earned by that relayer are distributed proportionally
+   * the relayer operator may take a small commission for managing infrastructure and performance
+This introduces a third layer of participation:
+   * operators, who run relayers and manage execution
+   * delegators, who provide capital and earn a share of rewards
+   * the protocol, which generates revenue from activity
+For example:
+A relayer generating $20,000 in monthly rewards may distribute that income across multiple contributors, with each participant receiving a share based on their stake, after a small operator commission.
+Participants can also allocate their stake across multiple relayers, allowing them to diversify exposure and align with higher-performing operators.
+This model expands access to the network’s economic layer, allowing smaller participants to earn without running infrastructure, while also increasing the total amount of $PPT locked within the system.
+
+
+
+
+1.9 Relayer network architecture
+1.9.1 Relayer role
+Relayers provide transaction submission and operations around shielded flows:
+Accept user-authorized request packages (signed intents, proofs, calldata as the deployment defines).
+Validate format, signatures, and policy (limits, allowlists, screening hooks are enabled).
+Submit transactions to the pool and related contracts from relayer-controlled EOAs or contracts.
+Collect agreed service fees and gas reimbursement per deployment rules.
+Enforce operational policies: rate limits, compliance at the API edge, retries, and monitoring.
+
+
+Add Diagram
+1.9.2 Privacy and UX benefits 
+Relayer mediation can improve privacy and UX relative to self-submission, but it is not a complete anonymity layer.
+On-chain sender: The tx. origin/caller seen on-chain is often the relayer (or a relayer contract), not the user’s wallet. That reduces the direct linkage of every pool interaction to one user EOA. It does not remove linkage from transparent legs (e.g., deposits), amount/timing patterns, or off-chain logs held by the relayer.
+Timing: Relayers may batch, queue, or schedule submits; behavior is policy- and product-dependent, not guaranteed by the protocol.
+Network exposure: Users typically talk to relayer/enterprise APIs first; they may still use wallet RPC or indexers elsewhere. The relayer sees request metadata and timing unless additional measures are used.
+Gas abstraction: Many designs deduct gas or relayer reimbursement from the user’s note, stable balance, or fee line so the user does not manually top up native gas for every step. Exact mechanics are deployment-specific (not always “protocol tokens only”).
+1.9.3 Relayer authorization
+Participation is governance-defined. A common pattern is a registry :
+Stake requirement: effectiveStake(relayer) >= minStake (per chain/deployment).
+Registry flag: isRelayer(addr) is true only if the address is registered and not suspended.
+Slashing / penalties may apply for provable misbehavior 
+1.9.4 Relayer incentives and costs
+Earn:
+Per-transaction service fee $0.5 per succesful relayer..
+Gas refund leg tied to actual or capped gas cost.
+Costs:
+Native gas for on-chain submission (until reimbursed).
+Infrastructure, SLA, support, and compliance tooling.
+Capital lockup if staking is required.
+Note: Staking rewards for all stakers and relayer compensation are not the same bucket unless governance explicitly ties them.
+1.9.5 Censorship resistance
+Current / baseline model
+Multiple relayers reduce single-point censorship.
+There is no cryptographic guarantee that some relayer must accept a given request; relayers can censor at the application layer.
+Timeouts and forced-inclusion paths where the chain and contracts allow (e.g., public submit after delay, or escalation to another relayer tier).
+Economic penalties for provable censorship or breach of service agreements are enforceable.
+Redundant submission or multi-relayer broadcast patterns for critical flows.
+Ordering/coordination policies to reduce unfair MEV or selective ordering by a single operator.
+Phantom 2.0
+2. Payroll-style flows on the Phantom platform
+
+
+2.1 Overview
+Phantom supports payroll-style use cases by combining the shielded pool, standard spend/withdraw semantics, and enterprise-oriented orchestration (batching, approvals, reporting). Organizations run compensation through the same platform as other treasury flows/
+Pay many recipients from shielded or treasury-controlled balances with controlled disclosure at the transparent leg (recipient and amount where required).
+Use batch orchestration (scheduling, approvals, audit logs in the operator layer).
+Align with compliance using transparent-boundary checks and selective disclosure (e.g. reporting keys) where the deployment enables them.
+2.2 Core capabilities
+2.2.1 Ingestion and batch building
+Operators define a run as a list of payouts (recipient address, asset, amount, reference id). Ingestion is implementation-defined: file upload, internal admin UI, or enterprise API. Standard templates (e.g. CSV column layout) can be documented per deployment; named third-party HRIS connectors are not claimed unless actually shipped.
+2.2.2 Cycles and scheduling
+Support for recurring (monthly, biweekly, weekly) and ad-hoc runs is a product configuration on top of the protocol, not a new on-chain primitive. Each cycle can require different approvers or limits (off-chain or contract-enforced policy, per deployment).
+2.2.3 Approval workflows
+Approvals are governance and product policy: single approver, dual control, or threshold rules in the operator system. The chain enforces per-tx validity (proofs, nullifiers); who may submit a batch is layered on top (API keys, multisig org wallet, internal workflow).
+2.2.4 Multi-asset payouts
+The pool model is multi-asset. A batch may pay different employees in different assets by executing multiple valid withdrawals/swaps as allowed by the deployment. There is no claim here of automatic fiat or off-ramp unless integrated separately.
+2.2.5 Swaps before payout (optional)
+If the organization holds asset A and owes asset B, payout may route through Phantom swap flows (DEX or internal matching per deployment). Bookkeeping of conversion is the customer’s accounting process; the protocol enforces correct shielded transitions, not ERP journal entries.
+2.2.6 Fiat delivery
+Fiat off-ramp (bank transfer) is outside the core protocol. If offered, it is via separate licensed partners and explicit integration;
+2.2.7 Failed payout handling
+At the protocol level, a transaction fails if proofs, balances, or screening reject it. The platform layer define retries, notifications, and manual reconciliation (e.g. invalid address, insufficient shielded balance, compliance block). 
+2.3 End-to-end workflow 
+Operator builds a payout batch (validated addresses, amounts, asset IDs).
+Policy: approvals, limits, and optional screening on transparent recipients.
+For each payout (or bundled submission pattern per deployment): proof generation and relayer submission.
+On-chain: withdrawals (and swaps if needed) execute; public recipient and amount appear where the statement exposes them.
+Operator closes the run: exports, audit log, and reporting key/export flows if enabled.
+2.4 Employee-facing experience 
+The product includes a portal, which will offer:
+The history of payouts tied to on-chain confirmations (tx hash, asset, amount) was not restricted by the privacy policy.
+Wallet or payout preference updates are subject to employer policy.
+Tax/reporting exports only where jurisdiction-specific formats are actually supported; otherwise, describe as “export of transaction history for accountant” as per jurisdiction needs.
+2.5 Integration and reporting
+HRIS / accounting: Integrations are customer-specific or roadmap; list only systems you ship. Default wording: “Exports and APIs intended for integration with customer HRIS and accounting tools.”
+Reporting: Payroll register, failures, and token totals are operator-generated from on-chain events and internal logs, plus selective disclosure where reporting keys apply.
+
+
+Phantom 3.0
+3. Institutional and enterprise use of Phantom (Saas) Baking platform
+3.1 Product overview
+Phantom for institutions is how banks, custodians, and large treasuries use the same Phantom stack (shielded pool, proofs, relayers, optional screening and attestation) with enterprise controls on top: tenancy in the operator layer, access policy, audit logging, and integrations into existing cores.
+This is not a second blockchain protocol. It is Phantom Protocol plus deployment and service choices (hosting, APIs, support, compliance workflow). Whether that is sold as a license, managed service, or internal build is commercial, not cryptographic.
+Differentiators (realistic)
+Tenant isolation in operations: separate orgs, keys, policies, and data stores in the service layer; on-chain isolation may be separate pool deployments or shared pool with strict key/reporting separation—document which model you actually deploy.
+Compliance at the transparent edge: screening and policy on deposit/withdraw addresses and enterprise APIs where enabled.
+Operational controls: RBAC, maker-checker, approvals, audit logs, SLAs.
+Integration: APIs and exports for core banking/treasury systems as you implement them; do not list integrations you do not have.
+3.2 Target customers
+Goverment Banks, Commercial banks and neobanks
+Custodians and trust companies
+Payment and money-service businesses (where legally permitted)
+Large corporate treasuries
+Typical requirements (satisfied by policy + product, not all by the base pool alone):
+AML/sanctions processes at transparent boundaries
+Audit trails and selective disclosure (e.g., reporting keys) where the product supports them
+Uptime, DR, and support SLAs for hosted offerings
+Approvals and segregation of duties
+Hooks into existing core/custody / accounting stacks
+3.3 Architecture and multi-tenancy
+3.3.1 Tenant isolation
+Service layer: Each customer org gets isolated accounts, configuration, API keys, logs, and backup scope so one tenant cannot read another’s operational data.
+Chain layer: Isolation may be:
+Dedicated pool/verifier / contract set per tenant, or
+Shared global pool with cryptographic separation coming from note ownership and process separation.
+
+
+3.3.2 Account and address handling
+Goal: Customer core banking IDs must not be trivially derivable from on-chain addresses.
+Approach : Use standard key and address derivation inside custody (HSM, MPC wallet, or enterprise key service), tenant-scoped policies, and access-controlled mapping tables. Operational rule: Mapping internalAccountID ↔ blockchainAddress is privileged data, encrypted at rest, with least-privilege access and audit on reads.
+3.3.3 Intra-institution vs on-chain settlement
+Internal book transfers (general ledger only, same legal entity, no on-chain obligation) do not require to be on-chain; they stay in core banking/treasury systems.
+On-chain shielded movement uses Phantom when value must settle on the ledger (cross-entity, cross-chain policy, or when the asset lives in the pool).
+
+
+3.3.4 Inter-institution settlement
+When two organizations settle on-chain, they use Phantom’s normal shielded (and optional public) flows. Privacy follows the protocol (commitments, nullifiers, proofs). Reconciliation is each bank’s back office plus agreed reference data (tx ids, amount, asset). Shared audit logs exist only if both parties use a contracted service or standard exports—not by default “one global log.”
+3.4 Security and key management
+3.4.1 RBAC (example pattern)
+Role (example)        : Typical permissions        : Typical restrictions
+Admin        Tenant config, user lifecycle        , No transaction signing
+Operator        : Initiate operations, view allowed balances        . No high-value approval
+Approver        Approve queued operations        No unsupervised initiation
+Auditor        Read-only reports / exports        No funds movement
+Emergency        Break-glass (if offered)        Time-limited, fully logged
+Exact roles are deployment-defined.
+3.4.2 Maker-checker
+Sensitive actions (limits, beneficiary changes, large payouts) use maker initiation and independent checker approval, with an append-only audit record of state transitions.
+3.4.3 Thresholds
+Value thresholds (e.g., 2-of-3 above $X) are tenant policy, implemented in workflow software or multisig custody—not fixed protocol constants. Publish ranges as examples only.
+3.4.4 HSM and signing
+Target: Private keys and signing inside HSM or MPC, where required by policy; master keys not exportable in plaintext; backups per vendor and regulatory practice.
+
+
+3.4.5 Audit logging
+Log who did what, when, from where (policy permitting), for: auth, config changes, payout initiation/approval, API usage, and break-glass. Prefer append-only storage and hash-chained or WORM backends where compliance requires it. Tamper-evidence depends on implementation; state the actual mechanism you ship.
+3.4.6 Break-glass
+If offered: time-bound elevated access, mandatory reason codes, notifier to leadership, post-incident review, and automatic expiry. Use cases: recovery, fraud response, lawful examination—subject to law and contract.
+3.5 Compliance and audit
+3.5.1 Compliance tooling
+Institutions need monitoring, screening, and case management. Phantom can expose hooks at transparent boundaries and exports for AML workflows. 
+3.5.2 Supervisory access
+Policy-gated, scope-limited access (time range, accounts) with full logging is a reasonable target. It is not a chain backdoor; it is an institutional process plus reporting keys/exports where applicable. Regulator-facing flows must match local law and contracts.
+
+
+3.5.3 Reporting
+Provide exports (CSV, APIs) and scheduling as implemented. Name specific frameworks (FFIEC, Basel, etc.) only if you generate those formats.
+ 
+Phantom 4.0
+4. Developer platform (SDK and APIs)
+4.1 Audience
+Application developers:Can use Phantom Techstack to develop different Privacy applications on-chain using its relayers system and pool system to break the link.
+Institutions: custom UX on top of the same HTTP APIs and contract interfaces.
+Infrastructure teams: relayers, indexers, and monitoring against documented endpoints.
+Researchers extend circuits, verifiers, and policies in-repo; that work is not always exposed as a single “research SDK.”
+4.2 What the platform provides
+4.2.1 Protocol-facing pieces 
+Note handling (client-side): derive commitment / nullifier material consistent with the active circuit version; store notes in the wallet or vault (implementation-specific).
+Merkle paths: fetch or compute paths against a synced commitment tree (from your indexer / backend or on-chain reads, depending on design).
+Proof inputs: build the witness and public signal vector expected by the verifier for that version.
+Proof generation: run in browser, server, or proving service; heavy proving is often server-side for UX.
+Transactions: assemble calldata, sign intents (e.g. EIP-712 where used), submit via user wallet or relayer.
+4.2.2 High-level helpers
+SDKs may wrap common flows. Names and signatures differ by release; treat any snippet as pseudocode:
+4.2.3 Batch and enterprise flows
+Batch is usually orchestration over many standard operations: create a run, approve in your org workflow, then submit each proof/tx (or a deployment-specific batch contract). The 
+4.2.4 Compliance and reporting
+At the protocol level, selective disclosure (e.g. reporting keys) and exports are policy- and product-dependent. Generic wording:
+Tax / reporting exports: history export for authorized scopes.
+Screening: at transparent boundaries where the deployment enables it.
+Avoid regulatory-standard as a magic format string unless you ship named formats.
+4.2.5 Events and webhooks
+If the hosted backend offers webhooks or SSE, document event types and payloads per version. Example event names (deposit.confirmed, swap.executed) are illustrative only.
+4.3 API specifications
+4.3.1 HTTP (REST-style)
+Public and enterprise deployments typically expose versioned JSON over HTTPS, for example:
+Health / config
+Quotes or intent preparation
+Proof generation or coordination
+Submit swap / deposit / withdraw (relayer-mediated)
+Merkle / commitment queries
+Optional: staking, reporting keys, payroll run objects if implemented
+Important: There is no standard /api/v1/balance that returns shielded note plaintext for arbitrary accounts; anything like “balance” is either portfolio data for authenticated users, aggregated off-chain, or mis-specified. Remove or rephrase that endpoint unless your real OpenAPI says otherwise.
+Auth: Enterprise routes use API keys, mTLS, or OAuth-style tokens as you define them.
+4.3.2 WebSockets 
+Some stacks push tx status, run progress, or indexer updates over a socket. This is deployment-specific; document subscribe shapes when you publish them.
+ 
+4.4 Standards and versioning
+4.4.1 Semantic versioning
+Public SDK and HTTP APIs SHOULD follow semver: major = breaking changes, minor = backward-compatible features, patch = fixes.
+4.4.2 Support policy
+LTS windows (e.g. “2 years”) are commercial commitments; state them only in official support policy, not as protocol law. Minimum bar: security notices and migration notes for circuit and verifier upgrades.
+4.4.3 Languages
+TypeScript / JavaScript is the usual first client.
+Python / Java / Go / Rust bindings or examples may be added; list only what exists or is publicly on the roadmap without fake quarters unless marketing has committed to them.
+4.4.4 Circuit and verifier pinning
+Integrations MUST pin circuit version, verification key (hash), and contract addresses. Breaking changes require a new major API/SDK line or explicit compat layer.
+
+
+
+
+
+
+5. Security and threat model
+5.1 Adversary model
+5.1.1 Passive chain observer
+Can do: Read all public chain data (commitments, nullifiers, roots, events), observe timing and amounts on transparent legs (deposits, DEX calls, withdrawals), and combine with external data (exchanges, social graph).
+Cannot do (under standard assumptions): Forge valid Groth16 proofs for false statements; break soundness of the verifier; derive note plaintext from commitments alone.
+Privacy nuance: The observer does not see note fields on-chain, but may still infer links using timing, amount patterns, and graph heuristics. Nullifiers reveal that some note was spent; they do not by themselves reveal which deposit funded it, but correlation attacks still exist.
+Mitigations: Use standard privacy hygiene (avoid unique amounts, consider timing), relayer submission to change on-chain sender metadata, and policy at transparent boundaries where required.
+5.1.2 Malicious relayer
+Can do: Censor or delay submissions; observe request metadata (IP, timing, sizes) if the user contacts the relayer; order txs it submits; correlate users at the application layer.
+Cannot do (typical threat model): Change calldata that the user has already bound with a signature without invalidating the auth model; make the chain accept an invalid proof; spend a user’s note without the user’s witness / signing participation as designed (if proving and signing are truly client-side).
+Important caveat: If proving or note secrets are handled server-side, a malicious or compromised service can learn secrets and act on behalf of the user. That is an architecture risk, not solved by “relayers are honest.”
+Mitigations: Multiple relayers, user choice, client-side proving and signing where feasible, timeouts / alternate submission paths where deployed.
+5.1.3 Compromised backend / API
+Can do: Log traffic, block users, serve bad software, phish, and correlate behavior. If the backend participates in proving or sees plaintext intents, it can learn sensitive data.
+Cannot do: Override on-chain verification; make invalid proofs verify; change past chain state.
+Mitigations: Treat on-chain verification as authoritative; prefer client-held note secrets; minimize plaintext on servers; reproducible builds and audit for hosted components.
+5.1.4 Smart contract and mempool adversary
+Can do: Front-run, back-run, spam, probe reverts, and exploit bugs in contract logic or integrations (adapters, oracles, tokens).
+Cannot do (under sound Groth16 + correct verifier wiring): Pass verification with a false proof for the published verification key.
+Mitigations: Audits, tests, reentrancy discipline, checks-effects-interactions, oracle sanity checks, pausable modules only if governance approves and scope is narrow. Modern Solidity (0.8+) uses built-in overflow checks; do not rely on SafeMath as a selling point unless you are on legacy code.
+5.1.5 Insider / privileged roles
+Can do: Change parameters or implementations allowed by governance (upgrades, fee knobs, pauses, allowlists).
+Cannot do (cryptographically): “Decrypt” commitments into note plaintext from chain data alone; forge proofs without breaking assumptions.
+Mitigations: Multisig, timelocks, governance transparency, monitoring, audit logs for admin actions, least privilege for operators.
+5.2 Security assumptions
+5.2.1 Cryptographic
+Pairing-based assumptions underlying Groth16 on BN254 (standard SNARK literature).
+Collision / preimage resistance of MiMC7 in the way it is used for commitments, nullifiers, and Merkle compression.
+Trusted setup for Groth16: toxic waste remains unknown for the deployed circuit, or a future migration to a transparent system with different tradeoffs.
+5.2.2 Implementation
+The circuit enforces the intended relation.
+The verifier matches the circuit and VK.
+Contracts enforce nullifiers, roots, and external checks (DEX binding, fees) as designed.
+Libraries (crypto, encoding) are correct for their version.
+5.2.3 Operational
+Users sample good randomness for blindings.
+Keys are stored per customer policy.
+Chain consensus behaves as usual for the L1 you deploy on.
+At least one reachable relayer or path to submit exists if you promise liveness (otherwise state this as best-effort).
+5.3 Privacy boundaries
+5.3.1 Generally private (on-chain note payload)
+Note plaintext (asset, amount, owner binding) is not posted in the clear as a note row; commitments and nullifiers are hashes / field elements.
+5.3.2 Not private 
+Deposit source address and funded amount on transparent ingress.
+Withdrawal recipient and paid amount at egress.
+DEX route calldata, pools, amounts where the adapter exposes them.
+Block timestamps, gas patterns, event ordering.
+Metadata visible to relayer or API (IP, session, timing).
+Aggregate TVL / anonymity set size as observable from public accounting where applicable.
+5.3.3 Leakage and inference
+Unique amounts and tight deposit-withdraw timing.
+Small anonymity sets.
+Reused addresses across contexts.
+Off-chain data linked to on-chain activity.
+The protocol reduces on-chain disclosure; it does not remove all inference risk.
+5.4 Operational safeguards
+Rate limits and abuse controls on APIs.
+Monitoring for anomalies, relayer health, and contract events.
+Incident runbooks: pause only if contracts support it and governance authorizes; avoid claiming arbitrary admin withdrawal unless that is a documented, audited, and legally constrained recovery path.
+5.5 Key management
+5.5.1 Users
+Control spend authority and note custody; use hardware wallets or enterprise custody as appropriate.
+Rotation means migrating to new notes / keys via normal spends, not magic on-chain key update unless specified.
+5.5.2 Relayers
+Protect submission keys and API credentials; use HSM or cloud signing where policy requires.
+Rotation policy is organizational; state your actual standard.
+5.5.3 Governance/admin
+Multisig and timelocks for upgrades and critical parameters.
+Distributed signers and hardware backing recommended; exact M-of-N is deployment-specific.
+6. Governance and parameters
+6.1 Parameter classes
+6.1.1 High-impact (slow path)
+Typical candidates: verifier / verification key pointer for a new circuit version, pool / adapter addresses, major fee routing, staking minimums, allowlist of assets if used, pause guardian roles.
+Controls: multisig + timelock (duration governance-defined, often days).
+Note: Merkle depth is usually fixed per circuit; raising depth is a new circuit and migration, not a tunable dial like a fee bps.
+6.1.2 Operational
+Fee bps, oracle parameters, relayer registry rules, gas refund caps, rate limits on contracts if any.
+Controls: multisig and shorter timelock or governance vote per constitution.
+6.1.3 Day-to-day (off-chain)
+API limits, monitoring thresholds, UI config not on-chain.
+6.2 Governance mechanisms
+
+
+6.2.1 Bootstrap / current phase
+Early deployments typically use multisig (or equivalent) administration: parameter and upgrade actions require M-of-N approval, with on-chain events where changes are executed on-chain.
+6.2.2 Target: community governance
+Phantom uses token-based governance with proposals, voting periods, and timelocked execution. Exact mechanics (1 token 1 vote vs delegation vs other designs) 
+
+
+6.2.3 Governance Token
+Phantom Protocol uses a governance token to enable decentralized decision-making. All token holders can vote on network upgrades, parameter changes, and protocol improvements.
+Voting Eligibility:
+   * All token holders can participate in governance votes
+   * Staked token holders also retain full voting rights while staked
+   * Voting power is proportional to token amount held or staked
+   * No lock-up required to vote—holding tokens grants voting rights
+Voting Process:
+   1. Proposal submission (requires minimum token threshold TBD) 
+   2. Community discussion period
+   3. Voting period (duration governance-defined TBD)
+   4. If approved: mandatory time delay before implementation (timelock TBD)
+   5. Automated on-chain execution after timelock expires
+Timelock for Security:
+All approved governance changes are subject to a mandatory time delay before implementation. This provides:
+   * Time for community review of approved changes
+   * Opportunity to exit if disagreeing with governance decisions
+   * Protection against malicious or rushed proposals
+   * Enhanced decentralization and security
+Timelock duration is governance-configurable.
+Scope of Governance:
+   * Fee parameter updates
+   * Asset registry modifications
+   * Relayer authorization rules
+   * Treasury allocation
+   * Protocol upgrades and improvements
+   * Emergency response procedures
+   * Grants
+________________
+
+
+6.3 Decentralization Roadmap
+Stage 1 – Launch (Current)
+   * Operational multisig for critical functions
+   * Public transparency for all on-chain changes
+   * Conservative scopes for upgrade capabilities
+   * Community feedback through public channels
+Stage 2 – Hybrid Governance
+   * Introduce governance forum for structured proposals
+   * Enable advisory votes (non-binding, signal community sentiment)
+   * Trial delegation mechanisms
+   * All token holders (including stakers) gain voting access
+   * Multisig retains execution authority with community input
+Stage 3 – Binding On-Chain Governance
+   * Governance votes become executable for defined parameter set
+   * Approved proposals automatically execute after timelock
+   * Multisig reduced to guardian/executor role for emergencies only
+   * Full token holder voting power active (holders + stakers)
+   * Mandatory timelocks enforce security delays
+Stage 4 – Mature Decentralization
+   * Treasury and all protocol parameters under full community governance
+   * Core team transitions to advisory role
+   * Emergency multisig limited to circuit-breaker only
+   * Ongoing security reviews and formal upgrade discipline
+   * Decentralized proposal process with bounties for governance participation
+
+
+
+
+7. Appendix A: Notation 
+Symbol / name        Meaning
+p        BN254 scalar field modulus (prime)
+assetID        Asset identifier in the pool
+amount        Amount in asset base units
+blindingFactor        Randomness for commitment hiding
+ownerPublicKey or ownerKeyMaterial        Spending authority binding (circuit-defined encoding)
+cm        Commitment
+nf        Nullifier
+h1, h2        Intermediate MiMC7 chaining values
+MiMC7(x, k)        Two-input MiMC7 compression
+root        Merkle root
+path[i]        Merkle sibling at level i
+indices[i]        Direction bit at level i (0 = current node left child, 1 = right)
+8. Appendix B: Public inputs and witness
+Public inputs (9), fixed order per circuit version
+Index        Field        Description
+0        nullifier        Spend marker
+1        inputCommitment        Spent note commitment
+2        outputCommitmentSwap        Swap output commitment
+3        outputCommitmentChange        Change commitment
+4        merkleRoot        Root for inclusion
+5        outputAmountSwapPublic        Public swap amount binding
+6        minOutputAmountSwap        Min acceptable public swap out
+7        protocolFee        Protocol fee term
+8        gasRefund        Gas refund term
+Types on-chain are often uint256 / bytes32 depending on ABI packing; the circuit treats them as field elements mod p.
+Witness (private), typical layout
+inputAssetID, inputAmount, inputBlindingFactor, ownerPublicKey
+outputAssetIDSwap, outputAmountSwap, swapBlindingFactor
+outputAssetIDChange, changeAmount, changeBlindingFactor
+merklePath[10], merklePathIndices[10]
+Note: Many v1-style provers use the same ownerPublicKey for swap and change outputs. If your circuit allows different output owners, add swapOwner / changeOwner fields explicitly; otherwise omit separate swapOwnerPublicKey / changeOwnerPublicKey from the table to avoid implying a feature you do not have.
+
+
+8. Appendix D: Deployment profiles
+Deployments differ by who runs relayers, who may submit, compliance hooks, and SLAs. The protocol does not mandate one commercial shape.
+D.1 Public relayer profile (open usage)
+Relayer participation via registry / stake rules on that chain.
+Permissionless submission subject to contract checks (proofs, nullifiers, fees).
+Fees discovered by market competition among relayers.
+Compliance is not built into the base protocol; screening may still apply at transparent ingress/egress if operators enable it.
+D.2 Institutional profile (enterprise)
+Relayer set may be allowlisted or operated by the institution or its vendors.
+Authentication and policy on APIs and operator tools (RBAC, approvals, audit logs).
+Fees may be contracted (SLA-backed) rather than purely floating.
+Compliance modules (e.g. screening, reporting exports) where jurisdiction and contracts require them.
+On-chain isolation: Institutions may use dedicated pool deployments or shared infrastructure with strict key and process separation. Do not claim “private commitment pools per tenant” unless that is literally how your contracts are deployed.
+D.3 Hybrid profile
+Retail traffic on a broadly open path; institutional traffic on stricter ops and relayer policy.
+Shared security assumptions (same family of circuits and verifiers per version); different commercial and compliance wrap.
+Pricing and SLAs tiered by customer class.
+9. Appendix E: Risk disclosures and limitations
+Cryptographic
+Groth16 security assumes a correct circuit, verification key, and trusted setup for that circuit. Compromise of setup material could undermine soundness.
+Future cryptanalysis or implementation bugs in primitives (e.g. MiMC usage, pairing assumptions) could weaken hiding or binding.
+Quantum threats to discrete-log style assumptions are a long-term research topic; post-quantum migration is not specified here.
+Implementation
+Bugs in circuits, verifiers, or contracts can break safety or privacy.
+Integration mistakes (wrong VK, wrong public input order, bad oracle wiring) can cause losses or leaks.
+Dependencies (compilers, libraries, tooling) carry supply-chain risk.
+Operational
+Relayer or API outage can block submission until another path exists.
+Hosted services see metadata unless clients minimize disclosure.
+Key loss and user error (wrong recipient, lost note data) can be irreversible.
+Privacy
+Deposits and withdrawals expose transparent facts by design where the chain is public.
+Small anonymity sets and pattern analysis reduce effective privacy.
+Relayers and operators may see request metadata.
+Regulatory
+Rules vary by jurisdiction; features described here do not guarantee legal fit for any use case.
+Screening and reporting tools do not replace legal advice.
+Economic
+Fees and parameters can change with governance or deployment updates.
+Token and asset volatility and liquidity affect usability.
+MEV and ordering games remain on public legs (e.g. DEX interaction).
+Governance
+Early phases often rely on multisig or similar control; users trust those processes until decentralization matures.
+Token governance, if used, carries concentration, capture, and low participation risks.
+
+
+10. Development roadmap
+High-level phases; ordering and dates depend on audits, resources, and regulatory readiness. Phases may overlap.
+Phase 1 – Confidentiality Engine
+Core protocol architecture for the Shielded Pool, note model, Merkle membership, and Groth16 join-split constraints. Initial deposit / swap / withdraw flow and relayer architecture are validated on BNB testnet.
+
+Phase 2 – The Confidentiality Rail
+Production-grade internal matching foundations, live-load Merkle behavior, and end-to-end on-chain execution hardening. Integration rails for payroll and bank-oriented workflows are prepared for launch-readiness.
+
+Phase 3 – Confidentiality Activation
+Testnet activation with campaign-driven traffic, stress testing under operational load, real payroll-system validation on testnet, and Base-chain expansion.
+
+Phase 4 – Confidentiality Mainnet
+Mainnet go-live, protocol token launch, relayer staking on mainnet, and expansion to additional EVM chains with production monitoring and reliability controls.
+
+Phase 5 – Confidentiality Adoption & Expansion
+Mainnet payroll rollout for organizations, ecosystem adoption campaigns, and platform-scale stress testing with multi-chain expansion (including Solana integration targets).
+
+Phase 6 – Banking SaaS Launch
+Banking SaaS rollout for private and public bank partnerships, enabling institution-grade on-chain payments with confidentiality controls and interoperability across participating banking rails. Phase 6 also includes technical research on integrating Bitcoin-network settlement pathways into Phantom Protocol while preserving confidentiality and operational controls.
+
+
+Conclusion
+Phantom Protocol specifies a shielded pool with commitments, nullifiers, Merkle membership, and Groth16-verified join-split transitions, plus operational patterns (relayers, optional screening, enterprise APIs, target FHE matching) that depend on deployment.
+The design aims to reduce on-chain disclosure of note plaintext while keeping transparent boundaries honest where the ledger must see funding, DEX execution, or payouts. Institutions can run stricter operations around the same core without claiming impossible unlinkability.
+Success is measured by secure deployments, clear documentation, and adoption that fits real risk and compliance constraints—not by checklists of unnamed future products.
+Technical questions, disclosures, and integration should go through official channels and published docs for each release.

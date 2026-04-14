@@ -1,0 +1,11 @@
+{
+  "directDeposit": {
+    "hash": "0x448bb389b8d02d9d993d5263c07517a69f18b7acbfeb4a3bcf9424a5ff5956a2",
+    "block": 1,
+    "gasUsed": "23550"
+  },
+  "relayerDeposit": null,
+  "errors": [
+    "call revert exception [ See: https://links.ethers.org/v5-errors-CALL_EXCEPTION ] (method=\"merkleRoot()\", data=\"0x\", errorArgs=null, errorName=null, errorSignature=null, reason=null, code=CALL_EXCEPTION, version=abi/5.8.0)"
+  ]
+}

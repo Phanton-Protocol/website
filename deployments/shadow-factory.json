@@ -1,0 +1,8 @@
+{
+  "network": "https://data-seed-prebsc-1-s1.binance.org:8545",
+  "chainId": "97",
+  "factoryAddress": "0x4Af584c2a7a77C3648f40D099835596c3C3C27F5",
+  "deployer": "0x3428bF0bF95D13A2907c816b1EC49C1f9E94Cf40",
+  "txHash": "0x40b89b2e36a1b31f9f96dde7aed9a8c965915fae64cb0adf3b274b8c742d3df5",
+  "deployedAt": "2026-01-27T13:07:40.802Z"
+}

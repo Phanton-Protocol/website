@@ -1,0 +1,27 @@
+{
+  "chainId": 97,
+  "rpcUrl": "https://data-seed-prebsc-1-s1.binance.org:8545",
+  "deployer": "0xFCAd0B19bB29D4674531d6f115237E16AfCE377c",
+  "tokens": {
+    "tBUSD": {
+      "address": "0x5A8309a15DB141777Fc39e7AB1E16D09939D8B27",
+      "name": "Phantom Mock BUSD",
+      "decimals": 18
+    },
+    "tUSDT": {
+      "address": "0xafA7006bD42F70509BD3102C6f22232b79240201",
+      "name": "Phantom Mock USDT",
+      "decimals": 18
+    },
+    "tUSDC": {
+      "address": "0x5808F19EEc7328De5B9d5a6cFdaE45a726B77800",
+      "name": "Phantom Mock USDC",
+      "decimals": 18
+    },
+    "tCAKE": {
+      "address": "0xC6FC0c39C9e998182c90D0F4be41c4561Dd21967",
+      "name": "Phantom Mock CAKE",
+      "decimals": 18
+    }
+  }
+}

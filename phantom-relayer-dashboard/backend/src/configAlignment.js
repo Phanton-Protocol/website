@@ -1,25 +1,51 @@
-/**
- * Compares runtime config vs canonical profile hints — warnings only, non-blocking.
- */
-function computeCanonicalAlignmentWarnings(base) {
-  const warnings = [];
+const { ethers } = require("ethers");
+
+function normalizeAddressForCompare(v) {
+  if (v == null) return null;
+  const s = String(v).trim();
+  if (!s) return null;
   try {
-    const hints = base?.canonicalProfile?.addressHints;
-    if (!hints || typeof hints !== "object") return warnings;
-    const a = base?.addresses || {};
-    const pick = (k) => (a[k] || "").toString().toLowerCase();
-    for (const [name, expected] of Object.entries(hints)) {
-      const exp = (expected && String(expected).toLowerCase()) || "";
-      if (!exp) continue;
-      const got = pick(name) || pick(name.replace(/Address$/, "")) || "";
-      if (got && exp !== got) {
-        warnings.push(`${name}: runtime ${got} vs canonical hint ${exp}`);
+    return ethers.getAddress(s);
+  } catch {
+    return s.toLowerCase();
+  }
+}
+
+function computeCanonicalAlignmentWarnings(cfg) {
+  const warnings = [];
+  const cp = cfg.canonicalProfile;
+  if (cp?.chainId != null && Number.isFinite(Number(cp.chainId)) && Number(cp.chainId) !== Number(cfg.chainId)) {
+    warnings.push(
+      `CHAIN_ID ${cfg.chainId} does not match canonical profile "${cp.id}" (expected chainId ${cp.chainId})`
+    );
+  }
+  if (cp?.addressHints && typeof cp.addressHints === "object") {
+    const hints = cp.addressHints;
+    const keys = [
+      ["shieldedPool", "shieldedPool"],
+      ["swapAdaptor", "swapAdaptor"],
+      ["feeOracle", "feeOracle"],
+      ["relayerStaking", "relayerStaking"],
+    ];
+    for (const [hintKey, runtimeKey] of keys) {
+      const expected = hints[hintKey];
+      const actual = cfg.addresses?.[runtimeKey];
+      const e = normalizeAddressForCompare(expected);
+      const a = normalizeAddressForCompare(actual);
+      if (!e) continue;
+      if (!a) {
+        warnings.push(`canonical profile "${cp.id}" lists ${hintKey} but runtime ${runtimeKey} is unset`);
+        continue;
+      }
+      if (e !== a) {
+        warnings.push(`runtime ${runtimeKey} (${actual}) differs from canonical profile "${cp.id}" (${expected})`);
       }
     }
-  } catch (_) {
-    /* ignore */
   }
   return warnings;
 }
 
-module.exports = { computeCanonicalAlignmentWarnings };
+module.exports = {
+  normalizeAddressForCompare,
+  computeCanonicalAlignmentWarnings,
+};

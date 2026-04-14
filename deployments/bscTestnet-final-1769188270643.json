@@ -1,0 +1,25 @@
+{
+  "network": "bscTestnet",
+  "chainId": 97,
+  "deployer": "0xE334af2021Bf3bF6A1777A611893d2D02A366F46",
+  "timestamp": "2026-01-23T17:10:10.138Z",
+  "contracts": {
+    "ProtocolToken": "0x1A986B21986004c4A77D4d17d8F52C4B9cd60766",
+    "Verifier": "0xe89F2C686307CDd4d87a51b8a65324b593EbCDb0",
+    "SwapAdaptor": "0x36201EFAbC49881ed7564331E33B431aAa5cB7C3",
+    "FeeOracle": "0x2347323B8d90491F160925Aca3A02Dc2bb2330f1",
+    "RelayerRegistry": "0x066e48c984aB3b684b5b837cf6cC335b8B302672",
+    "TimelockController": "0xD5EF6898d25A9A09aeE3B5e2fb8c09209dafA1dB",
+    "Governance": "0x3331d2C73A3183676381B6d937c407883cA9d894",
+    "ShieldedPool": "0x89d017d270a291D135ee343aae5D213bC5CE1Fb5",
+    "ShieldedPoolImplementation": "0x030575Ed6Ae10F846E79d51869aa45d54d5F59B8",
+    "TransactionHistory": "0xf72434c29bbf9C4d6B09e3060Ee27417B69A7458",
+    "FHECoprocessor": "0x74bAa7149D7063Fd93387820eF03F55514dEea9c",
+    "ThresholdEncryption": "0xA5463dd40b2B17BD1C7Ad5e94aA7B0481A32c3d4",
+    "DepositHandler": "0x72C542EB37bDB6B1e4671fbCdDcd1C08a1E77Aa1",
+    "SwapHandler": "0x7634d2EBeD3183827a1C13cc058E5658dE5cf514",
+    "WithdrawHandler": "0xDF0b77Eb51F826176138d7FeC419e99Fb7E7fb8D",
+    "MatchingHandler": "0xb2d51034aACE9D12670016aaD0D48a36bBb542E9"
+  },
+  "note": "Deployed with maximum optimization. All features preserved."
+}

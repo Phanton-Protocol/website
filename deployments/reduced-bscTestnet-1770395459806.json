@@ -1,0 +1,17 @@
+{
+  "network": "bscTestnet",
+  "chainId": 97,
+  "deployer": "0xE334af2021Bf3bF6A1777A611893d2D02A366F46",
+  "timestamp": "2026-02-06T16:30:59.806Z",
+  "fix": "Uses tree.insert() (MiMC7) for deposits - matches swaps/withdraws",
+  "note": "Reduced-size version - removed TransactionHistory, TimelockController, FHE, MEV protection",
+  "contracts": {
+    "ShieldedPoolUpgradeableReduced": "0x109200894765F7Bbc989e53E4C551CA55c80Bd3f",
+    "Implementation": "0x3E98EFE19C1F82A5F7C3949D53999611A4A164ec",
+    "Verifier": "0x166F4C4Fe4d16B910Ba95CcD154684C262397352",
+    "SwapAdaptor": "0xF2f86F12A7b84F4f6340deE48c204A147b9A19Ca",
+    "FeeOracle": "0x89Ca5cda0cB774D5b5F80e92a72D62237E4E5e4d",
+    "RelayerRegistry": "0xB463d11a6dCA43BF1C83f5b107328f4e3e67f3B2",
+    "ThresholdVerifier": "0xc604c05c4D481c4931609402D9DCfAD9a899ab37"
+  }
+}
