@@ -89,3 +89,10 @@ Once backend and frontend point at the same RPC and contract set, the full flow 
 - **Endpoints:** existing `/quote`, `/intent`, `/swap` (or `/swap/encrypted`) with updated intent binding.
 - **Env:** `PANCAKE_V3_QUOTER_V2` (optional), `PANCAKE_V3_DEFAULT_FEE_TIER` (default `2500`), optional `PANCAKE_V2_ROUTER`, `WBNB_ADDRESS`.
 - **Docs:** `phantom-relayer-dashboard/backend/MODULE5-PANCAKE-QUOTES-RELAYER-SWAP.md`.
+
+## Module 6 shielded withdraw (relayer)
+
+- **Flow:** user builds a withdraw-shaped join-split proof (`POST /withdraw/generate-proof`), then submits via `POST /withdraw` or `POST /withdraw/encrypted` (same SEE / validator path as other sensitive flows). The relayer calls `shieldedWithdraw` on `ShieldedPool`.
+- **Fees:** the proof’s `protocolFee` must satisfy the **on-chain** minimum from `feeOracle` (see `MODULE6-WITHDRAW.md` / `CHANGELOG.md`); the backend maps common reverts to readable errors.
+- **Optional recipient screening:** `CHAINALYSIS_ENABLED=true` and `CHAINALYSIS_API_URL=<HTTPS endpoint>` (POST JSON `{ "address": "<recipient>" }`). Default is off for testnet MVP.
+- **Docs:** `phantom-relayer-dashboard/backend/MODULE6-WITHDRAW.md`.

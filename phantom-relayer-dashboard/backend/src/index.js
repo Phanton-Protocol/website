@@ -34,7 +34,8 @@ const { encryptJsonAtRest, decryptJsonAtRest, getNotesEncryptionKey } = require(
 const { buildMerklePath: buildMerklePath10, verifyMerklePath: verifyMerklePath10 } = require("./merkle10");
 const { toBigInt, toBigIntString } = require("./utils/bigint");
 const ValidatorNetwork = require("./validatorNetwork");
-const { generateSwapProof, generatePortfolioProof, getProofStats } = require("./zkProofs");
+const { generateSwapProof, generateWithdrawProof, generatePortfolioProof, getProofStats } = require("./zkProofs");
+const { assertWithdrawJoinSplitPublicInputs } = require("./withdrawValidate");
 const fheMatchingRouter = require("./fheMatchingService");
 const { registerOrderAndTryMatch, getFheMatchMode } = require("./fheMatchingService");
 const { createEnterpriseRouter } = require("./enterpriseRoutes");
@@ -81,6 +82,8 @@ const MODULE4_MAX_BNB_WEI = (() => {
     return 50000000000000000n;
   }
 })();
+const CHAINALYSIS_ENABLED = process.env.CHAINALYSIS_ENABLED === "true";
+const CHAINALYSIS_API_URL = String(process.env.CHAINALYSIS_API_URL || "").trim();
 const rlBuckets = new Map();
 function rateLimit(req, res, next) {
   const key = req.ip || req.headers["x-forwarded-for"] || "unknown";
@@ -910,6 +913,8 @@ const withdrawSchema = z.object({
     relayer: z.string().optional(),
     recipient: z.string(),
     encryptedPayload: z.string().optional(),
+    noteHints: z.any().optional(),
+    ownerAddress: z.string().optional(),
   }),
 });
 
@@ -932,6 +937,20 @@ async function processWithdrawRequestBody(body) {
     throw err;
   }
   const { withdrawData } = parsed.data;
+  try {
+    assertWithdrawJoinSplitPublicInputs(withdrawData.publicInputs);
+  } catch (e) {
+    const err = new Error(e.message || "withdraw_public_inputs_invalid");
+    err.status = 400;
+    err.code = e.code;
+    throw err;
+  }
+  if (!ethers.isAddress(withdrawData.recipient)) {
+    const err = new Error("withdraw_invalid_recipient");
+    err.status = 400;
+    throw err;
+  }
+  await screenWithdrawRecipient(withdrawData.recipient);
   return RELAYER_DRY_RUN
     ? await simulateSwap(ethers.keccak256(ethers.toUtf8Bytes(JSON.stringify(withdrawData))))
     : await submitWithdraw(withdrawData);
@@ -1159,6 +1178,73 @@ async function persistSwapOutputNotes({ txHash, ownerAddress, noteHints, publicI
     swapCommitmentIndex: commitmentIndices[swapCanonical.commitment.toLowerCase()] ?? null,
     changeCommitmentIndex: commitmentIndices[changeCanonical.commitment.toLowerCase()] ?? null,
   };
+}
+
+async function screenWithdrawRecipient(addr) {
+  if (!CHAINALYSIS_ENABLED) return { ok: true, skipped: true };
+  if (!CHAINALYSIS_API_URL) {
+    console.warn("[module6] CHAINALYSIS_ENABLED but CHAINALYSIS_API_URL unset; skipping recipient screen");
+    return { ok: true, skipped: true };
+  }
+  try {
+    const r = await axios.post(
+      CHAINALYSIS_API_URL,
+      { address: ethers.getAddress(addr) },
+      { timeout: 12_000, validateStatus: () => true }
+    );
+    if (r.status >= 400) {
+      const e = new Error(`chainalysis_http_${r.status}`);
+      e.status = 403;
+      throw e;
+    }
+    if (r.data?.blocked === true || String(r.data?.risk || "").toLowerCase() === "severe") {
+      const e = new Error("chainalysis_recipient_not_allowed");
+      e.status = 403;
+      throw e;
+    }
+    return { ok: true };
+  } catch (e) {
+    if (e.status) throw e;
+    console.warn("[module6] Chainalysis request failed (non-fatal):", e.message || e);
+    return { ok: true, warn: String(e.message || e) };
+  }
+}
+
+async function persistWithdrawChangeNote({ txHash, ownerAddress, noteHints, publicInputs }) {
+  if (!noteHints || typeof noteHints !== "object" || !noteHints.change) return null;
+  getNotesEncryptionKey();
+  const provider = new ethers.JsonRpcProvider(RPC_URL);
+  const receipt = await provider.getTransactionReceipt(txHash);
+  if (!receipt) throw new Error("Withdraw tx receipt not found for note persistence");
+  const commitmentIndices = {};
+  for (const log of receipt.logs || []) {
+    if (String(log.address || "").toLowerCase() !== String(SHIELDED_POOL_ADDRESS).toLowerCase()) continue;
+    try {
+      const parsed = poolInterface.parseLog(log);
+      if (parsed?.name === "CommitmentAdded") {
+        commitmentIndices[String(parsed.args.commitment).toLowerCase()] = Number(parsed.args.index);
+      }
+    } catch (_) {}
+  }
+  const changeCanonical = canonicalizeNote(noteHints.change);
+  const expectedChange = String(publicInputs?.outputCommitmentChange || "").toLowerCase();
+  if (changeCanonical.commitment.toLowerCase() !== expectedChange) {
+    throw new Error("Withdraw change note hint commitment mismatch with proof public input");
+  }
+  const owner = String(ownerAddress).toLowerCase();
+  const changeNoteId = noteIdFromCanonical(changeCanonical, `${txHash.toLowerCase()}:${owner}:withdraw_change`);
+  const changePayload = encryptJsonAtRest({
+    note: changeCanonical,
+    txHash,
+    kind: "withdraw_change",
+    commitmentIndex: commitmentIndices[changeCanonical.commitment.toLowerCase()] ?? null,
+    storedAt: new Date().toISOString(),
+  });
+  saveEncryptedNote(db, changeNoteId, owner, changeCanonical.commitment, txHash, changePayload);
+  if (commitmentIndices[changeCanonical.commitment.toLowerCase()] != null) {
+    saveCommitment(db, commitmentIndices[changeCanonical.commitment.toLowerCase()], changeCanonical.commitment, txHash);
+  }
+  return { changeNoteId, changeCommitmentIndex: commitmentIndices[changeCanonical.commitment.toLowerCase()] ?? null };
 }
 
 app.post("/notes/from-deposit", async (req, res) => {
@@ -1664,6 +1750,11 @@ app.get("/health", (req, res) => {
       ready:
         !!(RELAYER_PRIVATE_KEY && SHIELDED_POOL_ADDRESS && RPC_URL) && !RELAYER_DRY_RUN,
     },
+    module6Withdraw: {
+      chainalysisEnabled: CHAINALYSIS_ENABLED,
+      chainalysisApiConfigured: !!CHAINALYSIS_API_URL,
+      endpoints: ["/withdraw/generate-proof", "/withdraw", "/withdraw/encrypted"],
+    },
   });
 });
 
@@ -1700,6 +1791,12 @@ app.get("/config", (req, res) => {
       pancakeV3DefaultFeeTier: Number(process.env.PANCAKE_V3_DEFAULT_FEE_TIER || 2500),
       pancakeV2RouterFallback: getPancakeV2RouterAddress() || "missing",
       executionPath: "relayer -> shieldedSwapJoinSplit -> ShieldedPool + adaptor",
+    },
+    module6Withdraw: {
+      chainalysisEnabled: CHAINALYSIS_ENABLED,
+      chainalysisApiUrlSet: !!CHAINALYSIS_API_URL,
+      feePolicy: "on_chain_oracle_floor_matches_ShieldedPool_shieldedWithdraw (see MODULE6-WITHDRAW.md)",
+      endpoints: ["/withdraw/generate-proof", "/withdraw", "/withdraw/encrypted"],
     },
   });
 });
@@ -2910,6 +3007,47 @@ app.post("/swap/generate-proof", async (req, res) => {
   }
 });
 
+const withdrawGenerateProofSchema = z.object({
+  inputNote: z.object({
+    assetID: z.union([z.string(), z.number()]),
+    amount: z.union([z.string(), z.number()]),
+    blindingFactor: z.string(),
+    ownerPublicKey: z.string(),
+    nullifier: z.string(),
+    commitment: z.string(),
+  }),
+  outputNoteChange: z.object({
+    assetID: z.union([z.string(), z.number()]),
+    amount: z.union([z.string(), z.number()]),
+    blindingFactor: z.string(),
+    commitment: z.string().optional(),
+  }),
+  merkleRoot: z.string(),
+  merklePath: z.array(z.union([z.string(), z.number()])),
+  merklePathIndices: z.array(z.union([z.string(), z.number()])),
+  protocolFee: z.string(),
+  gasRefund: z.string(),
+  withdrawAmount: z.string().optional(),
+}).passthrough();
+
+app.post("/withdraw/generate-proof", async (req, res) => {
+  const parsed = withdrawGenerateProofSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: "Invalid request", details: parsed.error.flatten() });
+  }
+  try {
+    const result = await generateWithdrawProof(parsed.data);
+    return res.json({
+      proof: result.proof,
+      publicSignals: result.publicSignals,
+      publicInputs: result.publicInputs,
+      generationTime: result.generationTime,
+    });
+  } catch (err) {
+    return res.status(500).json({ error: "Withdraw proof generation failed", message: err.message });
+  }
+});
+
 app.use("/", enterpriseRouter);
 
 const dashboardDist = path.join(__dirname, "..", "..", "dist");
@@ -3308,10 +3446,35 @@ async function submitWithdraw(withdrawData) {
     relayerAddr,
     withdrawData.encryptedPayload || "0x"
   ];
-  const tx = await contract.shieldedWithdraw(withdrawDataForContract);
-
-  console.log("⏳ Waiting for confirmation...");
-  const receipt = await tx.wait();
+  let receipt;
+  try {
+    const tx = await contract.shieldedWithdraw(withdrawDataForContract);
+    console.log("⏳ Waiting for confirmation...");
+    receipt = await tx.wait();
+  } catch (e) {
+    const raw = `${e?.message || ""} ${e?.shortMessage || ""} ${e?.reason || ""}`.toLowerCase();
+    if (/nullifier|poolerr\(4\)|already|used/.test(raw)) {
+      const err = new Error("withdraw_nullifier_already_spent");
+      err.status = 400;
+      throw err;
+    }
+    if (/poolerr\(6\)|verify|invalid proof|groth16/.test(raw)) {
+      const err = new Error("withdraw_proof_rejected");
+      err.status = 400;
+      throw err;
+    }
+    if (/poolerr\(5\)|protocol|fee/.test(raw)) {
+      const err = new Error("withdraw_protocol_fee_insufficient_for_on_chain_policy");
+      err.status = 400;
+      throw err;
+    }
+    if (/poolerr\(43\)|conservation|poolerr\(19\)|change/.test(raw)) {
+      const err = new Error("withdraw_amount_conservation_or_change_invalid");
+      err.status = 400;
+      throw err;
+    }
+    throw e;
+  }
 
   console.log(`✅ Withdrawal confirmed: ${receipt.hash}`);
   try {
@@ -3319,12 +3482,28 @@ async function submitWithdraw(withdrawData) {
   } catch (e) {
     console.log(`[Withdraw] Could not store commitments: ${e.message}`);
   }
+  let module3Notes = null;
+  let module3NotesWarning = null;
+  if (withdrawData.noteHints && withdrawData.ownerAddress) {
+    try {
+      module3Notes = await persistWithdrawChangeNote({
+        txHash: receipt.hash,
+        ownerAddress: withdrawData.ownerAddress,
+        noteHints: withdrawData.noteHints,
+        publicInputs: withdrawData.publicInputs,
+      });
+    } catch (e) {
+      module3NotesWarning = e.message || String(e);
+    }
+  }
 
   return {
     txHash: receipt.hash,
     blockNumber: receipt.blockNumber,
     validatorSignatures: validationResult.signatures.length,
-    relayer: relayerAddr
+    relayer: relayerAddr,
+    ...(module3Notes ? { module3Notes } : {}),
+    ...(module3NotesWarning ? { module3NotesWarning } : {}),
   };
 }
 

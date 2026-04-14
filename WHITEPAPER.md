@@ -356,6 +356,8 @@ The proof enforces that the withdrawn value is covered by the note(s) and fees.
 
 The proof must ensure \(a\) is covered by the spent notes under the protocol’s fee rules.
 
+**Implemented (shielded withdraw).** The deployed join-split shape for `shieldedWithdraw` zeros the swap-output leg (`outputCommitmentSwap` and swap-side public amounts), routes the public payout through the same `swapAmount` field used in swap proofs, and requires `changeAmount > 0` with conservation `inputAmount = swapAmount + changeAmount + protocolFee + gasRefund`. Independently, `ShieldedPool` enforces a **minimum `protocolFee`** derived from the on-chain fee oracle; the relayer does not substitute a lower fee. Operational detail: `phantom-relayer-dashboard/backend/MODULE6-WITHDRAW.md`.
+
 ### 8.4 Batch operations (payroll-style)
 
 **Optional.** A “payroll run” is a batch of withdrawals executed over time. It is not a distinct cryptographic primitive: each payout is a normal withdraw proof, and batching is an application-layer orchestration.
@@ -450,7 +452,7 @@ Let:
 - Swap fees may be accounted inside the join-split constraints (deducted from outputs) or via explicit on-chain accounting.
 - Withdrawal fees may be charged similarly.
 
-**Implemented.** The repo contains configuration and enterprise surfaces related to fees and operational accounting; the authoritative economic parameters for a given deployment must be defined by the deployed contracts and backend config.
+**Implemented.** The repo contains configuration and enterprise surfaces related to fees and operational accounting; the authoritative economic parameters for a given deployment must be defined by the deployed contracts and backend config. For **shielded withdraw**, the contract’s oracle-derived minimum `protocolFee` is authoritative alongside the proof’s conservation equation (see §8.3).
 
 ## 13. Security considerations and threat model
 
