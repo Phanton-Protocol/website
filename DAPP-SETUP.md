@@ -81,3 +81,11 @@ Once backend and frontend point at the same RPC and contract set, the full flow 
 - **Env:** `RELAYER_PRIVATE_KEY` must be registered on `RelayerRegistry` (`isRelayer`); optional `MODULE4_DEPOSIT_API_SECRET` / `MODULE4_PUBLIC_SUBMIT` for submit auth; `MODULE4_MAX_BNB_WEI` for BNB cap.
 - **Contracts test:** `cd Phantom-Smart-Contracts && HH_FULL=1 npx hardhat test test/depositFor.erc20.relayer.test.cjs`
 - **Integration script:** `node phantom-relayer-dashboard/backend/scripts/module4-deposit-integration.cjs` (set `API_URL`, `TOKEN`, `AMOUNT`, etc.)
+
+## Module 5 Pancake quote + relayer swap
+
+- **Quote source priority:** Pancake V3 QuoterV2 (official testnet/mainnet addresses) → adaptor read → V2 fallback.
+- **Execution path:** user signs EIP-712 intent only; relayer submits `shieldedSwapJoinSplit` (no direct user wallet swap tx to Pancake router).
+- **Endpoints:** existing `/quote`, `/intent`, `/swap` (or `/swap/encrypted`) with updated intent binding.
+- **Env:** `PANCAKE_V3_QUOTER_V2` (optional), `PANCAKE_V3_DEFAULT_FEE_TIER` (default `2500`), optional `PANCAKE_V2_ROUTER`, `WBNB_ADDRESS`.
+- **Docs:** `phantom-relayer-dashboard/backend/MODULE5-PANCAKE-QUOTES-RELAYER-SWAP.md`.

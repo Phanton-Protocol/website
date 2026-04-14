@@ -61,11 +61,14 @@ function sleep(ms) {
 
 const INTENT_TYPES = {
   SwapIntent: [
-    { name: "nullifier", type: "bytes32" },
-    { name: "minOutputAmount", type: "uint256" },
-    { name: "protocolFee", type: "uint256" },
-    { name: "gasRefund", type: "uint256" },
+    { name: "user", type: "address" },
+    { name: "inputAssetID", type: "uint256" },
+    { name: "outputAssetID", type: "uint256" },
+    { name: "amountIn", type: "uint256" },
+    { name: "minAmountOut", type: "uint256" },
     { name: "deadline", type: "uint256" },
+    { name: "nonce", type: "uint256" },
+    { name: "nullifier", type: "bytes32" },
   ],
 };
 
@@ -84,6 +87,7 @@ const PC = {
 };
 
 const QUOTE_SOURCE_LABEL = {
+  pancake_v3_quoter_v2: "PancakeSwap V3 QuoterV2 (official)",
   swap_adaptor: "Swap adaptor (on-chain)",
   pancake_v2_router: "PancakeSwap V2 router (on-chain)",
   dex_oracle: "Oracle / price estimate",
@@ -742,17 +746,20 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
 
       const deadline = Math.floor(Date.now() / 1000) + Number(intentForm.deadlineSec || 900);
       const nullifier = ethers.hexlify(ethers.randomBytes(32));
+      const noteNonce = Number(intentForm.nonce || Date.now());
       const intentReq = {
         userAddress: wallet.address,
+        inputAssetID: 0,
+        outputAssetID: 0,
+        amountIn: "0",
+        minAmountOut: String(intentForm.minOutputAmount || "0"),
+        nonce: String(noteNonce),
         nullifier,
-        minOutputAmount: String(intentForm.minOutputAmount || "0"),
-        protocolFee: String(intentForm.protocolFee || "0"),
-        gasRefund: String(intentForm.gasRefund || "0"),
         deadline,
       };
       let minOutBI = 0n;
       try {
-        minOutBI = BigInt(intentReq.minOutputAmount || "0");
+        minOutBI = BigInt(intentReq.minAmountOut || "0");
       } catch {
         minOutBI = 0n;
       }
@@ -772,6 +779,11 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
         }
       }
 
+      intentReq.inputAssetID = Number(swapData?.publicInputs?.inputAssetID ?? getAssetIdForToken(intentForm.inputToken));
+      intentReq.outputAssetID = Number(swapData?.publicInputs?.outputAssetIDSwap ?? getAssetIdForToken(intentForm.outputToken));
+      intentReq.amountIn = String(swapData?.publicInputs?.swapAmount ?? "0");
+      intentReq.minAmountOut = String(swapData?.publicInputs?.minOutputAmountSwap ?? intentReq.minAmountOut);
+
       const intentRes = await fetchJson(`${base}/intent`, {
         method: "POST",
         body: JSON.stringify(intentReq),
@@ -780,11 +792,14 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
       const { intentId, intent, domain, types } = intentRes;
       const typed = types || INTENT_TYPES;
       const signPayload = {
-        nullifier: intent.nullifier,
-        minOutputAmount: intent.minOutputAmount,
-        protocolFee: intent.protocolFee,
-        gasRefund: intent.gasRefund,
+        user: intent.userAddress,
+        inputAssetID: intent.inputAssetID,
+        outputAssetID: intent.outputAssetID,
+        amountIn: intent.amountIn,
+        minAmountOut: intent.minAmountOut,
         deadline: intent.deadline,
+        nonce: intent.nonce,
+        nullifier: intent.nullifier,
       };
       const intentSig = await wallet.signer.signTypedData(domain, typed, signPayload);
 
@@ -888,9 +903,23 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
             tokenOut,
             amountIn: swapAmountBn.toString(),
             minAmountOut: String(intentForm.minOutputAmount || "0"),
-            fee: 2500,
-            sqrtPriceLimitX96: 0,
-            path: "0x",
+            fee: Number(swapLastQuote?.routeParams?.feeTier || 2500),
+            sqrtPriceLimitX96: String(swapLastQuote?.routeParams?.sqrtPriceLimitX96 || 0),
+            path: swapLastQuote?.routeParams?.path || "0x",
+          },
+          noteHints: {
+            swap: {
+              assetId: getAssetIdForToken(intentForm.outputToken),
+              amount: outAmt,
+              blindingFactor: proofBody.outputNoteSwap.blindingFactor,
+              ownerPublicKey: note.ownerPublicKey,
+            },
+            change: {
+              assetId: note.assetID,
+              amount: String(proofBody.outputNoteChange.amount),
+              blindingFactor: proofBody.outputNoteChange.blindingFactor,
+              ownerPublicKey: note.ownerPublicKey,
+            },
           },
           encryptedPayload: "0x",
         };

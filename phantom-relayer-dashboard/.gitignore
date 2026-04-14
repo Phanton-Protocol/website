@@ -1,6 +1,7 @@
 node_modules
 dist
 *.md
+!backend/MODULE5-PANCAKE-QUOTES-RELAYER-SWAP.md
 .env
 .env.local
 *.log

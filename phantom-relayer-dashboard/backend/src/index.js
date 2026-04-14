@@ -298,11 +298,14 @@ const DEPOSIT_DOMAIN = {
 
 const INTENT_TYPES = {
   SwapIntent: [
-    { name: "nullifier", type: "bytes32" },
-    { name: "minOutputAmount", type: "uint256" },
-    { name: "protocolFee", type: "uint256" },
-    { name: "gasRefund", type: "uint256" },
+    { name: "user", type: "address" },
+    { name: "inputAssetID", type: "uint256" },
+    { name: "outputAssetID", type: "uint256" },
+    { name: "amountIn", type: "uint256" },
+    { name: "minAmountOut", type: "uint256" },
     { name: "deadline", type: "uint256" },
+    { name: "nonce", type: "uint256" },
+    { name: "nullifier", type: "bytes32" },
   ],
 };
 const DEPOSIT_TYPES = {
@@ -651,6 +654,16 @@ const WBNB_BSC_MAINNET = "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c";
 const WBNB_BSC_TESTNET = "0xae13d989dac2f0debff460ac112a837c89baa7cd";
 const PANCAKE_V2_ROUTER_BSC = "0x10ED43C718714eb63d5aA57B78B54704E256024E";
 const PANCAKE_V2_ROUTER_BSC_TESTNET = "0xD99D1c33F9fC3444f8101754aBC46c52416550D1";
+// Official Pancake V3 QuoterV2 addresses (Pancake docs, accessed 2026-04-14).
+const PANCAKE_V3_QUOTER_V2_BSC = "0xB048Bbc1Ee6b733FFfCFb9e9CeF7375518e25997";
+const PANCAKE_V3_QUOTER_V2_BSC_TESTNET = "0xbC203d7f83677c7ed3F7acEc959963E7F4ECC5C2";
+
+function getPancakeV3QuoterAddress() {
+  if (process.env.PANCAKE_V3_QUOTER_V2) return process.env.PANCAKE_V3_QUOTER_V2;
+  if (CHAIN_ID === 56) return PANCAKE_V3_QUOTER_V2_BSC;
+  if (CHAIN_ID === 97) return PANCAKE_V3_QUOTER_V2_BSC_TESTNET;
+  return "";
+}
 
 function getPancakeV2RouterAddress() {
   if (process.env.PANCAKE_V2_ROUTER) return process.env.PANCAKE_V2_ROUTER;
@@ -695,6 +708,70 @@ async function tryQuotePancakeV2Router(provider, tokenIn, tokenOut, amountInBn, 
   return { outAmount: BigInt(last.toString()), hopPath };
 }
 
+function encodeV3Path(tokenIn, tokenOut, feeTier) {
+  const inHex = ethers.getAddress(tokenIn).toLowerCase().slice(2);
+  const outHex = ethers.getAddress(tokenOut).toLowerCase().slice(2);
+  const feeHex = Number(feeTier).toString(16).padStart(6, "0");
+  return `0x${inHex}${feeHex}${outHex}`;
+}
+
+async function tryQuotePancakeV3Quoter(provider, tokenIn, tokenOut, amountInBn, feeTier = 2500, sqrtPriceLimitX96 = 0) {
+  const quoterAddr = getPancakeV3QuoterAddress();
+  if (!quoterAddr) return null;
+  const wbnb = getWbnbForChain();
+  const zero = ethers.ZeroAddress.toLowerCase();
+  const inToken = String(tokenIn || "").toLowerCase() === zero ? wbnb : tokenIn;
+  const outToken = String(tokenOut || "").toLowerCase() === zero ? wbnb : tokenOut;
+  const fee = Number(feeTier || 2500);
+  const sqrtLimit = toBigInt(sqrtPriceLimitX96 || 0);
+
+  const params = {
+    tokenIn: ethers.getAddress(inToken),
+    tokenOut: ethers.getAddress(outToken),
+    amountIn: amountInBn,
+    fee,
+    sqrtPriceLimitX96: sqrtLimit,
+  };
+  const quoterAbi = [
+    "function quoteExactInputSingle((address tokenIn,address tokenOut,uint256 amountIn,uint24 fee,uint160 sqrtPriceLimitX96) params) external returns (uint256 amountOut,uint160,uint32,uint256)",
+    "function quoteExactInputSingle((address tokenIn,address tokenOut,uint24 fee,uint256 amountIn,uint160 sqrtPriceLimitX96) params) external returns (uint256 amountOut)",
+  ];
+  const quoter = new ethers.Contract(quoterAddr, quoterAbi, provider);
+
+  let outAmount;
+  try {
+    const result = await quoter.quoteExactInputSingle(params);
+    if (Array.isArray(result)) outAmount = toBigInt(result[0]);
+    else outAmount = toBigInt(result);
+  } catch (errPrimary) {
+    // Fallback tuple ordering (some periphery builds use fee before amountIn)
+    const fallbackParams = {
+      tokenIn: ethers.getAddress(inToken),
+      tokenOut: ethers.getAddress(outToken),
+      fee,
+      amountIn: amountInBn,
+      sqrtPriceLimitX96: sqrtLimit,
+    };
+    try {
+      const result = await quoter.quoteExactInputSingle(fallbackParams);
+      if (Array.isArray(result)) outAmount = toBigInt(result[0]);
+      else outAmount = toBigInt(result);
+    } catch (_) {
+      throw errPrimary;
+    }
+  }
+
+  return {
+    outAmount,
+    tokenIn: ethers.getAddress(inToken),
+    tokenOut: ethers.getAddress(outToken),
+    feeTier: fee,
+    sqrtPriceLimitX96: sqrtLimit.toString(),
+    path: encodeV3Path(inToken, outToken, fee),
+    quoter: quoterAddr,
+  };
+}
+
 async function getDepositFeeBNBWei() {
   const wbnb = CHAIN_ID === 56 ? WBNB_BSC_MAINNET : WBNB_BSC_TESTNET;
   const chainSlug = CHAIN_ID === 56 ? "bsc" : "bsc-testnet";
@@ -717,14 +794,19 @@ const quoteSchema = z.object({
   tokenOutDecimals: z.number().int().min(0).max(36).optional(),
   slippageBps: z.number().int().min(0).max(2000).default(1000),
   chainSlug: z.string().optional(),
+  feeTier: z.number().int().optional(),
+  sqrtPriceLimitX96: z.union([z.string(), z.number()]).optional(),
+  deadlineSec: z.number().int().min(60).max(3600 * 6).optional(),
 });
 
 const intentSchema = z.object({
   userAddress: z.string(),
+  inputAssetID: z.union([z.string(), z.number()]),
+  outputAssetID: z.union([z.string(), z.number()]),
+  amountIn: z.string(),
+  minAmountOut: z.string(),
+  nonce: z.union([z.string(), z.number()]),
   nullifier: z.string(),
-  minOutputAmount: z.string(),
-  protocolFee: z.string(),
-  gasRefund: z.string(),
   deadline: z.number().int(),
 });
 
@@ -744,6 +826,7 @@ const swapSchema = z.object({
     swapParams: z.any(),
     relayer: z.string().optional(),
     encryptedPayload: z.string().optional(),
+    noteHints: z.any().optional(),
   }),
 });
 
@@ -1011,6 +1094,70 @@ async function persistNoteFromDepositReceipt(txHash, noteInput, ownerAddressOver
     txHash: receipt.hash,
     blockNumber: receipt.blockNumber,
     schema: canonical.schema,
+  };
+}
+
+async function persistSwapOutputNotes({ txHash, ownerAddress, noteHints, publicInputs }) {
+  if (!noteHints || typeof noteHints !== "object") return null;
+  if (!noteHints.swap || !noteHints.change) return null;
+  getNotesEncryptionKey();
+
+  const provider = new ethers.JsonRpcProvider(RPC_URL);
+  const receipt = await provider.getTransactionReceipt(txHash);
+  if (!receipt) throw new Error("Swap tx receipt not found for note persistence");
+
+  const commitmentIndices = {};
+  for (const log of receipt.logs || []) {
+    if (String(log.address || "").toLowerCase() !== String(SHIELDED_POOL_ADDRESS).toLowerCase()) continue;
+    try {
+      const parsed = poolInterface.parseLog(log);
+      if (parsed?.name === "CommitmentAdded") {
+        commitmentIndices[String(parsed.args.commitment).toLowerCase()] = Number(parsed.args.index);
+      }
+    } catch (_) {}
+  }
+
+  const swapCanonical = canonicalizeNote(noteHints.swap);
+  const changeCanonical = canonicalizeNote(noteHints.change);
+  const expectedSwap = String(publicInputs?.outputCommitmentSwap || "").toLowerCase();
+  const expectedChange = String(publicInputs?.outputCommitmentChange || "").toLowerCase();
+  if (swapCanonical.commitment.toLowerCase() !== expectedSwap) {
+    throw new Error("Swap note hint commitment mismatch with proof public input");
+  }
+  if (changeCanonical.commitment.toLowerCase() !== expectedChange) {
+    throw new Error("Change note hint commitment mismatch with proof public input");
+  }
+
+  const owner = String(ownerAddress).toLowerCase();
+  const swapNoteId = noteIdFromCanonical(swapCanonical, `${txHash.toLowerCase()}:${owner}:swap`);
+  const changeNoteId = noteIdFromCanonical(changeCanonical, `${txHash.toLowerCase()}:${owner}:change`);
+  const swapPayload = encryptJsonAtRest({
+    note: swapCanonical,
+    txHash,
+    kind: "swap_output",
+    commitmentIndex: commitmentIndices[swapCanonical.commitment.toLowerCase()] ?? null,
+    storedAt: new Date().toISOString(),
+  });
+  const changePayload = encryptJsonAtRest({
+    note: changeCanonical,
+    txHash,
+    kind: "swap_change",
+    commitmentIndex: commitmentIndices[changeCanonical.commitment.toLowerCase()] ?? null,
+    storedAt: new Date().toISOString(),
+  });
+  saveEncryptedNote(db, swapNoteId, owner, swapCanonical.commitment, txHash, swapPayload);
+  saveEncryptedNote(db, changeNoteId, owner, changeCanonical.commitment, txHash, changePayload);
+  if (commitmentIndices[swapCanonical.commitment.toLowerCase()] != null) {
+    saveCommitment(db, commitmentIndices[swapCanonical.commitment.toLowerCase()], swapCanonical.commitment, txHash);
+  }
+  if (commitmentIndices[changeCanonical.commitment.toLowerCase()] != null) {
+    saveCommitment(db, commitmentIndices[changeCanonical.commitment.toLowerCase()], changeCanonical.commitment, txHash);
+  }
+  return {
+    swapNoteId,
+    changeNoteId,
+    swapCommitmentIndex: commitmentIndices[swapCanonical.commitment.toLowerCase()] ?? null,
+    changeCommitmentIndex: commitmentIndices[changeCanonical.commitment.toLowerCase()] ?? null,
   };
 }
 
@@ -1548,6 +1695,12 @@ app.get("/config", (req, res) => {
       maxBnbWei: MODULE4_MAX_BNB_WEI.toString(),
       endpoints: ["/relayer/deposit/session", "/relayer/deposit/submit", "/relayer/deposit/status"],
     },
+    module5QuoteConfig: {
+      pancakeV3QuoterV2: getPancakeV3QuoterAddress() || "missing",
+      pancakeV3DefaultFeeTier: Number(process.env.PANCAKE_V3_DEFAULT_FEE_TIER || 2500),
+      pancakeV2RouterFallback: getPancakeV2RouterAddress() || "missing",
+      executionPath: "relayer -> shieldedSwapJoinSplit -> ShieldedPool + adaptor",
+    },
   });
 });
 
@@ -1623,6 +1776,8 @@ async function attachQuoteExecutionHints(payload, slippageBps) {
   let routeDescription;
   if (src === "swap_adaptor") {
     routeDescription = "Shielded pool → swap adaptor (on-chain quote; same path as adaptor execution)";
+  } else if (src === "pancake_v3_quoter_v2") {
+    routeDescription = "Quote: PancakeSwap V3 QuoterV2 (official testnet/mainnet addresses). Execution: relayer submits shieldedSwapJoinSplit via ShieldedPool.";
   } else if (src === "pancake_v2_router") {
     routeDescription = "Quote: PancakeSwap V2 Router getAmountsOut (on-chain). Execution: relayer submits shielded pool tx.";
   } else if (src === "dex_oracle") {
@@ -1651,7 +1806,52 @@ app.post("/quote", async (req, res) => {
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.flatten() });
   }
-  const { tokenIn, tokenOut, amountIn, tokenInDecimals, tokenOutDecimals, slippageBps, chainSlug } = parsed.data;
+  const { tokenIn, tokenOut, amountIn, tokenInDecimals, tokenOutDecimals, slippageBps, chainSlug, feeTier, sqrtPriceLimitX96, deadlineSec } = parsed.data;
+
+  if (RPC_URL) {
+    try {
+      const provider = new ethers.JsonRpcProvider(RPC_URL);
+      const amountInBn = parseAmount(amountIn);
+      const v3 = await tryQuotePancakeV3Quoter(
+        provider,
+        tokenIn,
+        tokenOut,
+        amountInBn,
+        feeTier || Number(process.env.PANCAKE_V3_DEFAULT_FEE_TIER || 2500),
+        sqrtPriceLimitX96 || 0
+      );
+      if (v3) {
+        const minOut = (v3.outAmount * BigInt(10000 - slippageBps)) / 10000n;
+        const payload = {
+          quoteSource: "pancake_v3_quoter_v2",
+          quoteVersion: "pancake-v3-quoter-v2",
+          amountOut: v3.outAmount.toString(),
+          minAmountOut: minOut.toString(),
+          priceIn: "0",
+          priceOut: "0",
+          quotePath: [v3.tokenIn.toLowerCase(), v3.tokenOut.toLowerCase()],
+          routeParams: {
+            feeTier: Number(v3.feeTier),
+            sqrtPriceLimitX96: String(v3.sqrtPriceLimitX96),
+            path: v3.path,
+            deadlineSec: Number(deadlineSec || 900),
+          },
+          quoterAddress: v3.quoter,
+          fees: {
+            oracleFee: "0",
+            swapFee: "0",
+            totalFee: "0",
+            oracleFeeUsd: "0"
+          }
+        };
+        const enriched = await attachQuoteExecutionHints(payload, slippageBps);
+        saveQuote(db, ethers.keccak256(ethers.toUtf8Bytes(JSON.stringify(enriched))), null, enriched);
+        return res.json(enriched);
+      }
+    } catch (e) {
+      console.warn("Pancake V3 quoter quote failed, falling back:", e.message);
+    }
+  }
 
   if (SWAP_ADAPTOR_ADDRESS && RPC_URL) {
     try {
@@ -1806,7 +2006,16 @@ app.post("/intent", async (req, res) => {
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.flatten() });
   }
-  const payload = parsed.data;
+  const payload = {
+    userAddress: ethers.getAddress(parsed.data.userAddress),
+    inputAssetID: Number(parsed.data.inputAssetID),
+    outputAssetID: Number(parsed.data.outputAssetID),
+    amountIn: String(parsed.data.amountIn),
+    minAmountOut: String(parsed.data.minAmountOut),
+    nonce: String(parsed.data.nonce),
+    nullifier: parsed.data.nullifier,
+    deadline: Number(parsed.data.deadline),
+  };
   const intentId = ethers.keccak256(
     ethers.toUtf8Bytes(JSON.stringify({ ...payload, t: Date.now() }))
   );
@@ -1825,12 +2034,12 @@ async function processSwapRequestBody(body) {
   }
 
   const { intentId, intent, intentSig, swapData } = parsed.data;
-  if (intent.deadline < Math.floor(Date.now() / 1000)) {
+  if (Number(intent.deadline) < Math.floor(Date.now() / 1000)) {
     const err = new Error("Intent expired");
     err.status = 400;
     throw err;
   }
-  if (!consumeReplayKey(`swap_intent:${intent.nullifier}`)) {
+  if (!consumeReplayKey(`swap_intent:${String(intent.nullifier).toLowerCase()}:${String(intent.nonce)}`)) {
     const err = new Error("Intent already processed or replay detected");
     err.status = 409;
     throw err;
@@ -1842,24 +2051,63 @@ async function processSwapRequestBody(body) {
     throw err;
   }
 
-  const signerAddr = ethers.verifyTypedData(INTENT_DOMAIN, INTENT_TYPES, intent, intentSig);
-  if (signerAddr.toLowerCase() !== intent.userAddress.toLowerCase()) {
+  const typedIntent = {
+    user: ethers.getAddress(intent.userAddress),
+    inputAssetID: BigInt(intent.inputAssetID),
+    outputAssetID: BigInt(intent.outputAssetID),
+    amountIn: BigInt(intent.amountIn),
+    minAmountOut: BigInt(intent.minAmountOut),
+    deadline: BigInt(intent.deadline),
+    nonce: BigInt(intent.nonce),
+    nullifier: intent.nullifier,
+  };
+  const signerAddr = ethers.verifyTypedData(INTENT_DOMAIN, INTENT_TYPES, typedIntent, intentSig);
+  if (signerAddr.toLowerCase() !== String(intent.userAddress).toLowerCase()) {
     const err = new Error("Invalid intent signature");
     err.status = 400;
     throw err;
   }
+  const pi = swapData?.publicInputs || {};
+  if (String(pi.outputAssetIDSwap) !== String(intent.outputAssetID) || String(pi.inputAssetID) !== String(intent.inputAssetID)) {
+    const err = new Error("Intent asset IDs do not match swap public inputs");
+    err.status = 400;
+    throw err;
+  }
+  if (toBigInt(pi.swapAmount || 0) !== toBigInt(intent.amountIn || 0)) {
+    const err = new Error("Intent amountIn must match swap publicInputs.swapAmount");
+    err.status = 400;
+    throw err;
+  }
+  if (toBigInt(pi.minOutputAmountSwap || 0) !== toBigInt(intent.minAmountOut || 0)) {
+    const err = new Error("Intent minAmountOut must match swap publicInputs.minOutputAmountSwap");
+    err.status = 400;
+    throw err;
+  }
+  if (toBigInt(swapData?.swapParams?.minAmountOut || 0) !== toBigInt(intent.minAmountOut || 0)) {
+    const err = new Error("Intent minAmountOut must match swapParams.minAmountOut");
+    err.status = 400;
+    throw err;
+  }
+  swapData.commitment = ethers.keccak256(
+    ethers.AbiCoder.defaultAbiCoder().encode(
+      ["bytes32", "uint256", "uint256", "uint256", "uint256", "uint256"],
+      [intent.nullifier, intent.inputAssetID, intent.outputAssetID, intent.amountIn, intent.deadline, intent.nonce]
+    )
+  );
+  swapData.deadline = Number(intent.deadline);
+  swapData.nonce = BigInt(intent.nonce).toString();
   let internalFheMatch = null;
   try {
-    const pi = swapData?.publicInputs || {};
+    const piForFhe = swapData?.publicInputs || {};
     const enc = swapData?.encryptedPayload;
-    if (enc && enc !== "0x" && enc.length > 10 && pi.inputAssetID != null && pi.outputAssetIDSwap != null) {
+    if (enc && enc !== "0x" && enc.length > 10 && piForFhe.inputAssetID != null && piForFhe.outputAssetIDSwap != null) {
       const coder = ethers.AbiCoder.defaultAbiCoder();
       const [fheEncryptedInputAmount, fheEncryptedMinOutput] = coder.decode(["bytes", "bytes"], enc);
       const reg = await registerOrderAndTryMatch({
         fheEncryptedInputAmount: ethers.hexlify(fheEncryptedInputAmount),
         fheEncryptedMinOutput: ethers.hexlify(fheEncryptedMinOutput),
-        inputAssetID: pi.inputAssetID,
-        outputAssetID: pi.outputAssetIDSwap,
+        inputAssetID: piForFhe.inputAssetID,
+        outputAssetID: piForFhe.outputAssetIDSwap,
       });
       if (reg.matched && reg.matchResult) {
         internalFheMatch = {
@@ -1878,6 +2126,19 @@ async function processSwapRequestBody(body) {
     ? await simulateSwap(intentId)
     : await submitSwap(swapData);
   if (internalFheMatch) txResult.internalFheMatch = internalFheMatch;
+  if (!RELAYER_DRY_RUN && txResult?.txHash) {
+    try {
+      const persisted = await persistSwapOutputNotes({
+        txHash: txResult.txHash,
+        ownerAddress: intent.userAddress,
+        noteHints: swapData.noteHints,
+        publicInputs: swapData.publicInputs,
+      });
+      if (persisted) txResult.module3Notes = persisted;
+    } catch (e) {
+      txResult.module3NotesWarning = e.message || String(e);
+    }
+  }
 
   const receipt = buildReceipt(intentId, swapData, txResult);
   receipts.set(intentId, receipt);
@@ -1889,7 +2150,7 @@ async function processSwapRequestBody(body) {
     swapOutput: {
       amount: receipt.outputAmountSwap || "0",
       assetId: receipt.outputAssetIdSwap || 0,
-      minAmount: intent.minOutputAmount,
+      minAmount: intent.minAmountOut,
     },
     commitments: {
       swap: receipt.outputCommitmentSwap || ethers.ZeroHash,
@@ -2866,6 +3127,7 @@ async function submitSwap(swapData) {
   const provider = new ethers.JsonRpcProvider(RPC_URL);
   const signer = new ethers.Wallet(RELAYER_PRIVATE_KEY, provider);
   const abi = [
+    "function commitSwap(bytes32 commitmentHash, uint256 deadline) external",
     "function shieldedSwapJoinSplit(((bytes,bytes,bytes),(bytes32,bytes32,bytes32,bytes32,bytes32,uint256,uint256,uint256,uint256,uint256,uint256,uint256,uint256,uint256,uint256,uint256[10],uint256[10]),(address,address,uint256,uint256,uint24,uint160,bytes),address,bytes,bytes32,uint256,uint256)) external"
   ];
   const contract = new ethers.Contract(SHIELDED_POOL_ADDRESS, abi, signer);
@@ -2921,9 +3183,9 @@ async function submitSwap(swapData) {
     swapParamsTuple,
     relayerAddr,
     swapData.encryptedPayload || "0x",
-    ethers.ZeroHash,
-    0,
-    0
+    (swapData.commitment && swapData.commitment !== ethers.ZeroHash) ? swapData.commitment : ethers.ZeroHash,
+    Number(swapData.deadline || 0),
+    toU256(swapData.nonce || 0)
   ];
 
   if (DEV_BYPASS_VALIDATORS) {
@@ -2932,6 +3194,9 @@ async function submitSwap(swapData) {
     await submitThresholdValidations(signer, swapData.proof, publicSignals, validationResult.signatures, "swap");
   }
 
+  if (swapDataForContract[5] !== ethers.ZeroHash) {
+    await (await contract.commitSwap(swapDataForContract[5], swapDataForContract[6])).wait();
+  }
   const tx = await contract.shieldedSwapJoinSplit(swapDataForContract);
 
   console.log("⏳ Waiting for confirmation...");
