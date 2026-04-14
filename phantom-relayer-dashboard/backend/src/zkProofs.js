@@ -12,6 +12,7 @@ const path = require("path");
 const { spawn } = require("child_process");
 const os = require("os");
 const { mimc7, FIELD } = require("./mimc7");
+const { computeCommitment, computeNullifier } = require("./noteModel");
 const { toBigIntString, toBigInt } = require("./utils/bigint");
 
 const WASM_PATH = process.env.PROVER_WASM || path.join(__dirname, "..", "..", "circuits", "joinsplit_js", "joinsplit.wasm");
@@ -221,16 +222,11 @@ async function generateSwapProof(swapData) {
     merklePathIndices: formatMerkleIndices(merklePathIndices)
   };
 
-  const mimcCommitment = (assetId, amount, blinding, ownerKey) => {
-    const h1 = mimc7(BigInt(assetId), BigInt(amount));
-    const h2 = mimc7(h1, BigInt(blinding));
-    const h3 = mimc7(h2, BigInt(ownerKey));
-    return h3.toString();
-  };
+  const mimcCommitment = (assetId, amount, blinding, ownerKey) =>
+    computeCommitment(assetId, amount, blinding, ownerKey).toString();
 
-  const mimcNullifier = (commitment, ownerKey) => {
-    return mimc7(BigInt(commitment), BigInt(ownerKey)).toString();
-  };
+  const mimcNullifier = (commitment, ownerKey) =>
+    computeNullifier(commitment, ownerKey).toString();
 
   if (circuitInputs.outputAssetIDChange !== circuitInputs.inputAssetID) {
     console.log(

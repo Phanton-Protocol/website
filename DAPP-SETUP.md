@@ -19,6 +19,7 @@ Optional for local/solo testing:
 
 - `DEV_BYPASS_VALIDATORS=true` — relayer runs without validator set
 - `RELAYER_DRY_RUN=true` — no real txs
+- `NOTES_ENCRYPTION_KEY_HEX=<64 hex chars>` or `NOTES_ENCRYPTION_KEY_FILE=/path/key.hex` — required for Module 3 encrypted note storage APIs
 
 Start:
 
@@ -65,3 +66,10 @@ Production: set `VITE_API_URL` in your host (e.g. Vercel/Render env) and serve t
 - **deployment-config.json** — reference for a different testnet deployment (addresses may differ). If you deploy from that, copy the contract addresses into `backend/config.json` (or env) and into **frontend/public/config.json** so frontend and backend use the same chain and contracts.
 
 Once backend and frontend point at the same RPC and contract set, the full flow (connect wallet → deposit → swap → withdraw) should work without problems.
+
+## Module 3 note + merkle helpers
+
+- Canonical note format + commitment/nullifier: `phantom-relayer-dashboard/backend/src/noteModel.js`
+- Encrypted-at-rest note APIs: `/notes/from-deposit`, `/notes/:noteId`, `/notes`
+- Merkle self-check APIs: `/merkle/index/:index`, `/merkle/self-check/:commitment`
+- CLI self-check: `cd phantom-relayer-dashboard/backend && npm run merkle:selfcheck -- 0x<commitment>`

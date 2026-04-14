@@ -19,9 +19,15 @@ const {
   exportAll,
   saveCommitment,
   listCommitments,
-  getCommitment
+  getCommitment,
+  saveEncryptedNote,
+  getEncryptedNote,
+  listEncryptedNotesByOwner
 } = require("./db");
 const { mimc7 } = require("./mimc7");
+const { canonicalizeNote, noteIdFromCanonical } = require("./noteModel");
+const { encryptJsonAtRest, decryptJsonAtRest, getNotesEncryptionKey } = require("./noteCipher");
+const { buildMerklePath: buildMerklePath10, verifyMerklePath: verifyMerklePath10 } = require("./merkle10");
 const { toBigInt, toBigIntString } = require("./utils/bigint");
 const ValidatorNetwork = require("./validatorNetwork");
 const { generateSwapProof, generatePortfolioProof, getProofStats } = require("./zkProofs");
@@ -841,6 +847,247 @@ async function processDepositRequestBody(body) {
   }
 }
 
+const noteFromDepositSchema = z.object({
+  txHash: z.string(),
+  ownerAddress: z.string().optional(),
+  note: z.object({
+    assetId: z.union([z.string(), z.number()]).optional(),
+    assetID: z.union([z.string(), z.number()]).optional(),
+    amount: z.union([z.string(), z.number()]),
+    blindingFactor: z.union([z.string(), z.number()]),
+    ownerPublicKey: z.union([z.string(), z.number()]),
+  }),
+}).passthrough();
+
+function noteAuthOwner(req) {
+  return String(req.query.ownerAddress || req.headers["x-owner-address"] || "").trim().toLowerCase();
+}
+
+async function parseDepositEventFromReceipt(txHash) {
+  if (!RPC_URL || !SHIELDED_POOL_ADDRESS) {
+    throw new Error("RPC_URL/SHIELDED_POOL_ADDRESS not configured");
+  }
+  const provider = new ethers.JsonRpcProvider(RPC_URL);
+  const receipt = await provider.getTransactionReceipt(txHash);
+  if (!receipt) throw new Error("Transaction receipt not found");
+  let depositEvt = null;
+  for (const log of receipt.logs || []) {
+    if (String(log.address || "").toLowerCase() !== String(SHIELDED_POOL_ADDRESS).toLowerCase()) continue;
+    try {
+      const parsed = poolInterface.parseLog(log);
+      if (parsed?.name === "Deposit") {
+        depositEvt = parsed;
+        break;
+      }
+    } catch (_) { }
+  }
+  if (!depositEvt) throw new Error("Deposit event not found in tx receipt");
+  return { receipt, depositEvt };
+}
+
+app.post("/notes/from-deposit", async (req, res) => {
+  const parsed = noteFromDepositSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Invalid request", details: parsed.error.flatten() });
+  try {
+    getNotesEncryptionKey(); // fail early with actionable message if key missing
+    const { txHash, note } = parsed.data;
+    const { receipt, depositEvt } = await parseDepositEventFromReceipt(txHash);
+    const onChainCommitment = String(depositEvt.args.commitment).toLowerCase();
+    const canonical = canonicalizeNote({
+      assetId: note.assetId ?? note.assetID ?? Number(depositEvt.args.assetID),
+      amount: note.amount,
+      blindingFactor: note.blindingFactor,
+      ownerPublicKey: note.ownerPublicKey,
+    });
+
+    if (canonical.commitment.toLowerCase() !== onChainCommitment) {
+      return res.status(400).json({
+        error: "Note commitment mismatch with Deposit event",
+        expectedCommitment: onChainCommitment,
+        providedCommitment: canonical.commitment.toLowerCase(),
+      });
+    }
+
+    const ownerAddress = (parsed.data.ownerAddress || String(depositEvt.args.depositor)).toLowerCase();
+    const noteId = noteIdFromCanonical(canonical, `${txHash.toLowerCase()}:${ownerAddress}`);
+    const encryptedPayload = encryptJsonAtRest({
+      note: canonical,
+      txHash: receipt.hash,
+      blockNumber: receipt.blockNumber,
+      depositor: String(depositEvt.args.depositor),
+      token: String(depositEvt.args.token),
+      assetId: String(depositEvt.args.assetID),
+      amount: String(depositEvt.args.amount),
+      commitmentIndex: Number(depositEvt.args.commitmentIndex),
+      storedAt: new Date().toISOString(),
+    });
+
+    saveEncryptedNote(db, noteId, ownerAddress, canonical.commitment, receipt.hash, encryptedPayload);
+    saveCommitment(db, Number(depositEvt.args.commitmentIndex), canonical.commitment, receipt.hash);
+
+    return res.json({
+      ok: true,
+      noteId,
+      ownerAddress,
+      commitment: canonical.commitment,
+      commitmentIndex: Number(depositEvt.args.commitmentIndex),
+      txHash: receipt.hash,
+      blockNumber: receipt.blockNumber,
+      schema: canonical.schema,
+    });
+  } catch (err) {
+    return res.status(400).json({ error: err.message || "Failed to store note from deposit" });
+  }
+});
+
+app.get("/notes/:noteId", async (req, res) => {
+  try {
+    const owner = noteAuthOwner(req);
+    if (!owner) {
+      return res.status(401).json({ error: "ownerAddress is required (query or x-owner-address header)" });
+    }
+    const row = getEncryptedNote(db, req.params.noteId);
+    if (!row) return res.status(404).json({ error: "Note not found" });
+    if (String(row.ownerAddress).toLowerCase() !== owner) {
+      return res.status(403).json({ error: "Note does not belong to ownerAddress" });
+    }
+    const data = decryptJsonAtRest(row.payloadEnc);
+    return res.json({
+      noteId: row.noteId,
+      ownerAddress: row.ownerAddress,
+      commitment: row.commitment,
+      txHash: row.txHash,
+      createdAt: row.createdAt,
+      note: data.note,
+      metadata: {
+        commitmentIndex: data.commitmentIndex,
+        blockNumber: data.blockNumber,
+        token: data.token,
+      },
+    });
+  } catch (err) {
+    return res.status(400).json({ error: err.message || "Failed to load note" });
+  }
+});
+
+app.get("/notes", (req, res) => {
+  try {
+    const owner = noteAuthOwner(req);
+    if (!owner) {
+      return res.status(401).json({ error: "ownerAddress is required (query or x-owner-address header)" });
+    }
+    const limit = Math.min(Number(req.query.limit || 50), 200);
+    const rows = listEncryptedNotesByOwner(db, owner, Number.isFinite(limit) ? limit : 50);
+    const notes = rows.map((r) => {
+      let note = null;
+      try {
+        note = decryptJsonAtRest(r.payloadEnc).note;
+      } catch (_) {
+        note = null;
+      }
+      return {
+        noteId: r.noteId,
+        commitment: r.commitment,
+        txHash: r.txHash,
+        createdAt: r.createdAt,
+        note,
+      };
+    });
+    return res.json({ ownerAddress: owner, count: notes.length, notes });
+  } catch (err) {
+    return res.status(400).json({ error: err.message || "Failed to list notes" });
+  }
+});
+
+app.get("/notes/threat-model", (_req, res) => {
+  res.json({
+    scope: "MVP testnet only",
+    atRestEncryption: "AES-256-GCM using NOTES_ENCRYPTION_KEY_HEX or NOTES_ENCRYPTION_KEY_FILE",
+    auth: "Minimal ownerAddress gate via query/header; not strong authentication",
+    risks: [
+      "If server key is leaked, encrypted note payloads are decryptable",
+      "ownerAddress-only gate is weak and should be replaced with signed auth/session",
+      "No tenant isolation beyond ownerAddress filtering",
+    ],
+    productionRecommendation: [
+      "Use KMS-managed key (rotation + access policy)",
+      "Require wallet signature auth (nonce challenge) before note read/list",
+      "Add audit logs and per-tenant access controls",
+    ],
+  });
+});
+
+app.get("/merkle/index/:index", async (req, res) => {
+  try {
+    const index = Number(req.params.index);
+    if (!Number.isInteger(index) || index < 0) return res.status(400).json({ error: "Invalid index" });
+    if (!RPC_URL || !SHIELDED_POOL_ADDRESS) {
+      return res.status(500).json({ error: "RPC_URL/SHIELDED_POOL_ADDRESS not configured" });
+    }
+    const provider = new ethers.JsonRpcProvider(RPC_URL);
+    const abi = [
+      "function commitmentCount() view returns (uint256)",
+      "function commitments(uint256) view returns (bytes32)",
+      "function merkleRoot() view returns (bytes32)"
+    ];
+    const contract = new ethers.Contract(SHIELDED_POOL_ADDRESS, abi, provider);
+    const count = Number(await contract.commitmentCount());
+    if (index >= count) return res.status(404).json({ error: `Index ${index} out of range`, commitmentCount: count });
+    const commitments = [];
+    for (let i = 0; i < count; i += 1) commitments.push(await contract.commitments(i));
+    const rootOnChain = await contract.merkleRoot();
+    const commitment = commitments[index];
+    const { path, indices, root } = buildMerklePath10(commitments, index);
+    const ok = verifyMerklePath10(commitment, path, indices, rootOnChain);
+    return res.json({
+      index,
+      commitment,
+      merkleRoot: root,
+      onChainRoot: rootOnChain,
+      merklePath: path,
+      merklePathIndices: indices,
+      verified: ok,
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || "merkle index failed" });
+  }
+});
+
+app.get("/merkle/self-check/:commitment", async (req, res) => {
+  try {
+    const commitment = String(req.params.commitment);
+    if (!RPC_URL || !SHIELDED_POOL_ADDRESS) {
+      return res.status(500).json({ error: "RPC_URL/SHIELDED_POOL_ADDRESS not configured" });
+    }
+    const provider = new ethers.JsonRpcProvider(RPC_URL);
+    const abi = [
+      "function commitmentCount() view returns (uint256)",
+      "function commitments(uint256) view returns (bytes32)",
+      "function merkleRoot() view returns (bytes32)"
+    ];
+    const contract = new ethers.Contract(SHIELDED_POOL_ADDRESS, abi, provider);
+    const count = Number(await contract.commitmentCount());
+    const commitments = [];
+    for (let i = 0; i < count; i += 1) commitments.push(await contract.commitments(i));
+    const targetIndex = commitments.findIndex((c) => String(c).toLowerCase() === commitment.toLowerCase());
+    if (targetIndex < 0) return res.status(404).json({ error: "Commitment not found" });
+    const onChainRoot = await contract.merkleRoot();
+    const { path, indices, root } = buildMerklePath10(commitments, targetIndex);
+    const verified = verifyMerklePath10(commitment, path, indices, onChainRoot);
+    return res.json({
+      commitment,
+      index: targetIndex,
+      localRoot: root,
+      onChainRoot,
+      verified,
+      merklePath: path,
+      merklePathIndices: indices,
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || "merkle self-check failed" });
+  }
+});
+
 app.get("/", (req, res) => {
   res.json({
     name: "Phantom Protocol Relayer API",
@@ -851,12 +1098,19 @@ app.get("/", (req, res) => {
 
 app.get("/health", (req, res) => {
   const cfg = getRuntimeConfig();
+  let notesEncryptionConfigured = true;
+  try {
+    getNotesEncryptionKey();
+  } catch (_) {
+    notesEncryptionConfigured = false;
+  }
   res.json({
     ok: true,
     uptimeSec: Math.floor(process.uptime()),
     mode: cfg.mode,
     chainId: cfg.chainId,
     poolConfigured: !!cfg.addresses?.shieldedPool,
+    notesEncryptionConfigured,
     missingForTx: cfg.missingForTx,
     configWarningCount: Array.isArray(cfg.configWarnings) ? cfg.configWarnings.length : 0,
   });
@@ -864,6 +1118,9 @@ app.get("/health", (req, res) => {
 
 app.get("/config", (req, res) => {
   const cfg = getRuntimeConfig();
+  const notesKeySource = process.env.NOTES_ENCRYPTION_KEY_HEX
+    ? "env:NOTES_ENCRYPTION_KEY_HEX"
+    : (process.env.NOTES_ENCRYPTION_KEY_FILE ? "file:NOTES_ENCRYPTION_KEY_FILE" : "missing");
   res.json({
     mode: cfg.mode,
     chainId: cfg.chainId,
@@ -876,6 +1133,11 @@ app.get("/config", (req, res) => {
     configFile: cfg.configFile,
     canonicalProfile: cfg.canonicalProfile,
     configWarnings: cfg.configWarnings || [],
+    notesAtRest: {
+      encryption: "AES-256-GCM",
+      keySource: notesKeySource,
+      authModel: "minimal_owner_address_gate",
+    },
   });
 });
 

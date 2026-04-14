@@ -8,7 +8,8 @@
     "dev": "node src/index.js",
     "start": "node src/index.js",
     "validator": "node src/validatorServer.js",
-    "validator:coordinator": "node src/validatorCoordinator.js"
+    "validator:coordinator": "node src/validatorCoordinator.js",
+    "merkle:selfcheck": "node scripts/module3-merkle-selfcheck.cjs"
   },
   "dependencies": {
     "@zk-kit/groth16": "^0.5.0",
