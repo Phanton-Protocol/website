@@ -1,0 +1,10 @@
+---
+description: Never add AI-style or redundant comments in code we develop
+alwaysApply: true
+---
+
+# No AI-style comments
+
+- Do not add explanatory, redundant, or "here we do X" comments in any code we develop.
+- Do not add comments that describe what the code obviously does (e.g. "// Loop through items", "// Return the result").
+- Only add comments when they explain non-obvious why, constraints, or gotchas; keep them short and factual.

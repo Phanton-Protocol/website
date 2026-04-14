@@ -1,0 +1,9 @@
+services:
+  tenseal-fhe:
+    build:
+      context: ./tenseal-service
+      dockerfile: Dockerfile
+    ports:
+      - "9101:9101"
+    environment:
+      PORT: "9101"

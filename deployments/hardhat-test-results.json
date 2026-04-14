@@ -1,0 +1,10 @@
+{
+  "deposit": {
+    "hash": "0x58e3a7bb7d8e6380a9303fa35e24df6395af72c0b7d53309cb0db3d7d03cd740",
+    "block": 1,
+    "gasUsed": "23580"
+  },
+  "swap": null,
+  "withdrawal": null,
+  "errors": []
+}

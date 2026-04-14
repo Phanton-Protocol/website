@@ -29,5 +29,6 @@ dist-ssr
 
 artifacts/
 cache/
+circuits/pot19_final.ptau
 
 ~$*

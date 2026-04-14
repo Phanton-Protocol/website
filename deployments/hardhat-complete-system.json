@@ -1,0 +1,28 @@
+{
+  "network": "hardhat",
+  "chainId": 1337,
+  "deployer": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+  "timestamp": "2026-01-22T18:35:36.419Z",
+  "contracts": {
+    "MockVerifier": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+    "ThresholdVerifier": "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512",
+    "MockSwapAdaptor": "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0",
+    "FeeOracle": "0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9",
+    "RelayerRegistry": "0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9",
+    "TransactionHistory": "0x5FC8d32690cc91D4c39d9d3abcBD16989F875707",
+    "FHECoprocessor": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+    "ThresholdEncryption": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
+    "TimelockController": "0x2279B7A0a67DB372996a5FaB50D91eAA73d2eBe6",
+    "Governance": "0x8A791620dd6260079BF849Dc5567aDC3F2FdC318",
+    "ShieldedPool": "0xB7f8BC63BbcaD18155201308C8f3540b07f84F5e",
+    "ShieldedPoolImplementation": "0x610178dA211FEF7D417bC0e6FeD39F05609AD788",
+    "DepositHandler": "0x959922bE3CAee4b8Cd9a407cc3ac1C251C2007B1",
+    "PhantomMain": "0x68B1D87F95878fE05B998F19b66F4baba5De1aed"
+  },
+  "testResults": {
+    "deposit": {
+      "success": true,
+      "txHash": "0xcbe38d1428ebb4b437a5e08a9602c3dee14062f5b2197f3b235f49cf7226dcfb"
+    }
+  }
+}

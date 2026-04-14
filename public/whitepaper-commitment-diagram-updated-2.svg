@@ -1,0 +1,83 @@
+<svg width="1600" height="500" viewBox="0 0 1600 500" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg2" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#070b14"/>
+      <stop offset="100%" stop-color="#0a0f1b"/>
+    </linearGradient>
+    <filter id="glow2" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="2.8" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <style>
+      .t { fill:#7b8492; font: 600 20px 'Inter','Segoe UI',sans-serif; letter-spacing:4px; }
+      .b { fill:#0b111c; stroke:#293448; stroke-width:1.5; }
+      .c { stroke:#1fe5dd; stroke-width:2.6; }
+      .cs { stroke:#18c9c4; stroke-width:1.9; }
+      .m { fill:#f5f8ff; font: 600 34px 'Inter','Segoe UI',sans-serif; }
+      .s { fill:#30ddd6; font: 500 24px 'Inter','Segoe UI',sans-serif; }
+      .label { fill:#29d8d1; font: 500 33px 'Inter','Segoe UI',sans-serif; }
+    </style>
+  </defs>
+
+  <rect width="1600" height="500" fill="url(#bg2)"/>
+  <g opacity="0.16" stroke="#1f2b40" stroke-width="1">
+    <path d="M0 40H1600M0 80H1600M0 120H1600M0 160H1600M0 200H1600M0 240H1600M0 280H1600M0 320H1600M0 360H1600M0 400H1600M0 440H1600"/>
+    <path d="M40 0V500M80 0V500M120 0V500M160 0V500M200 0V500M240 0V500M280 0V500M320 0V500M360 0V500M400 0V500M440 0V500M480 0V500M520 0V500M560 0V500M600 0V500M640 0V500M680 0V500M720 0V500M760 0V500M800 0V500M840 0V500M880 0V500M920 0V500M960 0V500M1000 0V500M1040 0V500M1080 0V500M1120 0V500M1160 0V500M1200 0V500M1240 0V500M1280 0V500M1320 0V500M1360 0V500M1400 0V500M1440 0V500M1480 0V500M1520 0V500M1560 0V500"/>
+  </g>
+
+  <text x="52" y="62" class="t">FORMULA_EXEC :: COMMITMENT DERIVATION</text>
+
+  <g filter="url(#glow2)">
+    <rect x="84" y="100" width="230" height="95" rx="10" class="b"/>
+    <line x1="84" y1="108" x2="84" y2="192" class="c"/>
+    <text x="199" y="140" text-anchor="middle" class="m" font-size="30">assetId</text>
+    <text x="199" y="172" text-anchor="middle" class="s" font-size="18">Token mapping</text>
+
+    <rect x="330" y="100" width="230" height="95" rx="10" class="b"/>
+    <line x1="330" y1="108" x2="330" y2="192" class="c"/>
+    <text x="445" y="140" text-anchor="middle" class="m" font-size="30">amount (value)</text>
+    <text x="445" y="172" text-anchor="middle" class="s" font-size="18">Deposit amount</text>
+
+    <rect x="576" y="100" width="230" height="95" rx="10" class="b"/>
+    <line x1="576" y1="108" x2="576" y2="192" class="c"/>
+    <text x="691" y="140" text-anchor="middle" class="m" font-size="27">blinding factor (rho)</text>
+    <text x="691" y="172" text-anchor="middle" class="s" font-size="18">Secret entropy</text>
+
+    <rect x="822" y="100" width="230" height="95" rx="10" class="b"/>
+    <line x1="822" y1="108" x2="822" y2="192" class="c"/>
+    <text x="937" y="140" text-anchor="middle" class="m" font-size="30">owner public key</text>
+    <text x="937" y="172" text-anchor="middle" class="s" font-size="18">Ownership key</text>
+  </g>
+
+  <g filter="url(#glow2)">
+    <line x1="199" y1="195" x2="199" y2="228" class="cs"/>
+    <line x1="445" y1="195" x2="445" y2="228" class="cs"/>
+    <line x1="691" y1="195" x2="691" y2="228" class="cs"/>
+    <line x1="937" y1="195" x2="937" y2="228" class="cs"/>
+    <line x1="190" y1="228" x2="940" y2="228" class="c"/>
+    <circle cx="320" cy="228" r="4.5" fill="#ecffff"/>
+    <circle cx="460" cy="228" r="4.5" fill="#ecffff"/>
+    <circle cx="665" cy="228" r="4.5" fill="#ecffff"/>
+    <circle cx="900" cy="228" r="4.5" fill="#ecffff"/>
+  </g>
+
+  <g filter="url(#glow2)">
+    <line x1="560" y1="228" x2="560" y2="258" class="cs"/>
+    <rect x="435" y="258" width="300" height="115" rx="10" class="b"/>
+    <line x1="435" y1="266" x2="435" y2="365" class="c"/>
+    <text x="585" y="309" text-anchor="middle" class="m" font-size="38">H( ... )</text>
+    <text x="585" y="341" text-anchor="middle" class="s" font-size="19">MiMC7 commitment hash</text>
+
+    <line x1="735" y1="315" x2="1105" y2="315" class="c"/>
+    <text x="846" y="286" class="s" font-size="22">commitment derivation</text>
+  </g>
+
+  <g filter="url(#glow2)">
+    <rect x="1105" y="185" width="410" height="150" rx="10" class="b"/>
+    <line x1="1105" y1="194" x2="1105" y2="327" class="c"/>
+    <text x="1310" y="247" text-anchor="middle" class="m" font-size="39">cm (note commitment)</text>
+    <text x="1310" y="285" text-anchor="middle" class="s" font-size="24">stored as bytes32 on-chain</text>
+  </g>
+
+  <text x="800" y="456" text-anchor="middle" class="label">cm = H(H(H(assetId, amount), rho), ownerPk)</text>
+</svg>

@@ -1,0 +1,25 @@
+{
+  "network": "bscTestnet",
+  "chainId": 97,
+  "deployer": "0xE334af2021Bf3bF6A1777A611893d2D02A366F46",
+  "complianceOfficer": "0xE334af2021Bf3bF6A1777A611893d2D02A366F46",
+  "timestamp": "2026-01-19T17:45:46.693Z",
+  "platform": "Phantom Protocol",
+  "website": "https://phantomproto.com",
+  "contracts": {
+    "MockVerifier": "0xFe3c3D5E0F1A1cbB9c89c94dD34125cCeea9d92F",
+    "PancakeSwapAdaptor": "0xfF39dCe4109D77a30E07E8C97d992664800C990f",
+    "FeeOracle": "0x6B5f46BEF77B4eDE2669951e7bFB34d61eAAB972",
+    "RelayerRegistry": "0x88D4AdbA09E1E527CD1E717C7D7406bBfCfAEd4F",
+    "ComplianceModule": "0xC8da2EfCaA8507D70DF7b8736bf8dD219D107880",
+    "ShieldedPool": "0x6ea27B17D99B6c6D201aFE3F85D08d84093C0D6D",
+    "InternalMatchingPool": "0x6ea27B17D99B6c6D201aFE3F85D08d84093C0D6D",
+    "PhantomEnclavePool": "0x57a9b3c6A2246Bd42dDE052855cD1A8eDf080dDB"
+  },
+  "features": {
+    "compliance": "Chainalysis KYB/AML",
+    "privacy": "Enhanced privacy (commitments + internal matching)",
+    "fhe": "Hybrid pool (5000 stakers + AWS enclaves)",
+    "matching": "Internal matching with PancakeSwap fallback"
+  }
+}

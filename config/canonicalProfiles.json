@@ -1,0 +1,26 @@
+{
+  "bscTestnet": {
+    "name": "BSC Testnet Canonical Profile",
+    "chainId": 97,
+    "addresses": {
+      "shieldedPool": "0xC6bdf5858e8D4C2fad09d0CA3cE356B2ace0ec99",
+      "swapAdaptor": "0x341a5CA83566688fCf05725Ca7AA6Dc35671ae35",
+      "feeOracle": "0x89Ca5cda0cB774D5b5F80e92a72D62237E4E5e4d",
+      "relayerStaking": "0xf68c0F35075c168289aF67E18698180b7F71a1e8",
+      "verifier": "0x025aa86FA9da17Dc68FC4Fb61609f731919DBDC2",
+      "thresholdVerifier": "0x6bf838939Af3eE315cd632098B014b4664fB06e2"
+    }
+  },
+  "bscMainnet": {
+    "name": "BSC Mainnet Canonical Profile",
+    "chainId": 56,
+    "addresses": {
+      "shieldedPool": "",
+      "swapAdaptor": "",
+      "feeOracle": "",
+      "relayerStaking": "",
+      "verifier": "",
+      "thresholdVerifier": ""
+    }
+  }
+}
