@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-04-15 — Module 8 (MVP+ polish)
+
+- **Relayer dashboard:** new **Operations** tab — status, fees, rate limits, recent txs (in-memory since process start), recent errors; links to **RUNBOOK.md** and the main-site **Privacy & visibility** page.
+- **API:** `GET /relayer/dashboard` aggregates activity buffer + fee/rate-limit snapshot for operators.
+- **Website:** `/privacy-visibility` — short user doc on private vs AMM-visible flow; footer + nav link; **MVP security limitations** (relayer trust, rate limits, no implied audit).
+
 ## 2026-04-15 — Module 7 (hardening & no-mock gate)
 
 - **Deploy:** `FORCE_MOCK_INFRASTRUCTURE=true` is rejected for `DEPLOY_PROFILE=staging|production`; deploy records must not include mock verifier addresses when using real profiles.

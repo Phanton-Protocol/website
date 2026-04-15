@@ -26,9 +26,10 @@ import BlogIndexPage from './components/BlogIndexPage';
 import BlogArticlePage from './components/BlogArticlePage';
 import WhitepaperPage from './components/WhitepaperPage';
 import OnePagerPage from './components/OnePagerPage';
+import PrivacyVisibilityPage from './components/PrivacyVisibilityPage';
 import { blogPosts } from './data/blogPosts';
 import logoUrl from './assets/logo.svg';
-import { SOCIAL_LINKS } from './config';
+import { SOCIAL_LINKS, RUNBOOK_URL } from './config';
 
 const DAppSection = lazy(() => import('./components/DAppSection'));
 const ProtocolUserDapp = lazy(() => import('./components/ProtocolUserDapp'));
@@ -199,6 +200,9 @@ function RelayerStakerPage() {
             <Link to="/relayer" className="btn-outline btn-outline-cyan">Relayer onboarding</Link>
             <a className="btn-outline" href="http://localhost:5177/" target="_blank" rel="noreferrer">Open local node dashboard</a>
             <a className="btn-outline" href={`${String(apiBase || '').replace(/\/$/, '')}/health`} target="_blank" rel="noreferrer">Open relayer API health</a>
+            <a className="btn-outline" href={`${String(apiBase || '').replace(/\/$/, '')}/relayer/dashboard`} target="_blank" rel="noreferrer">Relayer dashboard JSON</a>
+            <Link to="/privacy-visibility" className="btn-outline">Privacy & visibility</Link>
+            <a className="btn-outline" href={RUNBOOK_URL} target="_blank" rel="noreferrer">Operator RUNBOOK</a>
           </div>
 
           <div style={{ marginTop: '1rem' }}>
@@ -384,6 +388,7 @@ function App() {
       <Route path="/" element={<LandingPage mousePos={mousePos} handleMouseMove={handleMouseMove} />} />
       <Route path="/user" element={<Navigate to="/trade" replace />} />
       <Route path="/trade" element={<TradePage />} />
+      <Route path="/privacy-visibility" element={<PrivacyVisibilityPage />} />
       <Route path="/e-paper" element={<WhitepaperPage />} />
       <Route path="/whitepaper" element={<Navigate to="/e-paper" replace />} />
       <Route path="/onepager" element={<OnePagerPage />} />

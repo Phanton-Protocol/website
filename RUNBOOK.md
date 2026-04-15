@@ -93,3 +93,12 @@ Server logs use structured prefixes:
 
 - `npm run test:backend` — relayer unit tests.
 - `npm run e2e:testnet` — runs `e2e-mvp-testnet.cjs` (same env requirements as above).
+
+## 8. Operator dashboard (Module 8)
+
+The **Phantom Relayer Dashboard** (Vite app under `phantom-relayer-dashboard/`) has an **Operations** tab that polls:
+
+- `GET /health` — process / config snapshot.
+- `GET /relayer/dashboard` — uptime, **fee parameters** (`RUNTIME_PARAMS`), **default + Module 4 rate limits**, and **in-memory recent shielded swap / withdraw txs** plus **recent proof/on-chain errors** (resets on restart).
+
+End users: **Privacy & visibility** page on the main site at `/privacy-visibility` (what the shielded pool hides vs what the AMM leg exposes on-chain).

@@ -1,7 +1,9 @@
 /**
  * Module 7 — structured logging for relayer RPC / tx failures + revert decoding.
+ * Module 8 — also records short error lines for /relayer/dashboard.
  */
 const { ethers } = require("ethers");
+const { pushError } = require("./relayerActivityBuffer");
 
 const poolIface = new ethers.Interface([
   "error PoolErr(uint8 code)",
@@ -45,6 +47,15 @@ function logRelayerOnchainFailure(phase, err) {
   const decoded = revertData ? decodeRevertData(revertData) : null;
   console.error(`[relayer:onchain] phase=${phase} code=${code || "n/a"} shortMessage=${shortMessage || reason || e.message || err}`);
   if (decoded) console.error(`[relayer:onchain] decoded=${decoded}`);
+  try {
+    pushError({
+      phase,
+      message: decoded ? `${e.message || shortMessage || reason || ""} (${decoded})` : e.message || shortMessage || reason || String(err),
+      code: code
+    });
+  } catch (_) {
+    /* ignore buffer failures */
+  }
 }
 
 function logRelayerRpcFailure(phase, err) {
@@ -52,11 +63,21 @@ function logRelayerRpcFailure(phase, err) {
   console.error(
     `[relayer:rpc] phase=${phase} code=${e.code || "n/a"} message=${e.message || String(err)}`
   );
+  try {
+    pushError({ phase: `rpc:${phase}`, message: e.message || String(err), code: e.code });
+  } catch (_) {
+    /* ignore */
+  }
 }
 
 function logProofFailure(phase, err) {
   const msg = err && err.message ? err.message : String(err);
   console.error(`[relayer:proof] phase=${phase} message=${msg}`);
+  try {
+    pushError({ phase: `proof:${phase}`, message: msg });
+  } catch (_) {
+    /* ignore */
+  }
 }
 
 module.exports = {

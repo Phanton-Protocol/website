@@ -42,6 +42,7 @@ const { createEnterpriseRouter } = require("./enterpriseRoutes");
 const { getSeeConfig, verifyAttestation, requireSeeForSensitiveFlow } = require("./seeGuard");
 const { logRelayerOnchainFailure, logProofFailure } = require("./relayerLog");
 const { assertNoMockRuntimeGate } = require("./noMockRuntimeGate");
+const { pushTransaction, getSnapshot } = require("./relayerActivityBuffer");
 const { computeCanonicalAlignmentWarnings } = require("./configAlignment");
 const {
   assertRelayerRegistered,
@@ -1724,6 +1725,7 @@ app.get("/", (req, res) => {
   res.json({
     name: "Phantom Protocol Relayer API",
     health: "/health",
+    relayerDashboard: "/relayer/dashboard",
     docs: "See DEVELOPER_SPEC.md or WHITEPAPER.md for endpoints (quote, intent, swap, withdraw, relayer, staking, etc.)",
   });
 });
@@ -2500,6 +2502,36 @@ app.get("/staking/balance", async (req, res) => {
 app.get("/relayer/proof-stats", (req, res) => {
   try {
     res.json(getProofStats());
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/relayer/dashboard", (req, res) => {
+  try {
+    const activity = getSnapshot();
+    res.json({
+      uptimeSec: Math.floor(process.uptime()),
+      rateLimit: {
+        defaultWindowMs: RATE_LIMIT_WINDOW_MS,
+        defaultMaxPerWindow: RATE_LIMIT_MAX,
+        module4WindowMs: MODULE4_RATE_WINDOW_MS,
+        module4MaxPerWindow: MODULE4_RATE_MAX
+      },
+      fees: {
+        dexSwapFeeBps: RUNTIME_PARAMS.fees.dexSwapFeeBps,
+        internalMatchFeeBps: RUNTIME_PARAMS.fees.internalMatchFeeBps,
+        depositFeeUsdE8: RUNTIME_PARAMS.fees.depositFeeUsdE8.toString(),
+        oracleFeeFloorUsdE8: RUNTIME_PARAMS.fees.oracleFeeFloorUsdE8.toString(),
+        oracleFeeRateBps: RUNTIME_PARAMS.fees.oracleFeeRateBps
+      },
+      documentation: {
+        operatorRunbook: "RUNBOOK.md (repo root)",
+        parametersEndpoint: "/parameters",
+        configEndpoint: "/config"
+      },
+      ...activity
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -3376,6 +3408,11 @@ async function submitSwap(swapData) {
 
   console.log(`✅ Transaction confirmed: ${receipt.hash}`);
   try {
+    pushTransaction({ op: "shieldedSwap", txHash: receipt.hash, blockNumber: receipt.blockNumber });
+  } catch (_) {
+    /* ignore activity buffer */
+  }
+  try {
     storeCommitmentsFromReceipt(receipt);
   } catch (e) {
     console.log(`[Swap] Could not store commitments: ${e.message}`);
@@ -3520,6 +3557,11 @@ async function submitWithdraw(withdrawData) {
 
   console.log(`✅ Withdrawal confirmed: ${receipt.hash}`);
   try {
+    pushTransaction({ op: "shieldedWithdraw", txHash: receipt.hash, blockNumber: receipt.blockNumber });
+  } catch (_) {
+    /* ignore activity buffer */
+  }
+  try {
     storeCommitmentsFromReceipt(receipt);
   } catch (e) {
     console.log(`[Withdraw] Could not store commitments: ${e.message}`);
@@ -3618,6 +3660,11 @@ async function submitPortfolioSwap(swapData) {
       } catch (nsErr) {
         console.warn("[PortfolioSwap] NoteStorage.storeNoteFor failed:", nsErr.message);
       }
+    }
+    try {
+      pushTransaction({ op: "portfolioSwap", txHash: receipt.hash, blockNumber: receipt.blockNumber });
+    } catch (_) {
+      /* ignore */
     }
     return { txHash: receipt.hash, blockNumber: receipt.blockNumber, noteStored };
   } catch (err) {

@@ -4,6 +4,9 @@ export const WHITEPAPER_URL = '/e-paper';
 export const EPAPER_PUBLIC_URL = 'https://phantomproto.com/e-paper';
 export const GITHUB_URL = 'https://github.com/Phanton-Protocol';
 
+/** Operator runbook (Module 7+); same content ships in repo as `RUNBOOK.md`. */
+export const RUNBOOK_URL = `${GITHUB_URL}/core/blob/main/RUNBOOK.md`;
+
 export const API_URL = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_URL)
   ? import.meta.env.VITE_API_URL
   : 'https://phantom-protocol.onrender.com';
