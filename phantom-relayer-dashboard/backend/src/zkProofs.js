@@ -1,6 +1,7 @@
 
 
 const snarkjs = require("snarkjs");
+const { logProofFailure } = require("./relayerLog");
 let zkKitProve = null;
 try {
   zkKitProve = require("@zk-kit/groth16").prove;
@@ -12,6 +13,7 @@ const path = require("path");
 const { spawn } = require("child_process");
 const os = require("os");
 const { mimc7, FIELD } = require("./mimc7");
+const { computeCommitment, computeNullifier } = require("./noteModel");
 const { toBigIntString, toBigInt } = require("./utils/bigint");
 
 const WASM_PATH = process.env.PROVER_WASM || path.join(__dirname, "..", "..", "circuits", "joinsplit_js", "joinsplit.wasm");
@@ -221,16 +223,11 @@ async function generateSwapProof(swapData) {
     merklePathIndices: formatMerkleIndices(merklePathIndices)
   };
 
-  const mimcCommitment = (assetId, amount, blinding, ownerKey) => {
-    const h1 = mimc7(BigInt(assetId), BigInt(amount));
-    const h2 = mimc7(h1, BigInt(blinding));
-    const h3 = mimc7(h2, BigInt(ownerKey));
-    return h3.toString();
-  };
+  const mimcCommitment = (assetId, amount, blinding, ownerKey) =>
+    computeCommitment(assetId, amount, blinding, ownerKey).toString();
 
-  const mimcNullifier = (commitment, ownerKey) => {
-    return mimc7(BigInt(commitment), BigInt(ownerKey)).toString();
-  };
+  const mimcNullifier = (commitment, ownerKey) =>
+    computeNullifier(commitment, ownerKey).toString();
 
   if (circuitInputs.outputAssetIDChange !== circuitInputs.inputAssetID) {
     console.log(
@@ -518,6 +515,7 @@ async function generateSwapProof(swapData) {
   } catch (error) {
     recordProofStats("swap", Date.now() - startTime, false);
     console.error("❌ Proof generation failed:", error.message);
+    logProofFailure("generateSwapProof", error);
     throw new Error(`Proof generation failed: ${error.message}`);
   }
 }
@@ -530,33 +528,68 @@ async function generateWithdrawProof(withdrawData) {
     merklePath,
     merklePathIndices,
     withdrawAmount,
-    recipient,
     protocolFee,
     gasRefund
   } = withdrawData;
 
   const formatMerklePath = (path) => {
     if (!Array.isArray(path)) return Array(10).fill("0");
-    const formatted = path.slice(0, 10).map(v => toBigIntString(v));
+    const formatted = path.slice(0, 10).map((v) => {
+      if (!v || v === "0x0" || v === "0x0000000000000000000000000000000000000000000000000000000000000000") {
+        return "0";
+      }
+      return toBigIntString(v);
+    });
     while (formatted.length < 10) formatted.push("0");
     return formatted;
   };
-  
+
   const formatMerkleIndices = (indices) => {
     if (!Array.isArray(indices)) return Array(10).fill("0");
-    const formatted = indices.slice(0, 10).map(v => String(toBigInt(v) % 2n));
+    const formatted = indices.slice(0, 10).map((v) => String(toBigInt(v) % 2n));
     while (formatted.length < 10) formatted.push("0");
     return formatted;
   };
 
+  const mimcCommitment = (assetId, amount, blinding, ownerKey) =>
+    computeCommitment(assetId, amount, blinding, ownerKey).toString();
+
+  const mimcNullifier = (commitment, ownerKey) =>
+    computeNullifier(commitment, ownerKey).toString();
+
   const inputAmountBigInt = toBigInt(inputNote.amount);
-  const changeAmountBigInt = toBigInt(outputNoteChange.amount);
   const protocolFeeBigInt = toBigInt(protocolFee);
   const gasRefundBigInt = toBigInt(gasRefund);
-  const swapAmountForWithdraw = inputAmountBigInt - changeAmountBigInt - protocolFeeBigInt - gasRefundBigInt;
-  
-  const circuitInputs = {
+  let swapAmountForWithdraw;
+  let changeAmtBig;
+  if (withdrawAmount != null && String(withdrawAmount).trim() !== "") {
+    swapAmountForWithdraw = toBigInt(withdrawAmount);
+    changeAmtBig = inputAmountBigInt - swapAmountForWithdraw - protocolFeeBigInt - gasRefundBigInt;
+  } else {
+    changeAmtBig = toBigInt(outputNoteChange.amount);
+    swapAmountForWithdraw = inputAmountBigInt - changeAmtBig - protocolFeeBigInt - gasRefundBigInt;
+  }
+  if (swapAmountForWithdraw <= 0n) {
+    throw new Error("Withdraw: withdraw leg (swapAmount) must be positive");
+  }
+  if (changeAmtBig <= 0n) {
+    throw new Error("Withdraw: change amount must be positive (ShieldedPool requirement)");
+  }
 
+  const changeAmtStr = changeAmtBig.toString();
+  const changeBlinding = toBigIntString(outputNoteChange.blindingFactor);
+  let outAssetChange = outputNoteChange.assetID.toString();
+  if (String(outAssetChange) !== String(inputNote.assetID)) {
+    outAssetChange = String(inputNote.assetID);
+  }
+  const changeCommitment = mimcCommitment(
+    BigInt(outAssetChange),
+    BigInt(changeAmtStr),
+    BigInt(changeBlinding),
+    BigInt(toBigIntString(inputNote.ownerPublicKey))
+  );
+
+  const circuitInputs = {
     inputAssetID: inputNote.assetID.toString(),
     inputAmount: toBigIntString(inputNote.amount),
     inputBlindingFactor: toBigIntString(inputNote.blindingFactor),
@@ -566,21 +599,21 @@ async function generateWithdrawProof(withdrawData) {
     outputAmountSwap: "0",
     swapBlindingFactor: "0",
 
-    outputAssetIDChange: outputNoteChange.assetID.toString(),
-    changeAmount: toBigIntString(outputNoteChange.amount),
-    changeBlindingFactor: toBigIntString(outputNoteChange.blindingFactor),
+    outputAssetIDChange: outAssetChange,
+    changeAmount: changeAmtStr,
+    changeBlindingFactor: changeBlinding,
 
     swapAmount: swapAmountForWithdraw.toString(),
 
     nullifier: toBigIntString(inputNote.nullifier),
     inputCommitment: toBigIntString(inputNote.commitment),
-    outputCommitmentSwap: "0", 
+    outputCommitmentSwap: "0",
 
-    outputCommitmentChange: toBigIntString(outputNoteChange.commitment),
+    outputCommitmentChange: changeCommitment,
     merkleRoot: toBigIntString(merkleRoot),
-    outputAmountSwapPublic: "0", 
+    outputAmountSwapPublic: "0",
 
-    minOutputAmountSwap: "0", 
+    minOutputAmountSwap: "0",
 
     protocolFee: toBigIntString(protocolFee),
     gasRefund: toBigIntString(gasRefund),
@@ -588,6 +621,36 @@ async function generateWithdrawProof(withdrawData) {
     merklePath: formatMerklePath(merklePath),
     merklePathIndices: formatMerkleIndices(merklePathIndices)
   };
+
+  const expectedNullifier = mimcNullifier(
+    BigInt(circuitInputs.inputCommitment),
+    BigInt(circuitInputs.ownerPublicKey)
+  );
+  if (expectedNullifier !== circuitInputs.nullifier) {
+    circuitInputs.nullifier = expectedNullifier;
+  }
+
+  const expectedInputCommitment = mimcCommitment(
+    BigInt(circuitInputs.inputAssetID),
+    BigInt(circuitInputs.inputAmount),
+    BigInt(circuitInputs.inputBlindingFactor),
+    BigInt(circuitInputs.ownerPublicKey)
+  );
+  if (expectedInputCommitment !== circuitInputs.inputCommitment) {
+    throw new Error("Withdraw: input commitment does not match note fields (MiMC7)");
+  }
+
+  const expectedChangeCommitment = mimcCommitment(
+    BigInt(circuitInputs.outputAssetIDChange),
+    BigInt(circuitInputs.changeAmount),
+    BigInt(circuitInputs.changeBlindingFactor),
+    BigInt(circuitInputs.ownerPublicKey)
+  );
+  if (expectedChangeCommitment !== circuitInputs.outputCommitmentChange) {
+    circuitInputs.outputCommitmentChange = expectedChangeCommitment;
+  }
+
+  const publicInputsOut = swapCircuitToPublicInputs(circuitInputs);
 
   if (DEV_BYPASS_PROOFS) {
     const publicSignals = [
@@ -604,6 +667,7 @@ async function generateWithdrawProof(withdrawData) {
     return {
       proof: { a: ["0", "0"], b: [["0", "0"], ["0", "0"]], c: ["0", "0"] },
       publicSignals,
+      publicInputs: publicInputsOut,
       generationTime: 0
     };
   }
@@ -614,10 +678,11 @@ async function generateWithdrawProof(withdrawData) {
   try {
     const result = await proveWithRapidsnarkOrSnarkjs(circuitInputs, WASM_PATH, ZKEY_PATH, "joinsplit");
     recordProofStats("withdraw", result.generationTime, true);
-    return result;
+    return { ...result, publicInputs: publicInputsOut };
   } catch (error) {
     recordProofStats("withdraw", Date.now() - startTime, false);
     console.error("❌ Proof generation failed:", error.message);
+    logProofFailure("generateWithdrawProof", error);
     throw new Error(`Proof generation failed: ${error.message}`);
   }
 }

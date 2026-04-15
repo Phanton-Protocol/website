@@ -19,17 +19,37 @@ const {
   exportAll,
   saveCommitment,
   listCommitments,
-  getCommitment
+  getCommitment,
+  saveEncryptedNote,
+  getEncryptedNote,
+  listEncryptedNotesByOwner,
+  saveDepositSession,
+  getDepositSessionByIdempotencyKey,
+  getDepositSessionBySessionId,
+  saveDepositTxReceipt
 } = require("./db");
 const { mimc7 } = require("./mimc7");
+const { canonicalizeNote, noteIdFromCanonical } = require("./noteModel");
+const { encryptJsonAtRest, decryptJsonAtRest, getNotesEncryptionKey } = require("./noteCipher");
+const { buildMerklePath: buildMerklePath10, verifyMerklePath: verifyMerklePath10 } = require("./merkle10");
 const { toBigInt, toBigIntString } = require("./utils/bigint");
 const ValidatorNetwork = require("./validatorNetwork");
-const { generateSwapProof, generatePortfolioProof, getProofStats } = require("./zkProofs");
+const { generateSwapProof, generateWithdrawProof, generatePortfolioProof, getProofStats } = require("./zkProofs");
+const { assertWithdrawJoinSplitPublicInputs } = require("./withdrawValidate");
 const fheMatchingRouter = require("./fheMatchingService");
 const { registerOrderAndTryMatch, getFheMatchMode } = require("./fheMatchingService");
 const { createEnterpriseRouter } = require("./enterpriseRoutes");
 const { getSeeConfig, verifyAttestation, requireSeeForSensitiveFlow } = require("./seeGuard");
+const { logRelayerOnchainFailure, logProofFailure } = require("./relayerLog");
+const { assertNoMockRuntimeGate } = require("./noMockRuntimeGate");
+const { pushTransaction, getSnapshot } = require("./relayerActivityBuffer");
 const { computeCanonicalAlignmentWarnings } = require("./configAlignment");
+const {
+  assertRelayerRegistered,
+  sendDepositForErc20,
+  sendDepositForBnb,
+  logModule4
+} = require("./module4Deposit");
 
 const app = express();
 app.use(express.json({ limit: "2mb" }));
@@ -51,6 +71,22 @@ app.use("/enterprise", enterpriseRouter);
 
 const RATE_LIMIT_WINDOW_MS = Number(process.env.RATE_LIMIT_WINDOW_MS || 30_000);
 const RATE_LIMIT_MAX = Number(process.env.RATE_LIMIT_MAX || 120);
+const MODULE4_DEPOSIT_API_SECRET = process.env.MODULE4_DEPOSIT_API_SECRET || "";
+const MODULE4_PUBLIC_SUBMIT =
+  process.env.MODULE4_PUBLIC_SUBMIT === "true" ||
+  (process.env.NODE_ENV !== "production" && process.env.MODULE4_PUBLIC_SUBMIT !== "false");
+const MODULE4_SESSION_TTL_MS = Number(process.env.MODULE4_SESSION_TTL_MS || 15 * 60 * 1000);
+const MODULE4_RATE_WINDOW_MS = Number(process.env.MODULE4_RATE_WINDOW_MS || 60_000);
+const MODULE4_RATE_MAX = Number(process.env.MODULE4_RATE_MAX || 40);
+const MODULE4_MAX_BNB_WEI = (() => {
+  try {
+    return BigInt(process.env.MODULE4_MAX_BNB_WEI || "50000000000000000");
+  } catch {
+    return 50000000000000000n;
+  }
+})();
+const CHAINALYSIS_ENABLED = process.env.CHAINALYSIS_ENABLED === "true";
+const CHAINALYSIS_API_URL = String(process.env.CHAINALYSIS_API_URL || "").trim();
 const rlBuckets = new Map();
 function rateLimit(req, res, next) {
   const key = req.ip || req.headers["x-forwarded-for"] || "unknown";
@@ -68,6 +104,40 @@ function rateLimit(req, res, next) {
   return next();
 }
 app.use(rateLimit);
+
+const module4RlBuckets = new Map();
+function module4RateLimit(req, res, next) {
+  const key = `m4:${req.ip || req.headers["x-forwarded-for"] || "unknown"}`;
+  const now = Date.now();
+  const bucket = module4RlBuckets.get(key) || { resetAt: now + MODULE4_RATE_WINDOW_MS, count: 0 };
+  if (now > bucket.resetAt) {
+    bucket.resetAt = now + MODULE4_RATE_WINDOW_MS;
+    bucket.count = 0;
+  }
+  bucket.count += 1;
+  module4RlBuckets.set(key, bucket);
+  if (bucket.count > MODULE4_RATE_MAX) {
+    return res.status(429).json({ error: "module4_rate_limited", retryAfterMs: bucket.resetAt - now });
+  }
+  return next();
+}
+
+function requireModule4SubmitAuth(req, res, next) {
+  if (MODULE4_PUBLIC_SUBMIT) return next();
+  if (!MODULE4_DEPOSIT_API_SECRET) {
+    if (process.env.NODE_ENV === "production") {
+      return res.status(503).json({ error: "module4_submit_requires_MODULE4_DEPOSIT_API_SECRET_or_MODULE4_PUBLIC_SUBMIT" });
+    }
+    console.warn("[module4] submit allowed without auth (dev only; set MODULE4_DEPOSIT_API_SECRET for staging)");
+    return next();
+  }
+  const h = req.headers.authorization || "";
+  const token = h.startsWith("Bearer ") ? h.slice(7) : req.headers["x-module4-secret"];
+  if (token !== MODULE4_DEPOSIT_API_SECRET) {
+    return res.status(401).json({ error: "invalid_module4_auth" });
+  }
+  return next();
+}
 
 const RELAYER_ENC_PRIVATE_KEY_PEM = process.env.RELAYER_ENC_PRIVATE_KEY_PEM || "";
 let relayerEncPublicKeyPem = "";
@@ -234,11 +304,14 @@ const DEPOSIT_DOMAIN = {
 
 const INTENT_TYPES = {
   SwapIntent: [
-    { name: "nullifier", type: "bytes32" },
-    { name: "minOutputAmount", type: "uint256" },
-    { name: "protocolFee", type: "uint256" },
-    { name: "gasRefund", type: "uint256" },
+    { name: "user", type: "address" },
+    { name: "inputAssetID", type: "uint256" },
+    { name: "outputAssetID", type: "uint256" },
+    { name: "amountIn", type: "uint256" },
+    { name: "minAmountOut", type: "uint256" },
     { name: "deadline", type: "uint256" },
+    { name: "nonce", type: "uint256" },
+    { name: "nullifier", type: "bytes32" },
   ],
 };
 const DEPOSIT_TYPES = {
@@ -587,6 +660,16 @@ const WBNB_BSC_MAINNET = "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c";
 const WBNB_BSC_TESTNET = "0xae13d989dac2f0debff460ac112a837c89baa7cd";
 const PANCAKE_V2_ROUTER_BSC = "0x10ED43C718714eb63d5aA57B78B54704E256024E";
 const PANCAKE_V2_ROUTER_BSC_TESTNET = "0xD99D1c33F9fC3444f8101754aBC46c52416550D1";
+// Official Pancake V3 QuoterV2 addresses (Pancake docs, accessed 2026-04-14).
+const PANCAKE_V3_QUOTER_V2_BSC = "0xB048Bbc1Ee6b733FFfCFb9e9CeF7375518e25997";
+const PANCAKE_V3_QUOTER_V2_BSC_TESTNET = "0xbC203d7f83677c7ed3F7acEc959963E7F4ECC5C2";
+
+function getPancakeV3QuoterAddress() {
+  if (process.env.PANCAKE_V3_QUOTER_V2) return process.env.PANCAKE_V3_QUOTER_V2;
+  if (CHAIN_ID === 56) return PANCAKE_V3_QUOTER_V2_BSC;
+  if (CHAIN_ID === 97) return PANCAKE_V3_QUOTER_V2_BSC_TESTNET;
+  return "";
+}
 
 function getPancakeV2RouterAddress() {
   if (process.env.PANCAKE_V2_ROUTER) return process.env.PANCAKE_V2_ROUTER;
@@ -631,6 +714,70 @@ async function tryQuotePancakeV2Router(provider, tokenIn, tokenOut, amountInBn, 
   return { outAmount: BigInt(last.toString()), hopPath };
 }
 
+function encodeV3Path(tokenIn, tokenOut, feeTier) {
+  const inHex = ethers.getAddress(tokenIn).toLowerCase().slice(2);
+  const outHex = ethers.getAddress(tokenOut).toLowerCase().slice(2);
+  const feeHex = Number(feeTier).toString(16).padStart(6, "0");
+  return `0x${inHex}${feeHex}${outHex}`;
+}
+
+async function tryQuotePancakeV3Quoter(provider, tokenIn, tokenOut, amountInBn, feeTier = 2500, sqrtPriceLimitX96 = 0) {
+  const quoterAddr = getPancakeV3QuoterAddress();
+  if (!quoterAddr) return null;
+  const wbnb = getWbnbForChain();
+  const zero = ethers.ZeroAddress.toLowerCase();
+  const inToken = String(tokenIn || "").toLowerCase() === zero ? wbnb : tokenIn;
+  const outToken = String(tokenOut || "").toLowerCase() === zero ? wbnb : tokenOut;
+  const fee = Number(feeTier || 2500);
+  const sqrtLimit = toBigInt(sqrtPriceLimitX96 || 0);
+
+  const params = {
+    tokenIn: ethers.getAddress(inToken),
+    tokenOut: ethers.getAddress(outToken),
+    amountIn: amountInBn,
+    fee,
+    sqrtPriceLimitX96: sqrtLimit,
+  };
+  const quoterAbi = [
+    "function quoteExactInputSingle((address tokenIn,address tokenOut,uint256 amountIn,uint24 fee,uint160 sqrtPriceLimitX96) params) external returns (uint256 amountOut,uint160,uint32,uint256)",
+    "function quoteExactInputSingle((address tokenIn,address tokenOut,uint24 fee,uint256 amountIn,uint160 sqrtPriceLimitX96) params) external returns (uint256 amountOut)",
+  ];
+  const quoter = new ethers.Contract(quoterAddr, quoterAbi, provider);
+
+  let outAmount;
+  try {
+    const result = await quoter.quoteExactInputSingle(params);
+    if (Array.isArray(result)) outAmount = toBigInt(result[0]);
+    else outAmount = toBigInt(result);
+  } catch (errPrimary) {
+    // Fallback tuple ordering (some periphery builds use fee before amountIn)
+    const fallbackParams = {
+      tokenIn: ethers.getAddress(inToken),
+      tokenOut: ethers.getAddress(outToken),
+      fee,
+      amountIn: amountInBn,
+      sqrtPriceLimitX96: sqrtLimit,
+    };
+    try {
+      const result = await quoter.quoteExactInputSingle(fallbackParams);
+      if (Array.isArray(result)) outAmount = toBigInt(result[0]);
+      else outAmount = toBigInt(result);
+    } catch (_) {
+      throw errPrimary;
+    }
+  }
+
+  return {
+    outAmount,
+    tokenIn: ethers.getAddress(inToken),
+    tokenOut: ethers.getAddress(outToken),
+    feeTier: fee,
+    sqrtPriceLimitX96: sqrtLimit.toString(),
+    path: encodeV3Path(inToken, outToken, fee),
+    quoter: quoterAddr,
+  };
+}
+
 async function getDepositFeeBNBWei() {
   const wbnb = CHAIN_ID === 56 ? WBNB_BSC_MAINNET : WBNB_BSC_TESTNET;
   const chainSlug = CHAIN_ID === 56 ? "bsc" : "bsc-testnet";
@@ -653,14 +800,19 @@ const quoteSchema = z.object({
   tokenOutDecimals: z.number().int().min(0).max(36).optional(),
   slippageBps: z.number().int().min(0).max(2000).default(1000),
   chainSlug: z.string().optional(),
+  feeTier: z.number().int().optional(),
+  sqrtPriceLimitX96: z.union([z.string(), z.number()]).optional(),
+  deadlineSec: z.number().int().min(60).max(3600 * 6).optional(),
 });
 
 const intentSchema = z.object({
   userAddress: z.string(),
+  inputAssetID: z.union([z.string(), z.number()]),
+  outputAssetID: z.union([z.string(), z.number()]),
+  amountIn: z.string(),
+  minAmountOut: z.string(),
+  nonce: z.union([z.string(), z.number()]),
   nullifier: z.string(),
-  minOutputAmount: z.string(),
-  protocolFee: z.string(),
-  gasRefund: z.string(),
   deadline: z.number().int(),
 });
 
@@ -680,6 +832,7 @@ const swapSchema = z.object({
     swapParams: z.any(),
     relayer: z.string().optional(),
     encryptedPayload: z.string().optional(),
+    noteHints: z.any().optional(),
   }),
 });
 
@@ -763,6 +916,8 @@ const withdrawSchema = z.object({
     relayer: z.string().optional(),
     recipient: z.string(),
     encryptedPayload: z.string().optional(),
+    noteHints: z.any().optional(),
+    ownerAddress: z.string().optional(),
   }),
 });
 
@@ -785,6 +940,20 @@ async function processWithdrawRequestBody(body) {
     throw err;
   }
   const { withdrawData } = parsed.data;
+  try {
+    assertWithdrawJoinSplitPublicInputs(withdrawData.publicInputs);
+  } catch (e) {
+    const err = new Error(e.message || "withdraw_public_inputs_invalid");
+    err.status = 400;
+    err.code = e.code;
+    throw err;
+  }
+  if (!ethers.isAddress(withdrawData.recipient)) {
+    const err = new Error("withdraw_invalid_recipient");
+    err.status = 400;
+    throw err;
+  }
+  await screenWithdrawRecipient(withdrawData.recipient);
   return RELAYER_DRY_RUN
     ? await simulateSwap(ethers.keccak256(ethers.toUtf8Bytes(JSON.stringify(withdrawData))))
     : await submitWithdraw(withdrawData);
@@ -841,29 +1010,768 @@ async function processDepositRequestBody(body) {
   }
 }
 
+const noteFromDepositSchema = z.object({
+  txHash: z.string(),
+  ownerAddress: z.string().optional(),
+  note: z.object({
+    assetId: z.union([z.string(), z.number()]).optional(),
+    assetID: z.union([z.string(), z.number()]).optional(),
+    amount: z.union([z.string(), z.number()]),
+    blindingFactor: z.union([z.string(), z.number()]),
+    ownerPublicKey: z.union([z.string(), z.number()]),
+  }),
+}).passthrough();
+
+const depositSessionSchema = z.object({
+  idempotencyKey: z.string().min(8).max(128),
+  depositor: z.string().refine((s) => ethers.isAddress(s)),
+  mode: z.enum(["erc20", "bnb"]),
+  token: z.string().optional(),
+  amount: z.string().optional(),
+  assetId: z.union([z.string(), z.number()]),
+});
+
+const depositSubmitSchema = z.object({
+  sessionId: z.string().min(8),
+  sessionToken: z.string().min(16),
+  idempotencyKey: z.string().min(8),
+  commitment: z.string(),
+  note: z.object({
+    assetId: z.union([z.string(), z.number()]).optional(),
+    assetID: z.union([z.string(), z.number()]).optional(),
+    amount: z.union([z.string(), z.number()]),
+    blindingFactor: z.union([z.string(), z.number()]),
+    ownerPublicKey: z.union([z.string(), z.number()]),
+  }),
+});
+
+function noteAuthOwner(req) {
+  return String(req.query.ownerAddress || req.headers["x-owner-address"] || "").trim().toLowerCase();
+}
+
+async function parseDepositEventFromReceipt(txHash) {
+  if (!RPC_URL || !SHIELDED_POOL_ADDRESS) {
+    throw new Error("RPC_URL/SHIELDED_POOL_ADDRESS not configured");
+  }
+  const provider = new ethers.JsonRpcProvider(RPC_URL);
+  const receipt = await provider.getTransactionReceipt(txHash);
+  if (!receipt) throw new Error("Transaction receipt not found");
+  let depositEvt = null;
+  for (const log of receipt.logs || []) {
+    if (String(log.address || "").toLowerCase() !== String(SHIELDED_POOL_ADDRESS).toLowerCase()) continue;
+    try {
+      const parsed = poolInterface.parseLog(log);
+      if (parsed?.name === "Deposit") {
+        depositEvt = parsed;
+        break;
+      }
+    } catch (_) { }
+  }
+  if (!depositEvt) throw new Error("Deposit event not found in tx receipt");
+  return { receipt, depositEvt };
+}
+
+async function persistNoteFromDepositReceipt(txHash, noteInput, ownerAddressOverride, opts = {}) {
+  getNotesEncryptionKey();
+  const { receipt, depositEvt } = await parseDepositEventFromReceipt(txHash);
+  const onChainCommitment = String(depositEvt.args.commitment).toLowerCase();
+  const canonical = canonicalizeNote({
+    assetId: noteInput.assetId ?? noteInput.assetID ?? Number(depositEvt.args.assetID),
+    amount: noteInput.amount,
+    blindingFactor: noteInput.blindingFactor,
+    ownerPublicKey: noteInput.ownerPublicKey,
+  });
+
+  if (canonical.commitment.toLowerCase() !== onChainCommitment) {
+    const err = new Error("Note commitment mismatch with Deposit event");
+    err.code = "COMMITMENT_MISMATCH";
+    err.expectedCommitment = onChainCommitment;
+    err.providedCommitment = canonical.commitment.toLowerCase();
+    throw err;
+  }
+
+  const ownerAddress = (ownerAddressOverride || String(depositEvt.args.depositor)).toLowerCase();
+  const noteId = noteIdFromCanonical(canonical, `${String(receipt.hash).toLowerCase()}:${ownerAddress}`);
+  const encryptedPayload = encryptJsonAtRest({
+    note: canonical,
+    txHash: receipt.hash,
+    blockNumber: receipt.blockNumber,
+    depositor: String(depositEvt.args.depositor),
+    token: String(depositEvt.args.token),
+    assetId: String(depositEvt.args.assetID),
+    amount: String(depositEvt.args.amount),
+    commitmentIndex: Number(depositEvt.args.commitmentIndex),
+    storedAt: new Date().toISOString(),
+    ...(opts.module4 ? { module4: true } : {}),
+  });
+
+  saveEncryptedNote(db, noteId, ownerAddress, canonical.commitment, receipt.hash, encryptedPayload);
+  saveCommitment(db, Number(depositEvt.args.commitmentIndex), canonical.commitment, receipt.hash);
+
+  return {
+    noteId,
+    ownerAddress,
+    commitment: canonical.commitment,
+    commitmentIndex: Number(depositEvt.args.commitmentIndex),
+    txHash: receipt.hash,
+    blockNumber: receipt.blockNumber,
+    schema: canonical.schema,
+  };
+}
+
+async function persistSwapOutputNotes({ txHash, ownerAddress, noteHints, publicInputs }) {
+  if (!noteHints || typeof noteHints !== "object") return null;
+  if (!noteHints.swap || !noteHints.change) return null;
+  getNotesEncryptionKey();
+
+  const provider = new ethers.JsonRpcProvider(RPC_URL);
+  const receipt = await provider.getTransactionReceipt(txHash);
+  if (!receipt) throw new Error("Swap tx receipt not found for note persistence");
+
+  const commitmentIndices = {};
+  for (const log of receipt.logs || []) {
+    if (String(log.address || "").toLowerCase() !== String(SHIELDED_POOL_ADDRESS).toLowerCase()) continue;
+    try {
+      const parsed = poolInterface.parseLog(log);
+      if (parsed?.name === "CommitmentAdded") {
+        commitmentIndices[String(parsed.args.commitment).toLowerCase()] = Number(parsed.args.index);
+      }
+    } catch (_) {}
+  }
+
+  const swapCanonical = canonicalizeNote(noteHints.swap);
+  const changeCanonical = canonicalizeNote(noteHints.change);
+  const expectedSwap = String(publicInputs?.outputCommitmentSwap || "").toLowerCase();
+  const expectedChange = String(publicInputs?.outputCommitmentChange || "").toLowerCase();
+  if (swapCanonical.commitment.toLowerCase() !== expectedSwap) {
+    throw new Error("Swap note hint commitment mismatch with proof public input");
+  }
+  if (changeCanonical.commitment.toLowerCase() !== expectedChange) {
+    throw new Error("Change note hint commitment mismatch with proof public input");
+  }
+
+  const owner = String(ownerAddress).toLowerCase();
+  const swapNoteId = noteIdFromCanonical(swapCanonical, `${txHash.toLowerCase()}:${owner}:swap`);
+  const changeNoteId = noteIdFromCanonical(changeCanonical, `${txHash.toLowerCase()}:${owner}:change`);
+  const swapPayload = encryptJsonAtRest({
+    note: swapCanonical,
+    txHash,
+    kind: "swap_output",
+    commitmentIndex: commitmentIndices[swapCanonical.commitment.toLowerCase()] ?? null,
+    storedAt: new Date().toISOString(),
+  });
+  const changePayload = encryptJsonAtRest({
+    note: changeCanonical,
+    txHash,
+    kind: "swap_change",
+    commitmentIndex: commitmentIndices[changeCanonical.commitment.toLowerCase()] ?? null,
+    storedAt: new Date().toISOString(),
+  });
+  saveEncryptedNote(db, swapNoteId, owner, swapCanonical.commitment, txHash, swapPayload);
+  saveEncryptedNote(db, changeNoteId, owner, changeCanonical.commitment, txHash, changePayload);
+  if (commitmentIndices[swapCanonical.commitment.toLowerCase()] != null) {
+    saveCommitment(db, commitmentIndices[swapCanonical.commitment.toLowerCase()], swapCanonical.commitment, txHash);
+  }
+  if (commitmentIndices[changeCanonical.commitment.toLowerCase()] != null) {
+    saveCommitment(db, commitmentIndices[changeCanonical.commitment.toLowerCase()], changeCanonical.commitment, txHash);
+  }
+  return {
+    swapNoteId,
+    changeNoteId,
+    swapCommitmentIndex: commitmentIndices[swapCanonical.commitment.toLowerCase()] ?? null,
+    changeCommitmentIndex: commitmentIndices[changeCanonical.commitment.toLowerCase()] ?? null,
+  };
+}
+
+async function screenWithdrawRecipient(addr) {
+  if (!CHAINALYSIS_ENABLED) return { ok: true, skipped: true };
+  if (!CHAINALYSIS_API_URL) {
+    console.warn("[module6] CHAINALYSIS_ENABLED but CHAINALYSIS_API_URL unset; skipping recipient screen");
+    return { ok: true, skipped: true };
+  }
+  try {
+    const r = await axios.post(
+      CHAINALYSIS_API_URL,
+      { address: ethers.getAddress(addr) },
+      { timeout: 12_000, validateStatus: () => true }
+    );
+    if (r.status >= 400) {
+      const e = new Error(`chainalysis_http_${r.status}`);
+      e.status = 403;
+      throw e;
+    }
+    if (r.data?.blocked === true || String(r.data?.risk || "").toLowerCase() === "severe") {
+      const e = new Error("chainalysis_recipient_not_allowed");
+      e.status = 403;
+      throw e;
+    }
+    return { ok: true };
+  } catch (e) {
+    if (e.status) throw e;
+    console.warn("[module6] Chainalysis request failed (non-fatal):", e.message || e);
+    return { ok: true, warn: String(e.message || e) };
+  }
+}
+
+async function persistWithdrawChangeNote({ txHash, ownerAddress, noteHints, publicInputs }) {
+  if (!noteHints || typeof noteHints !== "object" || !noteHints.change) return null;
+  getNotesEncryptionKey();
+  const provider = new ethers.JsonRpcProvider(RPC_URL);
+  const receipt = await provider.getTransactionReceipt(txHash);
+  if (!receipt) throw new Error("Withdraw tx receipt not found for note persistence");
+  const commitmentIndices = {};
+  for (const log of receipt.logs || []) {
+    if (String(log.address || "").toLowerCase() !== String(SHIELDED_POOL_ADDRESS).toLowerCase()) continue;
+    try {
+      const parsed = poolInterface.parseLog(log);
+      if (parsed?.name === "CommitmentAdded") {
+        commitmentIndices[String(parsed.args.commitment).toLowerCase()] = Number(parsed.args.index);
+      }
+    } catch (_) {}
+  }
+  const changeCanonical = canonicalizeNote(noteHints.change);
+  const expectedChange = String(publicInputs?.outputCommitmentChange || "").toLowerCase();
+  if (changeCanonical.commitment.toLowerCase() !== expectedChange) {
+    throw new Error("Withdraw change note hint commitment mismatch with proof public input");
+  }
+  const owner = String(ownerAddress).toLowerCase();
+  const changeNoteId = noteIdFromCanonical(changeCanonical, `${txHash.toLowerCase()}:${owner}:withdraw_change`);
+  const changePayload = encryptJsonAtRest({
+    note: changeCanonical,
+    txHash,
+    kind: "withdraw_change",
+    commitmentIndex: commitmentIndices[changeCanonical.commitment.toLowerCase()] ?? null,
+    storedAt: new Date().toISOString(),
+  });
+  saveEncryptedNote(db, changeNoteId, owner, changeCanonical.commitment, txHash, changePayload);
+  if (commitmentIndices[changeCanonical.commitment.toLowerCase()] != null) {
+    saveCommitment(db, commitmentIndices[changeCanonical.commitment.toLowerCase()], changeCanonical.commitment, txHash);
+  }
+  return { changeNoteId, changeCommitmentIndex: commitmentIndices[changeCanonical.commitment.toLowerCase()] ?? null };
+}
+
+app.post("/notes/from-deposit", async (req, res) => {
+  const parsed = noteFromDepositSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Invalid request", details: parsed.error.flatten() });
+  try {
+    const { txHash, note } = parsed.data;
+    const ownerAddress = parsed.data.ownerAddress
+      ? String(parsed.data.ownerAddress).toLowerCase()
+      : undefined;
+    const out = await persistNoteFromDepositReceipt(txHash, note, ownerAddress);
+    return res.json({
+      ok: true,
+      ...out,
+    });
+  } catch (err) {
+    if (err.code === "COMMITMENT_MISMATCH") {
+      return res.status(400).json({
+        error: err.message,
+        expectedCommitment: err.expectedCommitment,
+        providedCommitment: err.providedCommitment,
+      });
+    }
+    return res.status(400).json({ error: err.message || "Failed to store note from deposit" });
+  }
+});
+
+app.post("/relayer/deposit/session", module4RateLimit, async (req, res) => {
+  const parsed = depositSessionSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Invalid request", details: parsed.error.flatten() });
+  const { idempotencyKey, depositor, mode, assetId } = parsed.data;
+  const token = parsed.data.token ? String(parsed.data.token) : "";
+  const amount = parsed.data.amount != null ? String(parsed.data.amount) : "";
+
+  if (mode === "erc20") {
+    if (!token || !ethers.isAddress(token) || token === ethers.ZeroAddress) {
+      return res.status(400).json({ error: "erc20 mode requires token (non-zero address)" });
+    }
+    if (!amount || !/^\d+$/.test(amount) || BigInt(amount) <= 0n) {
+      return res.status(400).json({ error: "erc20 mode requires positive integer amount (token wei)" });
+    }
+  } else {
+    if (!amount || !/^\d+$/.test(amount) || BigInt(amount) <= 0n) {
+      return res.status(400).json({ error: "bnb mode requires positive integer amount (wei for depositForBNB)" });
+    }
+    if (BigInt(amount) > MODULE4_MAX_BNB_WEI) {
+      return res.status(400).json({
+        error: "bnb amount exceeds MODULE4_MAX_BNB_WEI cap",
+        maxWei: MODULE4_MAX_BNB_WEI.toString(),
+      });
+    }
+  }
+
+  const now = Date.now();
+  const existing = getDepositSessionByIdempotencyKey(db, idempotencyKey);
+  if (existing) {
+    if (existing.status === "submitted") {
+      return res.status(409).json({
+        error: "idempotency_key_already_completed",
+        sessionId: existing.sessionId,
+        txHash: existing.payload?.txHash || null,
+        noteId: existing.payload?.noteId || null,
+      });
+    }
+    if (existing.status === "pending" && now - existing.createdAt < MODULE4_SESSION_TTL_MS) {
+      logModule4("deposit.session.reuse", { idempotencyKey, sessionId: existing.sessionId });
+      return res.json({
+        ok: true,
+        sessionId: existing.sessionId,
+        sessionToken: existing.sessionToken,
+        depositor: existing.depositor.toLowerCase(),
+        mode: existing.mode,
+        assetId: existing.assetId,
+        expiresAt: existing.createdAt + MODULE4_SESSION_TTL_MS,
+        flow: "A",
+        instructions:
+          existing.mode === "erc20"
+            ? {
+                summary: "User approves ShieldedPool for token; relayer calls depositFor (no user ZK proof).",
+                approveSpender: SHIELDED_POOL_ADDRESS || null,
+                token: existing.token,
+                amount: existing.amount,
+              }
+            : {
+                summary: "Relayer sends BNB via depositForBNB; cap enforced by MODULE4_MAX_BNB_WEI.",
+                valueWei: existing.amount,
+              },
+      });
+    }
+  }
+
+  const sessionId = crypto.randomUUID();
+  const sessionToken = crypto.randomBytes(32).toString("hex");
+  const row = {
+    sessionId,
+    sessionToken,
+    idempotencyKey,
+    depositor: depositor.toLowerCase(),
+    mode,
+    token: mode === "erc20" ? ethers.getAddress(token) : null,
+    amount,
+    assetId: String(assetId),
+    status: "pending",
+    payload: {},
+    createdAt: now,
+    updatedAt: now,
+  };
+  saveDepositSession(db, row);
+  logModule4("deposit.session.created", { sessionId, mode, depositor: row.depositor });
+
+  return res.json({
+    ok: true,
+    sessionId,
+    sessionToken,
+    depositor: row.depositor,
+    mode,
+    assetId: row.assetId,
+    expiresAt: now + MODULE4_SESSION_TTL_MS,
+    flow: "A",
+    primaryMvpFlow: "erc20_user_approves_pool_relayer_depositFor",
+    instructions:
+      mode === "erc20"
+        ? {
+            summary:
+              "Flow A (MVP): user approves ShieldedPool as spender for token amount; relayer wallet calls depositFor(depositor, token, amount, commitment, assetID). User never builds ZK proofs.",
+            approveSpender: SHIELDED_POOL_ADDRESS || null,
+            token: row.token,
+            amount: row.amount,
+          }
+        : {
+            summary:
+              "BNB: relayer pays msg.value in depositForBNB (relayer must be registered). User reimburses relayer off-chain or via separate payment — abuse limited by MODULE4_MAX_BNB_WEI and rate limits.",
+            valueWei: row.amount,
+            maxWeiCap: MODULE4_MAX_BNB_WEI.toString(),
+          },
+  });
+});
+
+app.post("/relayer/deposit/submit", requireModule4SubmitAuth, module4RateLimit, async (req, res) => {
+  const parsed = depositSubmitSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Invalid request", details: parsed.error.flatten() });
+
+  if (RELAYER_DRY_RUN) {
+    return res.status(503).json({
+      error: "relayer_dry_run_blocks_module4",
+      hint: "Set RELAYER_DRY_RUN=false and configure RPC + RELAYER_PRIVATE_KEY for real deposits.",
+    });
+  }
+  if (!RELAYER_PRIVATE_KEY || !SHIELDED_POOL_ADDRESS || !RPC_URL) {
+    return res.status(503).json({ error: "RELAYER_PRIVATE_KEY, SHIELDED_POOL_ADDRESS, and RPC_URL are required" });
+  }
+
+  const { sessionId, sessionToken, idempotencyKey, commitment, note } = parsed.data;
+  const session = getDepositSessionBySessionId(db, sessionId);
+  if (!session) return res.status(404).json({ error: "session_not_found" });
+  if (session.sessionToken !== sessionToken) return res.status(403).json({ error: "invalid_session_token" });
+  if (session.idempotencyKey !== idempotencyKey) return res.status(400).json({ error: "idempotency_mismatch" });
+  if (session.status !== "pending") {
+    return res.status(409).json({ error: "session_not_pending", status: session.status });
+  }
+  if (Date.now() - session.createdAt > MODULE4_SESSION_TTL_MS) {
+    return res.status(410).json({ error: "session_expired" });
+  }
+
+  const depositor = session.depositor.toLowerCase();
+  if (String(note.amount) !== String(session.amount)) {
+    return res.status(400).json({ error: "note.amount must match session amount" });
+  }
+  const aid = String(note.assetId ?? note.assetID ?? session.assetId);
+  if (String(session.assetId) !== aid) {
+    return res.status(400).json({ error: "note assetId must match session assetId" });
+  }
+
+  const noteCommitment = canonicalizeNote({
+    assetId: aid,
+    amount: note.amount,
+    blindingFactor: note.blindingFactor,
+    ownerPublicKey: note.ownerPublicKey,
+  }).commitment.toLowerCase();
+  if (noteCommitment !== String(commitment).toLowerCase()) {
+    return res.status(400).json({ error: "commitment does not match canonical note fields" });
+  }
+
+  const provider = new ethers.JsonRpcProvider(RPC_URL);
+  const wallet = new ethers.Wallet(RELAYER_PRIVATE_KEY, provider);
+
+  try {
+    await assertRelayerRegistered(provider, SHIELDED_POOL_ADDRESS, wallet.address);
+  } catch (e) {
+    logModule4("deposit.submit.relayer_not_registered", { address: wallet.address, message: e.message });
+    return res.status(503).json({ error: e.message, code: e.code || "RELAYER_NOT_REGISTERED" });
+  }
+
+  let tx;
+  try {
+    if (session.mode === "erc20") {
+      tx = await sendDepositForErc20(wallet, SHIELDED_POOL_ADDRESS, {
+        depositor,
+        token: session.token,
+        amount: session.amount,
+        commitment,
+        assetID: session.assetId,
+      });
+    } else {
+      const valueWei = BigInt(session.amount);
+      tx = await sendDepositForBnb(wallet, SHIELDED_POOL_ADDRESS, {
+        depositor,
+        commitment,
+        assetID: session.assetId,
+        valueWei,
+      });
+    }
+  } catch (e) {
+    logModule4("deposit.submit.tx_failed", { message: e?.shortMessage || e?.message });
+    return res.status(400).json({ error: e?.shortMessage || e?.message || "deposit tx failed" });
+  }
+
+  let receipt;
+  try {
+    receipt = await tx.wait();
+  } catch (e) {
+    logModule4("deposit.submit.receipt_failed", { message: e?.message });
+    return res.status(500).json({ error: e?.message || "receipt wait failed" });
+  }
+
+  const txHash = receipt.hash;
+  try {
+    const receiptJson = JSON.stringify({
+      hash: receipt.hash,
+      blockNumber: receipt.blockNumber,
+      status: receipt.status,
+      gasUsed: receipt.gasUsed != null ? String(receipt.gasUsed) : null,
+    });
+    saveDepositTxReceipt(db, {
+      id: crypto.randomUUID(),
+      sessionId,
+      txHash,
+      receiptJson,
+    });
+  } catch (e) {
+    logModule4("deposit.submit.receipt_persist_failed", { message: e?.message });
+  }
+
+  let noteOut;
+  try {
+    noteOut = await persistNoteFromDepositReceipt(txHash, note, depositor, { module4: true });
+  } catch (e) {
+    if (e.code === "COMMITMENT_MISMATCH") {
+      return res.status(500).json({
+        error: "on_chain_commitment_mismatch_after_tx",
+        txHash,
+        expectedCommitment: e.expectedCommitment,
+        providedCommitment: e.providedCommitment,
+      });
+    }
+    return res.status(500).json({ error: e.message || "note persist failed", txHash });
+  }
+
+  const mergedPayload = {
+    ...session.payload,
+    txHash,
+    noteId: noteOut.noteId,
+    commitmentIndex: noteOut.commitmentIndex,
+  };
+  saveDepositSession(db, {
+    sessionId: session.sessionId,
+    sessionToken: session.sessionToken,
+    idempotencyKey: session.idempotencyKey,
+    depositor: session.depositor,
+    mode: session.mode,
+    token: session.token,
+    amount: session.amount,
+    assetId: session.assetId,
+    status: "submitted",
+    payload: mergedPayload,
+    createdAt: session.createdAt,
+    updatedAt: Date.now(),
+  });
+
+  logModule4("deposit.submit.ok", {
+    sessionId,
+    txHash,
+    commitmentIndex: noteOut.commitmentIndex,
+    noteId: noteOut.noteId,
+  });
+
+  return res.json({
+    ok: true,
+    txHash,
+    commitmentIndex: noteOut.commitmentIndex,
+    noteId: noteOut.noteId,
+    ownerAddress: noteOut.ownerAddress,
+    commitment: noteOut.commitment,
+    blockNumber: noteOut.blockNumber,
+    flow: "A",
+  });
+});
+
+app.get("/relayer/deposit/status", (req, res) => {
+  const sessionId = String(req.query.sessionId || "").trim();
+  const idempotencyKey = String(req.query.idempotencyKey || "").trim();
+  if (!sessionId && !idempotencyKey) {
+    return res.status(400).json({ error: "sessionId or idempotencyKey query required" });
+  }
+  try {
+    const row = sessionId
+      ? getDepositSessionBySessionId(db, sessionId)
+      : getDepositSessionByIdempotencyKey(db, idempotencyKey);
+    if (!row) return res.status(404).json({ error: "not_found" });
+    return res.json({
+      sessionId: row.sessionId,
+      status: row.status,
+      depositor: row.depositor,
+      mode: row.mode,
+      assetId: row.assetId,
+      expiresAt: row.createdAt + MODULE4_SESSION_TTL_MS,
+      txHash: row.payload?.txHash || null,
+      noteId: row.payload?.noteId || null,
+      commitmentIndex: row.payload?.commitmentIndex ?? null,
+    });
+  } catch (e) {
+    return res.status(500).json({ error: e.message || "status failed" });
+  }
+});
+
+app.get("/notes/:noteId", async (req, res) => {
+  try {
+    const owner = noteAuthOwner(req);
+    if (!owner) {
+      return res.status(401).json({ error: "ownerAddress is required (query or x-owner-address header)" });
+    }
+    const row = getEncryptedNote(db, req.params.noteId);
+    if (!row) return res.status(404).json({ error: "Note not found" });
+    if (String(row.ownerAddress).toLowerCase() !== owner) {
+      return res.status(403).json({ error: "Note does not belong to ownerAddress" });
+    }
+    const data = decryptJsonAtRest(row.payloadEnc);
+    return res.json({
+      noteId: row.noteId,
+      ownerAddress: row.ownerAddress,
+      commitment: row.commitment,
+      txHash: row.txHash,
+      createdAt: row.createdAt,
+      note: data.note,
+      metadata: {
+        commitmentIndex: data.commitmentIndex,
+        blockNumber: data.blockNumber,
+        token: data.token,
+      },
+    });
+  } catch (err) {
+    return res.status(400).json({ error: err.message || "Failed to load note" });
+  }
+});
+
+app.get("/notes", (req, res) => {
+  try {
+    const owner = noteAuthOwner(req);
+    if (!owner) {
+      return res.status(401).json({ error: "ownerAddress is required (query or x-owner-address header)" });
+    }
+    const limit = Math.min(Number(req.query.limit || 50), 200);
+    const rows = listEncryptedNotesByOwner(db, owner, Number.isFinite(limit) ? limit : 50);
+    const notes = rows.map((r) => {
+      let note = null;
+      try {
+        note = decryptJsonAtRest(r.payloadEnc).note;
+      } catch (_) {
+        note = null;
+      }
+      return {
+        noteId: r.noteId,
+        commitment: r.commitment,
+        txHash: r.txHash,
+        createdAt: r.createdAt,
+        note,
+      };
+    });
+    return res.json({ ownerAddress: owner, count: notes.length, notes });
+  } catch (err) {
+    return res.status(400).json({ error: err.message || "Failed to list notes" });
+  }
+});
+
+app.get("/notes/threat-model", (_req, res) => {
+  res.json({
+    scope: "MVP testnet only",
+    atRestEncryption: "AES-256-GCM using NOTES_ENCRYPTION_KEY_HEX or NOTES_ENCRYPTION_KEY_FILE",
+    auth: "Minimal ownerAddress gate via query/header; not strong authentication",
+    risks: [
+      "If server key is leaked, encrypted note payloads are decryptable",
+      "ownerAddress-only gate is weak and should be replaced with signed auth/session",
+      "No tenant isolation beyond ownerAddress filtering",
+    ],
+    productionRecommendation: [
+      "Use KMS-managed key (rotation + access policy)",
+      "Require wallet signature auth (nonce challenge) before note read/list",
+      "Add audit logs and per-tenant access controls",
+    ],
+  });
+});
+
+app.get("/merkle/index/:index", async (req, res) => {
+  try {
+    const index = Number(req.params.index);
+    if (!Number.isInteger(index) || index < 0) return res.status(400).json({ error: "Invalid index" });
+    if (!RPC_URL || !SHIELDED_POOL_ADDRESS) {
+      return res.status(500).json({ error: "RPC_URL/SHIELDED_POOL_ADDRESS not configured" });
+    }
+    const provider = new ethers.JsonRpcProvider(RPC_URL);
+    const abi = [
+      "function commitmentCount() view returns (uint256)",
+      "function commitments(uint256) view returns (bytes32)",
+      "function merkleRoot() view returns (bytes32)"
+    ];
+    const contract = new ethers.Contract(SHIELDED_POOL_ADDRESS, abi, provider);
+    const count = Number(await contract.commitmentCount());
+    if (index >= count) return res.status(404).json({ error: `Index ${index} out of range`, commitmentCount: count });
+    const commitments = [];
+    for (let i = 0; i < count; i += 1) commitments.push(await contract.commitments(i));
+    const rootOnChain = await contract.merkleRoot();
+    const commitment = commitments[index];
+    const { path, indices, root } = buildMerklePath10(commitments, index);
+    const ok = verifyMerklePath10(commitment, path, indices, rootOnChain);
+    return res.json({
+      index,
+      commitment,
+      merkleRoot: root,
+      onChainRoot: rootOnChain,
+      merklePath: path,
+      merklePathIndices: indices,
+      verified: ok,
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || "merkle index failed" });
+  }
+});
+
+app.get("/merkle/self-check/:commitment", async (req, res) => {
+  try {
+    const commitment = String(req.params.commitment);
+    if (!RPC_URL || !SHIELDED_POOL_ADDRESS) {
+      return res.status(500).json({ error: "RPC_URL/SHIELDED_POOL_ADDRESS not configured" });
+    }
+    const provider = new ethers.JsonRpcProvider(RPC_URL);
+    const abi = [
+      "function commitmentCount() view returns (uint256)",
+      "function commitments(uint256) view returns (bytes32)",
+      "function merkleRoot() view returns (bytes32)"
+    ];
+    const contract = new ethers.Contract(SHIELDED_POOL_ADDRESS, abi, provider);
+    const count = Number(await contract.commitmentCount());
+    const commitments = [];
+    for (let i = 0; i < count; i += 1) commitments.push(await contract.commitments(i));
+    const targetIndex = commitments.findIndex((c) => String(c).toLowerCase() === commitment.toLowerCase());
+    if (targetIndex < 0) return res.status(404).json({ error: "Commitment not found" });
+    const onChainRoot = await contract.merkleRoot();
+    const { path, indices, root } = buildMerklePath10(commitments, targetIndex);
+    const verified = verifyMerklePath10(commitment, path, indices, onChainRoot);
+    return res.json({
+      commitment,
+      index: targetIndex,
+      localRoot: root,
+      onChainRoot,
+      verified,
+      merklePath: path,
+      merklePathIndices: indices,
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || "merkle self-check failed" });
+  }
+});
+
 app.get("/", (req, res) => {
   res.json({
     name: "Phantom Protocol Relayer API",
     health: "/health",
+    relayerDashboard: "/relayer/dashboard",
     docs: "See DEVELOPER_SPEC.md or WHITEPAPER.md for endpoints (quote, intent, swap, withdraw, relayer, staking, etc.)",
   });
 });
 
 app.get("/health", (req, res) => {
   const cfg = getRuntimeConfig();
+  let notesEncryptionConfigured = true;
+  try {
+    getNotesEncryptionKey();
+  } catch (_) {
+    notesEncryptionConfigured = false;
+  }
   res.json({
     ok: true,
     uptimeSec: Math.floor(process.uptime()),
     mode: cfg.mode,
     chainId: cfg.chainId,
     poolConfigured: !!cfg.addresses?.shieldedPool,
+    notesEncryptionConfigured,
     missingForTx: cfg.missingForTx,
     configWarningCount: Array.isArray(cfg.configWarnings) ? cfg.configWarnings.length : 0,
+    module4: {
+      sessionTtlMs: MODULE4_SESSION_TTL_MS,
+      publicSubmit: MODULE4_PUBLIC_SUBMIT,
+      relayerDryRunBlocks: RELAYER_DRY_RUN,
+      ready:
+        !!(RELAYER_PRIVATE_KEY && SHIELDED_POOL_ADDRESS && RPC_URL) && !RELAYER_DRY_RUN,
+    },
+    module6Withdraw: {
+      chainalysisEnabled: CHAINALYSIS_ENABLED,
+      chainalysisApiConfigured: !!CHAINALYSIS_API_URL,
+      endpoints: ["/withdraw/generate-proof", "/withdraw", "/withdraw/encrypted"],
+    },
+    module7Hardening: {
+      deploymentTier: String(process.env.PHANTOM_DEPLOYMENT_TIER || "").trim() || "unset",
+      noMockGateSkipped: process.env.PHANTOM_SKIP_NO_MOCK_GATE === "true",
+      mockFingerprintFile: "config/module7-mock-bytecode-hashes.json",
+    },
   });
 });
 
 app.get("/config", (req, res) => {
   const cfg = getRuntimeConfig();
+  const notesKeySource = process.env.NOTES_ENCRYPTION_KEY_HEX
+    ? "env:NOTES_ENCRYPTION_KEY_HEX"
+    : (process.env.NOTES_ENCRYPTION_KEY_FILE ? "file:NOTES_ENCRYPTION_KEY_FILE" : "missing");
   res.json({
     mode: cfg.mode,
     chainId: cfg.chainId,
@@ -876,6 +1784,29 @@ app.get("/config", (req, res) => {
     configFile: cfg.configFile,
     canonicalProfile: cfg.canonicalProfile,
     configWarnings: cfg.configWarnings || [],
+    notesAtRest: {
+      encryption: "AES-256-GCM",
+      keySource: notesKeySource,
+      authModel: "minimal_owner_address_gate",
+    },
+    module4RelayerDeposit: {
+      sessionTtlMs: MODULE4_SESSION_TTL_MS,
+      publicSubmit: MODULE4_PUBLIC_SUBMIT,
+      maxBnbWei: MODULE4_MAX_BNB_WEI.toString(),
+      endpoints: ["/relayer/deposit/session", "/relayer/deposit/submit", "/relayer/deposit/status"],
+    },
+    module5QuoteConfig: {
+      pancakeV3QuoterV2: getPancakeV3QuoterAddress() || "missing",
+      pancakeV3DefaultFeeTier: Number(process.env.PANCAKE_V3_DEFAULT_FEE_TIER || 2500),
+      pancakeV2RouterFallback: getPancakeV2RouterAddress() || "missing",
+      executionPath: "relayer -> shieldedSwapJoinSplit -> ShieldedPool + adaptor",
+    },
+    module6Withdraw: {
+      chainalysisEnabled: CHAINALYSIS_ENABLED,
+      chainalysisApiUrlSet: !!CHAINALYSIS_API_URL,
+      feePolicy: "on_chain_oracle_floor_matches_ShieldedPool_shieldedWithdraw (see MODULE6-WITHDRAW.md)",
+      endpoints: ["/withdraw/generate-proof", "/withdraw", "/withdraw/encrypted"],
+    },
   });
 });
 
@@ -951,6 +1882,8 @@ async function attachQuoteExecutionHints(payload, slippageBps) {
   let routeDescription;
   if (src === "swap_adaptor") {
     routeDescription = "Shielded pool → swap adaptor (on-chain quote; same path as adaptor execution)";
+  } else if (src === "pancake_v3_quoter_v2") {
+    routeDescription = "Quote: PancakeSwap V3 QuoterV2 (official testnet/mainnet addresses). Execution: relayer submits shieldedSwapJoinSplit via ShieldedPool.";
   } else if (src === "pancake_v2_router") {
     routeDescription = "Quote: PancakeSwap V2 Router getAmountsOut (on-chain). Execution: relayer submits shielded pool tx.";
   } else if (src === "dex_oracle") {
@@ -979,7 +1912,52 @@ app.post("/quote", async (req, res) => {
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.flatten() });
   }
-  const { tokenIn, tokenOut, amountIn, tokenInDecimals, tokenOutDecimals, slippageBps, chainSlug } = parsed.data;
+  const { tokenIn, tokenOut, amountIn, tokenInDecimals, tokenOutDecimals, slippageBps, chainSlug, feeTier, sqrtPriceLimitX96, deadlineSec } = parsed.data;
+
+  if (RPC_URL) {
+    try {
+      const provider = new ethers.JsonRpcProvider(RPC_URL);
+      const amountInBn = parseAmount(amountIn);
+      const v3 = await tryQuotePancakeV3Quoter(
+        provider,
+        tokenIn,
+        tokenOut,
+        amountInBn,
+        feeTier || Number(process.env.PANCAKE_V3_DEFAULT_FEE_TIER || 2500),
+        sqrtPriceLimitX96 || 0
+      );
+      if (v3) {
+        const minOut = (v3.outAmount * BigInt(10000 - slippageBps)) / 10000n;
+        const payload = {
+          quoteSource: "pancake_v3_quoter_v2",
+          quoteVersion: "pancake-v3-quoter-v2",
+          amountOut: v3.outAmount.toString(),
+          minAmountOut: minOut.toString(),
+          priceIn: "0",
+          priceOut: "0",
+          quotePath: [v3.tokenIn.toLowerCase(), v3.tokenOut.toLowerCase()],
+          routeParams: {
+            feeTier: Number(v3.feeTier),
+            sqrtPriceLimitX96: String(v3.sqrtPriceLimitX96),
+            path: v3.path,
+            deadlineSec: Number(deadlineSec || 900),
+          },
+          quoterAddress: v3.quoter,
+          fees: {
+            oracleFee: "0",
+            swapFee: "0",
+            totalFee: "0",
+            oracleFeeUsd: "0"
+          }
+        };
+        const enriched = await attachQuoteExecutionHints(payload, slippageBps);
+        saveQuote(db, ethers.keccak256(ethers.toUtf8Bytes(JSON.stringify(enriched))), null, enriched);
+        return res.json(enriched);
+      }
+    } catch (e) {
+      console.warn("Pancake V3 quoter quote failed, falling back:", e.message);
+    }
+  }
 
   if (SWAP_ADAPTOR_ADDRESS && RPC_URL) {
     try {
@@ -1134,7 +2112,16 @@ app.post("/intent", async (req, res) => {
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.flatten() });
   }
-  const payload = parsed.data;
+  const payload = {
+    userAddress: ethers.getAddress(parsed.data.userAddress),
+    inputAssetID: Number(parsed.data.inputAssetID),
+    outputAssetID: Number(parsed.data.outputAssetID),
+    amountIn: String(parsed.data.amountIn),
+    minAmountOut: String(parsed.data.minAmountOut),
+    nonce: String(parsed.data.nonce),
+    nullifier: parsed.data.nullifier,
+    deadline: Number(parsed.data.deadline),
+  };
   const intentId = ethers.keccak256(
     ethers.toUtf8Bytes(JSON.stringify({ ...payload, t: Date.now() }))
   );
@@ -1153,12 +2140,12 @@ async function processSwapRequestBody(body) {
   }
 
   const { intentId, intent, intentSig, swapData } = parsed.data;
-  if (intent.deadline < Math.floor(Date.now() / 1000)) {
+  if (Number(intent.deadline) < Math.floor(Date.now() / 1000)) {
     const err = new Error("Intent expired");
     err.status = 400;
     throw err;
   }
-  if (!consumeReplayKey(`swap_intent:${intent.nullifier}`)) {
+  if (!consumeReplayKey(`swap_intent:${String(intent.nullifier).toLowerCase()}:${String(intent.nonce)}`)) {
     const err = new Error("Intent already processed or replay detected");
     err.status = 409;
     throw err;
@@ -1170,24 +2157,63 @@ async function processSwapRequestBody(body) {
     throw err;
   }
 
-  const signerAddr = ethers.verifyTypedData(INTENT_DOMAIN, INTENT_TYPES, intent, intentSig);
-  if (signerAddr.toLowerCase() !== intent.userAddress.toLowerCase()) {
+  const typedIntent = {
+    user: ethers.getAddress(intent.userAddress),
+    inputAssetID: BigInt(intent.inputAssetID),
+    outputAssetID: BigInt(intent.outputAssetID),
+    amountIn: BigInt(intent.amountIn),
+    minAmountOut: BigInt(intent.minAmountOut),
+    deadline: BigInt(intent.deadline),
+    nonce: BigInt(intent.nonce),
+    nullifier: intent.nullifier,
+  };
+  const signerAddr = ethers.verifyTypedData(INTENT_DOMAIN, INTENT_TYPES, typedIntent, intentSig);
+  if (signerAddr.toLowerCase() !== String(intent.userAddress).toLowerCase()) {
     const err = new Error("Invalid intent signature");
     err.status = 400;
     throw err;
   }
+  const pi = swapData?.publicInputs || {};
+  if (String(pi.outputAssetIDSwap) !== String(intent.outputAssetID) || String(pi.inputAssetID) !== String(intent.inputAssetID)) {
+    const err = new Error("Intent asset IDs do not match swap public inputs");
+    err.status = 400;
+    throw err;
+  }
+  if (toBigInt(pi.swapAmount || 0) !== toBigInt(intent.amountIn || 0)) {
+    const err = new Error("Intent amountIn must match swap publicInputs.swapAmount");
+    err.status = 400;
+    throw err;
+  }
+  if (toBigInt(pi.minOutputAmountSwap || 0) !== toBigInt(intent.minAmountOut || 0)) {
+    const err = new Error("Intent minAmountOut must match swap publicInputs.minOutputAmountSwap");
+    err.status = 400;
+    throw err;
+  }
+  if (toBigInt(swapData?.swapParams?.minAmountOut || 0) !== toBigInt(intent.minAmountOut || 0)) {
+    const err = new Error("Intent minAmountOut must match swapParams.minAmountOut");
+    err.status = 400;
+    throw err;
+  }
+  swapData.commitment = ethers.keccak256(
+    ethers.AbiCoder.defaultAbiCoder().encode(
+      ["bytes32", "uint256", "uint256", "uint256", "uint256", "uint256"],
+      [intent.nullifier, intent.inputAssetID, intent.outputAssetID, intent.amountIn, intent.deadline, intent.nonce]
+    )
+  );
+  swapData.deadline = Number(intent.deadline);
+  swapData.nonce = BigInt(intent.nonce).toString();
   let internalFheMatch = null;
   try {
-    const pi = swapData?.publicInputs || {};
+    const piForFhe = swapData?.publicInputs || {};
     const enc = swapData?.encryptedPayload;
-    if (enc && enc !== "0x" && enc.length > 10 && pi.inputAssetID != null && pi.outputAssetIDSwap != null) {
+    if (enc && enc !== "0x" && enc.length > 10 && piForFhe.inputAssetID != null && piForFhe.outputAssetIDSwap != null) {
       const coder = ethers.AbiCoder.defaultAbiCoder();
       const [fheEncryptedInputAmount, fheEncryptedMinOutput] = coder.decode(["bytes", "bytes"], enc);
       const reg = await registerOrderAndTryMatch({
         fheEncryptedInputAmount: ethers.hexlify(fheEncryptedInputAmount),
         fheEncryptedMinOutput: ethers.hexlify(fheEncryptedMinOutput),
-        inputAssetID: pi.inputAssetID,
-        outputAssetID: pi.outputAssetIDSwap,
+        inputAssetID: piForFhe.inputAssetID,
+        outputAssetID: piForFhe.outputAssetIDSwap,
       });
       if (reg.matched && reg.matchResult) {
         internalFheMatch = {
@@ -1206,6 +2232,19 @@ async function processSwapRequestBody(body) {
     ? await simulateSwap(intentId)
     : await submitSwap(swapData);
   if (internalFheMatch) txResult.internalFheMatch = internalFheMatch;
+  if (!RELAYER_DRY_RUN && txResult?.txHash) {
+    try {
+      const persisted = await persistSwapOutputNotes({
+        txHash: txResult.txHash,
+        ownerAddress: intent.userAddress,
+        noteHints: swapData.noteHints,
+        publicInputs: swapData.publicInputs,
+      });
+      if (persisted) txResult.module3Notes = persisted;
+    } catch (e) {
+      txResult.module3NotesWarning = e.message || String(e);
+    }
+  }
 
   const receipt = buildReceipt(intentId, swapData, txResult);
   receipts.set(intentId, receipt);
@@ -1217,7 +2256,7 @@ async function processSwapRequestBody(body) {
     swapOutput: {
       amount: receipt.outputAmountSwap || "0",
       assetId: receipt.outputAssetIdSwap || 0,
-      minAmount: intent.minOutputAmount,
+      minAmount: intent.minAmountOut,
     },
     commitments: {
       swap: receipt.outputCommitmentSwap || ethers.ZeroHash,
@@ -1463,6 +2502,36 @@ app.get("/staking/balance", async (req, res) => {
 app.get("/relayer/proof-stats", (req, res) => {
   try {
     res.json(getProofStats());
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/relayer/dashboard", (req, res) => {
+  try {
+    const activity = getSnapshot();
+    res.json({
+      uptimeSec: Math.floor(process.uptime()),
+      rateLimit: {
+        defaultWindowMs: RATE_LIMIT_WINDOW_MS,
+        defaultMaxPerWindow: RATE_LIMIT_MAX,
+        module4WindowMs: MODULE4_RATE_WINDOW_MS,
+        module4MaxPerWindow: MODULE4_RATE_MAX
+      },
+      fees: {
+        dexSwapFeeBps: RUNTIME_PARAMS.fees.dexSwapFeeBps,
+        internalMatchFeeBps: RUNTIME_PARAMS.fees.internalMatchFeeBps,
+        depositFeeUsdE8: RUNTIME_PARAMS.fees.depositFeeUsdE8.toString(),
+        oracleFeeFloorUsdE8: RUNTIME_PARAMS.fees.oracleFeeFloorUsdE8.toString(),
+        oracleFeeRateBps: RUNTIME_PARAMS.fees.oracleFeeRateBps
+      },
+      documentation: {
+        operatorRunbook: "RUNBOOK.md (repo root)",
+        parametersEndpoint: "/parameters",
+        configEndpoint: "/config"
+      },
+      ...activity
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -1977,6 +3046,47 @@ app.post("/swap/generate-proof", async (req, res) => {
   }
 });
 
+const withdrawGenerateProofSchema = z.object({
+  inputNote: z.object({
+    assetID: z.union([z.string(), z.number()]),
+    amount: z.union([z.string(), z.number()]),
+    blindingFactor: z.string(),
+    ownerPublicKey: z.string(),
+    nullifier: z.string(),
+    commitment: z.string(),
+  }),
+  outputNoteChange: z.object({
+    assetID: z.union([z.string(), z.number()]),
+    amount: z.union([z.string(), z.number()]),
+    blindingFactor: z.string(),
+    commitment: z.string().optional(),
+  }),
+  merkleRoot: z.string(),
+  merklePath: z.array(z.union([z.string(), z.number()])),
+  merklePathIndices: z.array(z.union([z.string(), z.number()])),
+  protocolFee: z.string(),
+  gasRefund: z.string(),
+  withdrawAmount: z.string().optional(),
+}).passthrough();
+
+app.post("/withdraw/generate-proof", async (req, res) => {
+  const parsed = withdrawGenerateProofSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: "Invalid request", details: parsed.error.flatten() });
+  }
+  try {
+    const result = await generateWithdrawProof(parsed.data);
+    return res.json({
+      proof: result.proof,
+      publicSignals: result.publicSignals,
+      publicInputs: result.publicInputs,
+      generationTime: result.generationTime,
+    });
+  } catch (err) {
+    return res.status(500).json({ error: "Withdraw proof generation failed", message: err.message });
+  }
+});
+
 app.use("/", enterpriseRouter);
 
 const dashboardDist = path.join(__dirname, "..", "..", "dist");
@@ -2017,7 +3127,15 @@ function startServer(tryPort) {
 }
 
 if (!process.env.VERCEL) {
-  startServer(PORT);
+  (async () => {
+    try {
+      await assertNoMockRuntimeGate();
+    } catch (e) {
+      console.error("[FATAL] no-mock runtime gate:", e.message || e);
+      process.exit(1);
+    }
+    startServer(PORT);
+  })();
 }
 
 module.exports = { app };
@@ -2181,11 +3299,18 @@ async function submitSwap(swapData) {
   if (skipValidatorQuorum && !DEV_BYPASS_VALIDATORS && VALIDATOR_URLS.length === 0) {
     console.warn("[swap] No VALIDATOR_URLS and RELAYER_REQUIRE_VALIDATOR_QUORUM is not set — skipping validator quorum (single-relayer / dev mode).");
   }
-  const validationResult = skipValidatorQuorum
-    ? { valid: true, signatures: [], reason: DEV_BYPASS_VALIDATORS ? "DEV_BYPASS_VALIDATORS" : "validator_quorum_skipped" }
-    : await validatorNetwork.verifyProof(swapData.proof, publicSignals);
+  let validationResult;
+  try {
+    validationResult = skipValidatorQuorum
+      ? { valid: true, signatures: [], reason: DEV_BYPASS_VALIDATORS ? "DEV_BYPASS_VALIDATORS" : "validator_quorum_skipped" }
+      : await validatorNetwork.verifyProof(swapData.proof, publicSignals);
+  } catch (e) {
+    logProofFailure("validator.verifyProof.swap", e);
+    throw e;
+  }
 
   if (!validationResult.valid) {
+    logProofFailure("validator.verifyProof.swap", new Error(validationResult.reason || "Threshold not met"));
     throw new Error(`Validator consensus failed: ${validationResult.reason || 'Threshold not met'}`);
   }
 
@@ -2194,6 +3319,7 @@ async function submitSwap(swapData) {
   const provider = new ethers.JsonRpcProvider(RPC_URL);
   const signer = new ethers.Wallet(RELAYER_PRIVATE_KEY, provider);
   const abi = [
+    "function commitSwap(bytes32 commitmentHash, uint256 deadline) external",
     "function shieldedSwapJoinSplit(((bytes,bytes,bytes),(bytes32,bytes32,bytes32,bytes32,bytes32,uint256,uint256,uint256,uint256,uint256,uint256,uint256,uint256,uint256,uint256,uint256[10],uint256[10]),(address,address,uint256,uint256,uint24,uint160,bytes),address,bytes,bytes32,uint256,uint256)) external"
   ];
   const contract = new ethers.Contract(SHIELDED_POOL_ADDRESS, abi, signer);
@@ -2249,9 +3375,9 @@ async function submitSwap(swapData) {
     swapParamsTuple,
     relayerAddr,
     swapData.encryptedPayload || "0x",
-    ethers.ZeroHash,
-    0,
-    0
+    (swapData.commitment && swapData.commitment !== ethers.ZeroHash) ? swapData.commitment : ethers.ZeroHash,
+    Number(swapData.deadline || 0),
+    toU256(swapData.nonce || 0)
   ];
 
   if (DEV_BYPASS_VALIDATORS) {
@@ -2260,12 +3386,32 @@ async function submitSwap(swapData) {
     await submitThresholdValidations(signer, swapData.proof, publicSignals, validationResult.signatures, "swap");
   }
 
-  const tx = await contract.shieldedSwapJoinSplit(swapDataForContract);
+  let tx;
+  try {
+    if (swapDataForContract[5] !== ethers.ZeroHash) {
+      await (await contract.commitSwap(swapDataForContract[5], swapDataForContract[6])).wait();
+    }
+    tx = await contract.shieldedSwapJoinSplit(swapDataForContract);
+  } catch (e) {
+    logRelayerOnchainFailure("shieldedSwapJoinSplit", e);
+    throw e;
+  }
 
   console.log("⏳ Waiting for confirmation...");
-  const receipt = await tx.wait();
+  let receipt;
+  try {
+    receipt = await tx.wait();
+  } catch (e) {
+    logRelayerOnchainFailure("shieldedSwapJoinSplit:wait", e);
+    throw e;
+  }
 
   console.log(`✅ Transaction confirmed: ${receipt.hash}`);
+  try {
+    pushTransaction({ op: "shieldedSwap", txHash: receipt.hash, blockNumber: receipt.blockNumber });
+  } catch (_) {
+    /* ignore activity buffer */
+  }
   try {
     storeCommitmentsFromReceipt(receipt);
   } catch (e) {
@@ -2293,15 +3439,22 @@ async function submitWithdraw(withdrawData) {
   const skipValidatorQuorumWd =
     DEV_BYPASS_VALIDATORS ||
     (!RELAYER_REQUIRE_VALIDATOR_QUORUM && VALIDATOR_URLS.length === 0);
-  const validationResult = skipValidatorQuorumWd
-    ? { valid: true, signatures: [], reason: DEV_BYPASS_VALIDATORS ? "DEV_BYPASS_VALIDATORS" : "validator_quorum_skipped" }
-    : await validatorNetwork.verifyProof(withdrawData.proof, publicSignals);
-
-  if (!validationResult.valid) {
-    throw new Error(`Validator consensus failed: ${validationResult.reason || 'Threshold not met'}`);
+  let validationResultWd;
+  try {
+    validationResultWd = skipValidatorQuorumWd
+      ? { valid: true, signatures: [], reason: DEV_BYPASS_VALIDATORS ? "DEV_BYPASS_VALIDATORS" : "validator_quorum_skipped" }
+      : await validatorNetwork.verifyProof(withdrawData.proof, publicSignals);
+  } catch (e) {
+    logProofFailure("validator.verifyProof.withdraw", e);
+    throw e;
   }
 
-  console.log(`✅ Validator consensus achieved (${validationResult.signatures.length} signatures)`);
+  if (!validationResultWd.valid) {
+    logProofFailure("validator.verifyProof.withdraw", new Error(validationResultWd.reason || "Threshold not met"));
+    throw new Error(`Validator consensus failed: ${validationResultWd.reason || 'Threshold not met'}`);
+  }
+
+  console.log(`✅ Validator consensus achieved (${validationResultWd.signatures.length} signatures)`);
 
   const provider = new ethers.JsonRpcProvider(RPC_URL);
   const signer = new ethers.Wallet(RELAYER_PRIVATE_KEY, provider);
@@ -2327,8 +3480,8 @@ async function submitWithdraw(withdrawData) {
 
   if (DEV_BYPASS_VALIDATORS) {
     await submitSelfThresholdValidation(signer, withdrawData.proof, publicSignals, "withdraw bypass");
-  } else if (validationResult.signatures.length > 0) {
-    await submitThresholdValidations(signer, withdrawData.proof, publicSignals, validationResult.signatures, "withdraw");
+  } else if (validationResultWd.signatures.length > 0) {
+    await submitThresholdValidations(signer, withdrawData.proof, publicSignals, validationResultWd.signatures, "withdraw");
   }
 
   const abi = [
@@ -2371,23 +3524,70 @@ async function submitWithdraw(withdrawData) {
     relayerAddr,
     withdrawData.encryptedPayload || "0x"
   ];
-  const tx = await contract.shieldedWithdraw(withdrawDataForContract);
-
-  console.log("⏳ Waiting for confirmation...");
-  const receipt = await tx.wait();
+  let receipt;
+  try {
+    const tx = await contract.shieldedWithdraw(withdrawDataForContract);
+    console.log("⏳ Waiting for confirmation...");
+    receipt = await tx.wait();
+  } catch (e) {
+    logRelayerOnchainFailure("shieldedWithdraw", e);
+    const raw = `${e?.message || ""} ${e?.shortMessage || ""} ${e?.reason || ""}`.toLowerCase();
+    if (/nullifier|poolerr\(4\)|already|used/.test(raw)) {
+      const err = new Error("withdraw_nullifier_already_spent");
+      err.status = 400;
+      throw err;
+    }
+    if (/poolerr\(6\)|verify|invalid proof|groth16/.test(raw)) {
+      const err = new Error("withdraw_proof_rejected");
+      err.status = 400;
+      throw err;
+    }
+    if (/poolerr\(5\)|protocol|fee/.test(raw)) {
+      const err = new Error("withdraw_protocol_fee_insufficient_for_on_chain_policy");
+      err.status = 400;
+      throw err;
+    }
+    if (/poolerr\(43\)|conservation|poolerr\(19\)|change/.test(raw)) {
+      const err = new Error("withdraw_amount_conservation_or_change_invalid");
+      err.status = 400;
+      throw err;
+    }
+    throw e;
+  }
 
   console.log(`✅ Withdrawal confirmed: ${receipt.hash}`);
+  try {
+    pushTransaction({ op: "shieldedWithdraw", txHash: receipt.hash, blockNumber: receipt.blockNumber });
+  } catch (_) {
+    /* ignore activity buffer */
+  }
   try {
     storeCommitmentsFromReceipt(receipt);
   } catch (e) {
     console.log(`[Withdraw] Could not store commitments: ${e.message}`);
   }
+  let module3Notes = null;
+  let module3NotesWarning = null;
+  if (withdrawData.noteHints && withdrawData.ownerAddress) {
+    try {
+      module3Notes = await persistWithdrawChangeNote({
+        txHash: receipt.hash,
+        ownerAddress: withdrawData.ownerAddress,
+        noteHints: withdrawData.noteHints,
+        publicInputs: withdrawData.publicInputs,
+      });
+    } catch (e) {
+      module3NotesWarning = e.message || String(e);
+    }
+  }
 
   return {
     txHash: receipt.hash,
     blockNumber: receipt.blockNumber,
-    validatorSignatures: validationResult.signatures.length,
-    relayer: relayerAddr
+    validatorSignatures: validationResultWd.signatures.length,
+    relayer: relayerAddr,
+    ...(module3Notes ? { module3Notes } : {}),
+    ...(module3NotesWarning ? { module3NotesWarning } : {}),
   };
 }
 
@@ -2460,6 +3660,11 @@ async function submitPortfolioSwap(swapData) {
       } catch (nsErr) {
         console.warn("[PortfolioSwap] NoteStorage.storeNoteFor failed:", nsErr.message);
       }
+    }
+    try {
+      pushTransaction({ op: "portfolioSwap", txHash: receipt.hash, blockNumber: receipt.blockNumber });
+    } catch (_) {
+      /* ignore */
     }
     return { txHash: receipt.hash, blockNumber: receipt.blockNumber, noteStored };
   } catch (err) {

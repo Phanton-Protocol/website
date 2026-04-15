@@ -12,6 +12,7 @@ export default defineConfig([
     '.cursor/**',
     'artifacts/**',
     'cache/**',
+    'Phantom-Smart-Contracts/**',
     'deployments/**',
     'deploy/**',
     'circuits/**',

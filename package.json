@@ -3,17 +3,27 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "workspaces": [
+    "Phantom-Smart-Contracts"
+  ],
   "scripts": {
     "dev": "vite",
     "dev:site": "vite --host 0.0.0.0 --port 5173",
-    "dev:local": "powershell -ExecutionPolicy Bypass -File ./run-local-stack.ps1",
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
     "test:backend": "npm run test --prefix phantom-relayer-dashboard/backend",
-    "test:api": "node scripts/run-backend-api-tests.mjs",
-    "verify": "npm run lint && npm run build && npm run test:backend && npm run test:api",
-    "test": "npm run verify"
+    "verify": "npm run lint && npm run build && npm run test:backend",
+    "e2e:testnet": "node phantom-relayer-dashboard/backend/scripts/e2e-mvp-testnet.cjs",
+    "fingerprints:mock-bytecode": "npm run fingerprints:mock-bytecode -w phantom-smart-contracts",
+    "compile": "npm run compile -w phantom-smart-contracts",
+    "compile:full": "npm run compile:full -w phantom-smart-contracts",
+    "test": "npm run test -w phantom-smart-contracts",
+    "test:contracts": "npm run test:contracts -w phantom-smart-contracts",
+    "deploy:testnet": "npm run deploy:testnet -w phantom-smart-contracts",
+    "deploy:handlers": "npm run deploy:handlers -w phantom-smart-contracts",
+    "deploy:core:local": "npm run deploy:core:local -w phantom-smart-contracts",
+    "deploy:all:local": "npm run deploy:all:local -w phantom-smart-contracts"
   },
   "dependencies": {
     "clsx": "^2.1.1",
@@ -23,11 +33,11 @@
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-router-dom": "^7.13.1",
-    "snarkjs": "^0.7.6",
     "tailwind-merge": "^3.4.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
+    "@types/node": "^25.6.0",
     "@types/react": "^19.2.5",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.1.1",
@@ -38,6 +48,7 @@
     "globals": "^16.5.0",
     "postcss": "^8.5.6",
     "tailwindcss": "^3.4.17",
+    "typescript": "^6.0.2",
     "vite": "^7.2.4"
   }
 }

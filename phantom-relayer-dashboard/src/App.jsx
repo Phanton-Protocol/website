@@ -3,8 +3,18 @@ import { BrowserProvider, Contract, parseEther, MaxUint256, getAddress, keccak25
 import { groth16 } from "snarkjs";
 
 const DEFAULT_API_URL = import.meta.env.VITE_API_URL || "";
+const RUNBOOK_URL =
+  import.meta.env.VITE_RUNBOOK_URL || "https://github.com/Phanton-Protocol/core/blob/main/RUNBOOK.md";
 const BSC_TESTNET = { chainId: 97, chainIdHex: "0x61", rpcUrl: "https://data-seed-prebsc-1-s1.binance.org:8545", name: "BSC Testnet" };
-const BUILD_ID = "v3-approve-check";
+const BUILD_ID = "module8-ops-dashboard";
+
+function explorerTxUrl(chainId, txHash) {
+  if (!txHash || chainId == null) return null;
+  const id = Number(chainId);
+  if (id === 97) return `https://testnet.bscscan.com/tx/${txHash}`;
+  if (id === 56) return `https://bscscan.com/tx/${txHash}`;
+  return null;
+}
 
 function getInjectedProvider() {
   if (typeof window === "undefined") return null;
@@ -70,6 +80,7 @@ export default function App() {
   const { data: relayer } = useFetch(base ? `${base}/relayer` : null, 10000);
   const { data: staking, error: stakingError } = useFetch(base ? `${base}/relayer/staking-status` : null, 10000);
   const { data: proofStats } = useFetch(base ? `${base}/relayer/proof-stats` : null, 5000);
+  const { data: dashboard, error: dashboardError } = useFetch(base ? `${base}/relayer/dashboard` : null, 5000);
   const { data: stakingStats } = useFetch(base ? `${base}/staking/stats` : null, 15000);
   const { data: myStake } = useFetch(
     base && wallet?.address ? `${base}/staking/balance?address=${encodeURIComponent(wallet.address)}` : null,
@@ -312,7 +323,7 @@ export default function App() {
             }}
           />
         </div>
-        <div style={{ marginTop: "1rem", display: "flex", gap: "0.5rem" }}>
+        <div style={{ marginTop: "1rem", display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
           <button
             onClick={() => setTab("relayer")}
             style={{
@@ -343,11 +354,53 @@ export default function App() {
           >
             Validators
           </button>
+          <button
+            onClick={() => setTab("ops")}
+            style={{
+              padding: "0.5rem 1rem",
+              background: tab === "ops" ? "#8b5cf6" : "#2a2a3a",
+              border: "none",
+              borderRadius: 6,
+              color: "#fff",
+              fontWeight: 600,
+              cursor: "pointer",
+              fontSize: "0.9rem"
+            }}
+          >
+            Operations
+          </button>
         </div>
+        <p style={{ marginTop: "0.75rem", fontSize: "0.8rem", color: "#6b7280" }}>
+          Operator docs:{" "}
+          <a href={RUNBOOK_URL} target="_blank" rel="noreferrer" style={{ color: "#a78bfa" }}>
+            RUNBOOK.md
+          </a>
+          {" · "}
+          End-user privacy summary:{" "}
+          <a
+            href="https://phantomproto.com/privacy-visibility"
+            target="_blank"
+            rel="noreferrer"
+            style={{ color: "#a78bfa" }}
+          >
+            Privacy & visibility
+          </a>{" "}
+          (main site; override host if you self-host).
+        </p>
       </header>
 
       {tab === "validators" ? (
         <ValidatorSetup base={base} relayer={relayer} staking={staking} wallet={wallet} />
+      ) : tab === "ops" ? (
+        <OperationsTab
+          base={base}
+          health={health}
+          healthError={healthError}
+          dashboard={dashboard}
+          dashboardError={dashboardError}
+          proofStats={proofStats}
+          network={network}
+        />
       ) : (
       <section style={{ display: "grid", gap: "1.5rem" }}>
         {cfg?.mode === "degraded" && (
@@ -785,6 +838,156 @@ node src/validatorServer.js`}
         <h4 style={{ margin: "1rem 0 0.5rem", fontSize: "0.95rem" }}>Threshold: 66%</h4>
         <p style={{ color: "#9ca3af", fontSize: "0.9rem", margin: 0 }}>
           Validators representing <strong>66% of total staked voting power</strong> must sign each proof.
+        </p>
+      </Card>
+    </section>
+  );
+}
+
+function OperationsTab({ base, health, healthError, dashboard, dashboardError, proofStats, network }) {
+  const chainId = network?.chainId ?? health?.chainId;
+  const fees = dashboard?.fees;
+  const rl = dashboard?.rateLimit;
+  const txs = dashboard?.recentTransactions || [];
+  const errs = dashboard?.recentErrors || [];
+
+  return (
+    <section style={{ display: "grid", gap: "1.5rem" }}>
+      <Card title="Status & uptime">
+        {!base ? (
+          <div style={{ color: "#f59e0b" }}>Set API URL above.</div>
+        ) : healthError && !health ? (
+          <div style={{ color: "#ef4444" }}>{healthError}</div>
+        ) : (
+          <div style={{ fontSize: "0.9rem", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+            <Row label="Health" value={health?.ok ? "ok" : "degraded"} valueColor={health?.ok ? "#22c55e" : "#f59e0b"} />
+            <Row label="Mode" value={health?.mode || "—"} />
+            <Row label="Chain ID" value={health?.chainId != null ? String(health.chainId) : "—"} />
+            <Row label="Pool configured" value={health?.poolConfigured ? "yes" : "no"} />
+            <Row
+              label="Process uptime"
+              value={dashboard?.uptimeSec != null ? `${dashboard.uptimeSec}s` : "—"}
+            />
+            {health?.module7Hardening && (
+              <Row
+                label="Deployment tier"
+                value={health.module7Hardening.deploymentTier || "unset"}
+              />
+            )}
+          </div>
+        )}
+      </Card>
+
+      <Card title="Fees (runtime parameters)">
+        {dashboardError && !dashboard ? (
+          <div style={{ color: "#ef4444" }}>{dashboardError}</div>
+        ) : fees ? (
+          <div style={{ fontSize: "0.9rem", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+            <Row label="DEX swap fee" value={`${fees.dexSwapFeeBps} bps`} />
+            <Row label="Internal match fee" value={`${fees.internalMatchFeeBps} bps`} />
+            <Row label="Deposit fee (USD e8)" value={fees.depositFeeUsdE8} mono small />
+            <Row label="Oracle fee floor (USD e8)" value={fees.oracleFeeFloorUsdE8} mono small />
+            <Row label="Oracle fee rate" value={`${fees.oracleFeeRateBps} bps`} />
+            <p style={{ margin: "0.5rem 0 0", fontSize: "0.8rem", color: "#6b7280" }}>
+              Canonical withdraw fee policy is on-chain (see RUNBOOK / MODULE6). Full JSON:{" "}
+              <code style={{ background: "#2a2a3a", padding: "0.1rem 0.35rem", borderRadius: 4 }}>/parameters</code>
+            </p>
+          </div>
+        ) : (
+          <div style={{ color: "#6b7280" }}>Loading…</div>
+        )}
+      </Card>
+
+      <Card title="Rate limits (API)">
+        {rl ? (
+          <div style={{ fontSize: "0.9rem", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+            <Row label="Default window" value={`${rl.defaultWindowMs} ms`} />
+            <Row label="Default max / window" value={String(rl.defaultMaxPerWindow)} />
+            <Row label="Module 4 deposit window" value={`${rl.module4WindowMs} ms`} />
+            <Row label="Module 4 max / window" value={String(rl.module4MaxPerWindow)} />
+            <p style={{ margin: "0.5rem 0 0", fontSize: "0.8rem", color: "#6b7280" }}>
+              Limits reduce abuse per IP; they are not a full anti-abuse product. See security section below.
+            </p>
+          </div>
+        ) : (
+          <div style={{ color: "#6b7280" }}>Loading…</div>
+        )}
+      </Card>
+
+      <Card title="Recent transactions (this process)">
+        {txs.length === 0 ? (
+          <div style={{ color: "#6b7280", fontSize: "0.9rem" }}>
+            No shielded swap / withdraw recorded since restart. Activity is in-memory only.
+          </div>
+        ) : (
+          <ul style={{ margin: 0, paddingLeft: "1.1rem", fontSize: "0.85rem", color: "#e0e0e8" }}>
+            {txs.map((t, i) => {
+              const url = explorerTxUrl(chainId, t.txHash);
+              return (
+                <li key={`${t.txHash}-${i}`} style={{ marginBottom: "0.5rem" }}>
+                  <strong>{t.op}</strong> — {new Date(t.ts).toLocaleString()}
+                  {t.txHash ? (
+                    <>
+                      {" · "}
+                      {url ? (
+                        <a href={url} target="_blank" rel="noreferrer" style={{ color: "#a78bfa" }}>
+                          {t.txHash.slice(0, 10)}…
+                        </a>
+                      ) : (
+                        <span style={{ fontFamily: "monospace" }}>{t.txHash.slice(0, 10)}…</span>
+                      )}
+                    </>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </Card>
+
+      <Card title="Recent errors (proof / on-chain / RPC)">
+        {proofStats?.lastError && (
+          <div style={{ color: "#f97316", fontSize: "0.85rem", marginBottom: "0.75rem" }}>
+            Proof stats last error: {proofStats.lastError.type} @{" "}
+            {new Date(proofStats.lastError.ts).toLocaleString()}
+          </div>
+        )}
+        {errs.length === 0 ? (
+          <div style={{ color: "#6b7280", fontSize: "0.9rem" }}>No structured errors recorded since restart.</div>
+        ) : (
+          <ul style={{ margin: 0, paddingLeft: "1.1rem", fontSize: "0.85rem", color: "#fca5a5" }}>
+            {errs.map((e, i) => (
+              <li key={`${e.ts}-${i}`} style={{ marginBottom: "0.5rem", wordBreak: "break-word" }}>
+                <span style={{ color: "#9ca3af" }}>{new Date(e.ts).toLocaleString()}</span> —{" "}
+                <strong>{e.phase}</strong>: {e.message}
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
+
+      <Card title="Security — MVP limitations">
+        <ul style={{ margin: 0, paddingLeft: "1.1rem", fontSize: "0.88rem", color: "#d1d5db", lineHeight: 1.55 }}>
+          <li>
+            <strong>Relayer key compromise</strong> is catastrophic: a stolen <code style={{ background: "#2a2a3a", padding: "0.05rem 0.25rem", borderRadius: 4 }}>RELAYER_PRIVATE_KEY</code> can
+            submit transactions on behalf of the relayer flow. Use HSM / vault patterns for production.
+          </li>
+          <li>
+            <strong>Operator trust</strong>: the relayer sees proofs and payloads before broadcast. Users should read the
+            public privacy page and RUNBOOK.
+          </li>
+          <li>
+            <strong>Rate limits</strong> are coarse (per-IP). They do not stop distributed abuse.
+          </li>
+          <li>
+            <strong>No audit implied</strong> by this MVP dashboard.
+          </li>
+        </ul>
+        <p style={{ marginTop: "1rem", fontSize: "0.85rem", color: "#6b7280" }}>
+          Operator checklist:{" "}
+          <a href={RUNBOOK_URL} target="_blank" rel="noreferrer" style={{ color: "#a78bfa" }}>
+            RUNBOOK.md
+          </a>
         </p>
       </Card>
     </section>

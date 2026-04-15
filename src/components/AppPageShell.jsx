@@ -65,6 +65,9 @@ export default function AppPageShell({
           <Link to="/user" className="app-page__footer-link hover-underline">
             Full console
           </Link>
+          <Link to="/privacy-visibility" className="app-page__footer-link hover-underline">
+            Privacy & visibility
+          </Link>
           <a href={EPAPER_PUBLIC_URL} className="app-page__footer-link hover-underline">
             E-Paper
           </a>

@@ -61,11 +61,14 @@ function sleep(ms) {
 
 const INTENT_TYPES = {
   SwapIntent: [
-    { name: "nullifier", type: "bytes32" },
-    { name: "minOutputAmount", type: "uint256" },
-    { name: "protocolFee", type: "uint256" },
-    { name: "gasRefund", type: "uint256" },
+    { name: "user", type: "address" },
+    { name: "inputAssetID", type: "uint256" },
+    { name: "outputAssetID", type: "uint256" },
+    { name: "amountIn", type: "uint256" },
+    { name: "minAmountOut", type: "uint256" },
     { name: "deadline", type: "uint256" },
+    { name: "nonce", type: "uint256" },
+    { name: "nullifier", type: "bytes32" },
   ],
 };
 
@@ -84,6 +87,7 @@ const PC = {
 };
 
 const QUOTE_SOURCE_LABEL = {
+  pancake_v3_quoter_v2: "PancakeSwap V3 QuoterV2 (official)",
   swap_adaptor: "Swap adaptor (on-chain)",
   pancake_v2_router: "PancakeSwap V2 router (on-chain)",
   dex_oracle: "Oracle / price estimate",
@@ -273,6 +277,7 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
   const [swapSlippageBps, setSwapSlippageBps] = useState(DEFAULT_SWAP_SLIPPAGE_BPS);
   const [swapLastQuote, setSwapLastQuote] = useState(null);
   const [swapProofBusy, setSwapProofBusy] = useState(false);
+  const [withdrawProofBusy, setWithdrawProofBusy] = useState(false);
   const [clientProverReady, setClientProverReady] = useState(false);
   const [spendPick, setSpendPick] = useState(0);
 
@@ -288,6 +293,8 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
     token: "0x78867BbEeF44f2326bF8DDd1941a4439382EF2A7",
     amount: "",
     recipient: "",
+    protocolFee: "0",
+    gasRefund: ethers.parseEther("0.002").toString(),
     withdrawDataJson: "",
   });
   const [depositTokenChoice, setDepositTokenChoice] = useState(ethers.ZeroAddress);
@@ -354,10 +361,6 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
       /* ignore */
     }
   }
-
-  useEffect(() => {
-    if (uiVariant === "trade") setTab("swap");
-  }, [uiVariant]);
 
   useEffect(() => {
     setDepositTokenChoice(depositForm.token);
@@ -742,17 +745,20 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
 
       const deadline = Math.floor(Date.now() / 1000) + Number(intentForm.deadlineSec || 900);
       const nullifier = ethers.hexlify(ethers.randomBytes(32));
+      const noteNonce = Number(intentForm.nonce || Date.now());
       const intentReq = {
         userAddress: wallet.address,
+        inputAssetID: 0,
+        outputAssetID: 0,
+        amountIn: "0",
+        minAmountOut: String(intentForm.minOutputAmount || "0"),
+        nonce: String(noteNonce),
         nullifier,
-        minOutputAmount: String(intentForm.minOutputAmount || "0"),
-        protocolFee: String(intentForm.protocolFee || "0"),
-        gasRefund: String(intentForm.gasRefund || "0"),
         deadline,
       };
       let minOutBI = 0n;
       try {
-        minOutBI = BigInt(intentReq.minOutputAmount || "0");
+        minOutBI = BigInt(intentReq.minAmountOut || "0");
       } catch {
         minOutBI = 0n;
       }
@@ -772,6 +778,11 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
         }
       }
 
+      intentReq.inputAssetID = Number(swapData?.publicInputs?.inputAssetID ?? getAssetIdForToken(intentForm.inputToken));
+      intentReq.outputAssetID = Number(swapData?.publicInputs?.outputAssetIDSwap ?? getAssetIdForToken(intentForm.outputToken));
+      intentReq.amountIn = String(swapData?.publicInputs?.swapAmount ?? "0");
+      intentReq.minAmountOut = String(swapData?.publicInputs?.minOutputAmountSwap ?? intentReq.minAmountOut);
+
       const intentRes = await fetchJson(`${base}/intent`, {
         method: "POST",
         body: JSON.stringify(intentReq),
@@ -780,11 +791,14 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
       const { intentId, intent, domain, types } = intentRes;
       const typed = types || INTENT_TYPES;
       const signPayload = {
-        nullifier: intent.nullifier,
-        minOutputAmount: intent.minOutputAmount,
-        protocolFee: intent.protocolFee,
-        gasRefund: intent.gasRefund,
+        user: intent.userAddress,
+        inputAssetID: intent.inputAssetID,
+        outputAssetID: intent.outputAssetID,
+        amountIn: intent.amountIn,
+        minAmountOut: intent.minAmountOut,
         deadline: intent.deadline,
+        nonce: intent.nonce,
+        nullifier: intent.nullifier,
       };
       const intentSig = await wallet.signer.signTypedData(domain, typed, signPayload);
 
@@ -888,9 +902,23 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
             tokenOut,
             amountIn: swapAmountBn.toString(),
             minAmountOut: String(intentForm.minOutputAmount || "0"),
-            fee: 2500,
-            sqrtPriceLimitX96: 0,
-            path: "0x",
+            fee: Number(swapLastQuote?.routeParams?.feeTier || 2500),
+            sqrtPriceLimitX96: String(swapLastQuote?.routeParams?.sqrtPriceLimitX96 || 0),
+            path: swapLastQuote?.routeParams?.path || "0x",
+          },
+          noteHints: {
+            swap: {
+              assetId: getAssetIdForToken(intentForm.outputToken),
+              amount: outAmt,
+              blindingFactor: proofBody.outputNoteSwap.blindingFactor,
+              ownerPublicKey: note.ownerPublicKey,
+            },
+            change: {
+              assetId: note.assetID,
+              amount: String(proofBody.outputNoteChange.amount),
+              blindingFactor: proofBody.outputNoteChange.blindingFactor,
+              ownerPublicKey: note.ownerPublicKey,
+            },
           },
           encryptedPayload: "0x",
         };
@@ -915,6 +943,7 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
     setActionError(null);
     setLastResult(null);
     try {
+      if (!wallet.signer) throw new Error("Connect wallet first.");
       if (!cfg?.addresses?.shieldedPool) throw new Error("Backend config not loaded.");
       if (cfg.mode !== "live") throw new Error(`Backend is ${cfg.mode}. Configure missing env vars first.`);
       await fetchJson(`${base}/health`);
@@ -922,16 +951,90 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
       if (activeChain && Number(activeChain) !== Number(cfg.chainId)) {
         throw new Error(`Wallet is on chain ${activeChain}, but backend expects ${cfg.chainId}.`);
       }
+
       let withdrawData;
-      if ((withdrawForm.withdrawDataJson || "").trim()) {
-        try { withdrawData = JSON.parse(withdrawForm.withdrawDataJson || "{}"); } catch { withdrawData = {}; }
+      const customRaw = String(withdrawForm.withdrawDataJson || "").trim();
+      if (customRaw) {
+        let parsed;
+        try {
+          parsed = JSON.parse(customRaw);
+        } catch {
+          throw new Error("Invalid withdraw JSON in Advanced.");
+        }
+        withdrawData = parsed.withdrawData || parsed;
+        if (!withdrawData?.proof || !withdrawData?.publicInputs || !withdrawData?.recipient) {
+          throw new Error("Withdraw JSON must include proof, publicInputs, and recipient.");
+        }
       } else {
+        const spend = spendableNoteEntries(vault.data, withdrawForm.token);
+        if (!spend.length) {
+          throw new Error("No spendable note for this token. Unlock the vault, deposit first, or paste full withdraw JSON under Advanced.");
+        }
+        const note = spend[0].note;
+        const amt = String(withdrawForm.amount || "").trim();
+        if (!amt) throw new Error("Enter withdraw amount (payout to recipient, same decimals as note).");
+        const amountWei = ethers.parseUnits(amt, 18);
+        const protocolFee = BigInt(String(withdrawForm.protocolFee || "0"));
+        const gasRefund = BigInt(String(withdrawForm.gasRefund || "0"));
+        const inputWei = BigInt(note.amount);
+        const changeWei = inputWei - amountWei - protocolFee - gasRefund;
+        if (changeWei <= 0n) {
+          throw new Error("After withdraw + protocol fee + gas refund, change must stay positive in the pool (see ShieldedPool conservation).");
+        }
+        const merkle = await fetchJson(`${base}/merkle/${encodeURIComponent(note.commitmentHex)}`);
+        const proofBody = {
+          inputNote: {
+            assetID: note.assetID,
+            amount: note.amount,
+            blindingFactor: note.blindingFactor,
+            ownerPublicKey: note.ownerPublicKey,
+            nullifier: noteNullifier(note.commitmentDecimal, note.ownerPublicKey).toString(),
+            commitment: note.commitmentDecimal,
+          },
+          outputNoteChange: {
+            assetID: note.assetID,
+            amount: changeWei.toString(),
+            blindingFactor: randomFieldElementString(),
+            commitment: "0",
+          },
+          merkleRoot: merkle.merkleRoot,
+          merklePath: merkle.merklePath,
+          merklePathIndices: merkle.merklePathIndices,
+          protocolFee: protocolFee.toString(),
+          gasRefund: gasRefund.toString(),
+          withdrawAmount: amountWei.toString(),
+        };
+        setWithdrawProofBusy(true);
+        let gen;
+        try {
+          gen = await fetchJson(`${base}/withdraw/generate-proof`, {
+            method: "POST",
+            body: JSON.stringify(proofBody),
+          });
+        } finally {
+          setWithdrawProofBusy(false);
+        }
+        if (!gen?.proof || !gen?.publicInputs) {
+          throw new Error(gen?.message || gen?.error || "Withdraw proof generation returned no proof.");
+        }
+        const recipient = (withdrawForm.recipient || "").trim() || wallet.address;
         withdrawData = {
-          token: withdrawForm.token,
-          amount: String(withdrawForm.amount || "0"),
-          recipient: withdrawForm.recipient || wallet.address || ethers.ZeroAddress,
+          proof: gen.proof,
+          publicInputs: gen.publicInputs,
+          recipient,
+          ownerAddress: wallet.address.toLowerCase(),
+          noteHints: {
+            change: {
+              assetId: note.assetID,
+              amount: changeWei.toString(),
+              blindingFactor: proofBody.outputNoteChange.blindingFactor,
+              ownerPublicKey: note.ownerPublicKey,
+            },
+          },
+          encryptedPayload: "0x",
         };
       }
+
       const keyInfo = await fetchJson(`${base}/relayer/encryption-key`);
       const envelope = await encryptForRelayer({ withdrawData }, keyInfo?.publicKeyPem);
       const out = await fetchJson(`${base}/withdraw/encrypted`, {
@@ -985,7 +1088,7 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
     setOrderForm((prev) => ({ ...prev, amount: "", price: "" }));
   }
 
-  const showSwapPanel = uiVariant !== "trade" && (tab === "swap" || tab === "all");
+  const showSwapPanel = tab === "swap" || (tab === "all" && uiVariant !== "trade");
   const depthLevels = useMemo(() => ([
     { price: "312.4000", size: "5.2000", side: "sell" },
     { price: "311.9500", size: "3.7000", side: "sell" },
@@ -1241,32 +1344,32 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
         </div>
       )}
 
-      {uiVariant !== "trade" && (
-        <div style={{ marginTop: 16, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-          {["swap", "deposit", "withdraw", "all"].map((k) => (
-            <button
-              key={k}
-              type="button"
-              onClick={() => { setTab(k); setActionError(null); setLastResult(null); }}
-              style={{
-                borderRadius: 10,
-                padding: "10px 14px",
-                fontSize: 13,
-                fontWeight: 700,
-                border: "1px solid rgba(255,255,255,0.14)",
-                background: tab === k ? "#6d4aff" : "rgba(255,255,255,0.08)",
-                color: "#fff",
-                cursor: "pointer"
-              }}
-            >
-              {k === "deposit" ? "Deposit" : k === "swap" ? "Swap" : k === "withdraw" ? "Withdraw" : "All"}
-            </button>
-          ))}
+      <div style={{ marginTop: 16, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+        {(uiVariant === "trade" ? ["swap", "withdraw"] : ["swap", "deposit", "withdraw", "all"]).map((k) => (
+          <button
+            key={k}
+            type="button"
+            onClick={() => { setTab(k); setActionError(null); setLastResult(null); }}
+            style={{
+              borderRadius: 10,
+              padding: "10px 14px",
+              fontSize: 13,
+              fontWeight: 700,
+              border: "1px solid rgba(255,255,255,0.14)",
+              background: tab === k ? "#6d4aff" : "rgba(255,255,255,0.08)",
+              color: "#fff",
+              cursor: "pointer"
+            }}
+          >
+            {k === "deposit" ? "Deposit" : k === "swap" ? "Swap" : k === "withdraw" ? "Withdraw" : "All"}
+          </button>
+        ))}
+        {uiVariant !== "trade" && (
           <Link to="/trade" style={{ fontSize: 13, fontWeight: 700, color: PC.teal, textDecoration: "none", marginLeft: 4 }}>
             InternalMatching →
           </Link>
-        </div>
-      )}
+        )}
+      </div>
 
       {uiVariant !== "trade" && (tab === "deposit" || tab === "all") && (
         <div style={{ marginTop: 14, borderRadius: 14, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(0,0,0,0.26)", padding: 14 }}>
@@ -1563,9 +1666,12 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
         </div>
       )}
 
-      {uiVariant !== "trade" && (tab === "withdraw" || tab === "all") && (
+      {(tab === "withdraw" || (tab === "all" && uiVariant !== "trade")) && (
         <div style={{ marginTop: 14, borderRadius: 14, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(0,0,0,0.26)", padding: 14 }}>
           <div style={{ fontSize: 14, fontWeight: 700, color: "#fff" }}>Withdraw</div>
+          <div style={{ marginTop: 8, fontSize: 12, color: PC.muted, lineHeight: 1.45 }}>
+            Shielded withdraw: proof + nullifier spend; relayer submits <code style={{ color: "#fff" }}>shieldedWithdraw</code>. Amount is the payout to recipient; change stays in the pool as a new note. Set protocol fee and gas refund so they match your note (on-chain enforces min fee from oracle).
+          </div>
           <div style={{ marginTop: 10 }}>
             <div style={{ fontSize: 12, color: "rgba(255,255,255,0.65)" }}>Token</div>
             <select
@@ -1606,8 +1712,30 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
               style={{ marginTop: 4, width: "100%", borderRadius: 10, border: "1px solid rgba(255,255,255,0.16)", background: "#151a23", color: "#fff", padding: "10px 12px", fontSize: 14 }}
             />
           </div>
-          <button onClick={submitWithdraw} disabled={cfg?.mode !== "live"} style={{ marginTop: 12, borderRadius: 10, background: cfg?.mode === "live" ? "#18b980" : "#3a4d45", color: "#fff", padding: "10px 14px", fontSize: 14, fontWeight: 700, border: "none", cursor: cfg?.mode === "live" ? "pointer" : "not-allowed" }}>
-            Withdraw
+          <div style={{ marginTop: 10, display: "grid", gap: 10, gridTemplateColumns: "repeat(2, minmax(0,1fr))" }}>
+            <div>
+              <div style={{ fontSize: 12, color: "rgba(255,255,255,0.65)" }}>Protocol fee (wei)</div>
+              <input
+                value={withdrawForm.protocolFee}
+                onChange={(e) => setWithdrawForm({ ...withdrawForm, protocolFee: e.target.value })}
+                style={{ marginTop: 4, width: "100%", borderRadius: 10, border: "1px solid rgba(255,255,255,0.16)", background: "#151a23", color: "#fff", padding: "10px 12px", fontSize: 14 }}
+              />
+            </div>
+            <div>
+              <div style={{ fontSize: 12, color: "rgba(255,255,255,0.65)" }}>Gas refund to relayer (wei)</div>
+              <input
+                value={withdrawForm.gasRefund}
+                onChange={(e) => setWithdrawForm({ ...withdrawForm, gasRefund: e.target.value })}
+                style={{ marginTop: 4, width: "100%", borderRadius: 10, border: "1px solid rgba(255,255,255,0.16)", background: "#151a23", color: "#fff", padding: "10px 12px", fontSize: 14 }}
+              />
+            </div>
+          </div>
+          <button
+            onClick={submitWithdraw}
+            disabled={cfg?.mode !== "live" || withdrawProofBusy || !wallet?.signer}
+            style={{ marginTop: 12, borderRadius: 10, background: cfg?.mode === "live" && !withdrawProofBusy ? "#18b980" : "#3a4d45", color: "#fff", padding: "10px 14px", fontSize: 14, fontWeight: 700, border: "none", cursor: cfg?.mode === "live" && !withdrawProofBusy ? "pointer" : "not-allowed" }}
+          >
+            {withdrawProofBusy ? "Generating proof…" : "Withdraw via relayer"}
           </button>
         </div>
       )}

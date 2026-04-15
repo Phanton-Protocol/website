@@ -4,11 +4,13 @@
   "private": true,
   "main": "src/index.js",
   "scripts": {
-    "test": "node scripts/check-syntax.cjs && node --test test/*.test.cjs",
+    "test": "node scripts/check-syntax.cjs && node --test --test-force-exit test/*.test.cjs",
+    "e2e:testnet": "node scripts/e2e-mvp-testnet.cjs",
     "dev": "node src/index.js",
     "start": "node src/index.js",
     "validator": "node src/validatorServer.js",
-    "validator:coordinator": "node src/validatorCoordinator.js"
+    "validator:coordinator": "node src/validatorCoordinator.js",
+    "merkle:selfcheck": "node scripts/module3-merkle-selfcheck.cjs"
   },
   "dependencies": {
     "@zk-kit/groth16": "^0.5.0",

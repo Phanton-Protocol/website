@@ -1,0 +1,226 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.21;
+
+import "../interfaces/IShieldedPool.sol";
+import "../interfaces/IVerifier.sol";
+import "../interfaces/IPancakeSwapAdaptor.sol";
+import "../interfaces/IFeeOracle.sol";
+import "../interfaces/IFeeDistributor.sol";
+import "../interfaces/IRelayerRegistry.sol";
+import "../types/Types.sol";
+
+/**
+ * @title SwapHandler
+ * @notice External contract to handle swap operations and reduce main contract size
+ * @dev Similar to DepositHandler - moves heavy swap logic out of ShieldedPool
+ * Security: Only ShieldedPool can call this contract's functions
+ */
+contract SwapHandler {
+    IShieldedPool public immutable shieldedPool;
+    IVerifier public immutable verifier;
+    IVerifier public immutable thresholdVerifier;
+    IPancakeSwapAdaptor public immutable swapAdaptor;
+    IFeeOracle public immutable feeOracle;
+    IRelayerRegistry public immutable relayerRegistry;
+    
+    uint256 public constant SWAP_FEE_NUMERATOR = 5;
+    uint256 public constant SWAP_FEE_DENOMINATOR = 100000;
+
+    uint256 internal constant SNARK_SCALAR_FIELD =
+        21888242871839275222246405745257275088548364400416034343698204186575808495617;
+    
+    modifier onlyShieldedPool() {
+        require(msg.sender == address(shieldedPool), "SwapHandler: only ShieldedPool");
+        _;
+    }
+    
+    constructor(
+        address _shieldedPool,
+        address _verifier,
+        address _thresholdVerifier,
+        address _swapAdaptor,
+        address _feeOracle,
+        address _relayerRegistry
+    ) {
+        shieldedPool = IShieldedPool(_shieldedPool);
+        verifier = IVerifier(_verifier);
+        thresholdVerifier = IVerifier(_thresholdVerifier);
+        swapAdaptor = IPancakeSwapAdaptor(_swapAdaptor);
+        feeOracle = IFeeOracle(_feeOracle);
+        relayerRegistry = IRelayerRegistry(_relayerRegistry);
+    }
+    
+    /**
+     * @notice Process swap - validates proof, calculates fees, executes swap
+     * @dev Main contract calls this to reduce its size
+     * @return swapOutput Actual swap output amount
+     * @return totalProtocolFee Total protocol fee (protocol + swap fee)
+     */
+    function processSwap(
+        ShieldedSwapData calldata swapData
+    ) external payable onlyShieldedPool returns (uint256 swapOutput, uint256 totalProtocolFee) {
+        PublicInputs memory inputs = swapData.publicInputs;
+        
+        // Validator consensus
+        require(
+            thresholdVerifier.verifyProof(swapData.proof, _publicInputsToArray(inputs)),
+            "SwapHandler: insufficient validator consensus"
+        );
+        
+        // Proof verification
+        require(
+            verifier.verifyProof(swapData.proof, _publicInputsToArray(inputs)),
+            "SwapHandler: invalid proof"
+        );
+        
+        // Fee calculation
+        address inputToken = shieldedPool.assetRegistry(inputs.inputAssetID);
+        require(inputToken != address(0), "SwapHandler: invalid input asset");
+        feeOracle.requireFreshPrice(inputToken);
+        
+        uint256 protocolFee = feeOracle.calculateFee(inputToken, inputs.inputAmount);
+        uint256 swapFee = (inputs.inputAmount * SWAP_FEE_NUMERATOR) / SWAP_FEE_DENOMINATOR;
+        totalProtocolFee = protocolFee + swapFee;
+        
+        require(inputs.protocolFee == totalProtocolFee, "SwapHandler: fee mismatch");
+        require(inputs.gasRefund <= inputs.inputAmount, "SwapHandler: invalid gas refund");
+        
+        // Execute swap
+        uint256 swapInputAmount = inputs.inputAmount - totalProtocolFee - inputs.gasRefund;
+        require(swapInputAmount > 0, "SwapHandler: insufficient swap amount");
+        
+        SwapParams memory swapParams = SwapParams({
+            tokenIn: inputToken,
+            tokenOut: shieldedPool.assetRegistry(inputs.outputAssetID),
+            amountIn: swapInputAmount,
+            minAmountOut: inputs.minOutputAmount,
+            fee: swapData.swapParams.fee,
+            sqrtPriceLimitX96: swapData.swapParams.sqrtPriceLimitX96,
+            path: swapData.swapParams.path
+        });
+        
+        require(swapParams.tokenOut != address(0), "SwapHandler: invalid output asset");
+        
+        if (inputToken == address(0)) {
+            // BNB: value is sent with this call
+            swapOutput = swapAdaptor.executeSwap{value: swapInputAmount}(swapParams);
+        } else {
+            // ERC20: caller must approve swapAdaptor before calling
+            swapOutput = swapAdaptor.executeSwap(swapParams);
+        }
+        
+        require(swapOutput >= inputs.minOutputAmount, "SwapHandler: slippage exceeded");
+        require(swapOutput == inputs.outputAmount, "SwapHandler: output mismatch");
+        
+        // Distribute fees
+        if (totalProtocolFee > 0) {
+            if (inputToken == address(0)) {
+                IFeeDistributor(address(relayerRegistry)).distributeFee{value: totalProtocolFee}(address(0), totalProtocolFee);
+            } else {
+                IFeeDistributor(address(relayerRegistry)).distributeFee(inputToken, totalProtocolFee);
+            }
+        }
+    }
+    
+    /**
+     * @notice Process join-split swap - validates and executes (dual output)
+     * @dev Main contract calls this for join-split swaps
+     */
+    function processJoinSplitSwap(
+        JoinSplitSwapData calldata swapData
+    ) external payable onlyShieldedPool returns (uint256 swapOutput, uint256 totalProtocolFee) {
+        JoinSplitPublicInputs memory inputs = swapData.publicInputs;
+        
+        // Validator consensus
+        require(
+            thresholdVerifier.verifyProof(swapData.proof, _joinSplitPublicInputsToArray(inputs)),
+            "SwapHandler: insufficient validator consensus"
+        );
+        
+        // Proof verification
+        require(
+            verifier.verifyProof(swapData.proof, _joinSplitPublicInputsToArray(inputs)),
+            "SwapHandler: invalid proof"
+        );
+        
+        // Conservation verification
+        uint256 totalOutput = inputs.swapAmount + inputs.changeAmount + inputs.protocolFee + inputs.gasRefund;
+        require(inputs.inputAmount == totalOutput, "SwapHandler: amount conservation violated");
+        require(inputs.changeAmount > 0, "SwapHandler: zero change amount");
+        
+        // Fee calculation
+        address inputToken = shieldedPool.assetRegistry(inputs.inputAssetID);
+        require(inputToken != address(0), "SwapHandler: invalid input asset");
+        feeOracle.requireFreshPrice(inputToken);
+        
+        uint256 protocolFee = feeOracle.calculateFee(inputToken, inputs.inputAmount);
+        uint256 swapFee = (inputs.inputAmount * SWAP_FEE_NUMERATOR) / SWAP_FEE_DENOMINATOR;
+        totalProtocolFee = protocolFee + swapFee;
+        
+        require(inputs.protocolFee == totalProtocolFee, "SwapHandler: fee mismatch");
+        require(inputs.swapAmount > 0, "SwapHandler: zero swap amount");
+        
+        // Execute swap
+        SwapParams memory swapParams = SwapParams({
+            tokenIn: inputToken,
+            tokenOut: shieldedPool.assetRegistry(inputs.outputAssetIDSwap),
+            amountIn: inputs.swapAmount,
+            minAmountOut: inputs.minOutputAmountSwap,
+            fee: swapData.swapParams.fee,
+            sqrtPriceLimitX96: swapData.swapParams.sqrtPriceLimitX96,
+            path: swapData.swapParams.path
+        });
+        
+        require(swapParams.tokenOut != address(0), "SwapHandler: invalid swap output asset");
+        
+        if (inputToken == address(0)) {
+            swapOutput = swapAdaptor.executeSwap{value: inputs.swapAmount}(swapParams);
+        } else {
+            swapOutput = swapAdaptor.executeSwap(swapParams);
+        }
+        
+        require(swapOutput >= inputs.minOutputAmountSwap, "SwapHandler: slippage exceeded");
+        require(swapOutput == inputs.outputAmountSwap, "SwapHandler: swap output mismatch");
+        
+        // Distribute fees
+        if (totalProtocolFee > 0) {
+            if (inputToken == address(0)) {
+                IFeeDistributor(address(relayerRegistry)).distributeFee{value: totalProtocolFee}(address(0), totalProtocolFee);
+            } else {
+                IFeeDistributor(address(relayerRegistry)).distributeFee(inputToken, totalProtocolFee);
+            }
+        }
+    }
+    
+    function _publicInputsToArray(PublicInputs memory inputs) private pure returns (uint256[] memory) {
+        uint256[] memory publicInputs = new uint256[](10);
+        publicInputs[0] = uint256(inputs.nullifier);
+        publicInputs[1] = uint256(inputs.inputCommitment);
+        publicInputs[2] = uint256(inputs.outputCommitment);
+        publicInputs[3] = inputs.inputAssetID;
+        publicInputs[4] = inputs.outputAssetID;
+        publicInputs[5] = inputs.inputAmount;
+        publicInputs[6] = inputs.outputAmount;
+        publicInputs[7] = uint256(inputs.merkleRoot);
+        return publicInputs;
+    }
+    
+    function _joinSplitPublicInputsToArray(JoinSplitPublicInputs memory inputs) private pure returns (uint256[] memory) {
+        // Must match the circuit public input order:
+        // [nullifier, inputCommitment, outputCommitmentSwap, outputCommitmentChange, merkleRoot,
+        //  outputAmountSwapPublic, minOutputAmountSwap, protocolFee, gasRefund]
+        uint256[] memory publicInputs = new uint256[](9);
+        unchecked {
+            publicInputs[0] = uint256(inputs.nullifier) % SNARK_SCALAR_FIELD;
+            publicInputs[1] = uint256(inputs.inputCommitment) % SNARK_SCALAR_FIELD;
+            publicInputs[2] = uint256(inputs.outputCommitmentSwap) % SNARK_SCALAR_FIELD;
+            publicInputs[3] = uint256(inputs.outputCommitmentChange) % SNARK_SCALAR_FIELD;
+            publicInputs[4] = uint256(inputs.merkleRoot) % SNARK_SCALAR_FIELD;
+            publicInputs[5] = inputs.outputAmountSwap % SNARK_SCALAR_FIELD;
+            publicInputs[6] = inputs.minOutputAmountSwap % SNARK_SCALAR_FIELD;
+            publicInputs[7] = inputs.protocolFee % SNARK_SCALAR_FIELD;
+            publicInputs[8] = inputs.gasRefund % SNARK_SCALAR_FIELD;
+        }
+        return publicInputs;
+    }
+}

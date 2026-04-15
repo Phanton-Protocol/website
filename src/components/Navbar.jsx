@@ -18,6 +18,7 @@ const primaryLinks = [
 
 const moreLinks = [
     { name: 'Trade', to: '/trade' },
+    { name: 'Privacy & visibility', to: '/privacy-visibility' },
     { name: 'Internal Matching', to: '/trade' },
     { name: 'Relayer (Stake)', to: '/relayer' },
     { name: 'Payroll (Coming Soon)', to: '/enterprise/payroll' },
