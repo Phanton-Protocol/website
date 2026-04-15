@@ -54,7 +54,18 @@ async function main() {
   console.log("Deployer:", deployer.address);
   console.log("DEPLOY_PROFILE:", process.env.DEPLOY_PROFILE || "dev");
 
+  const profile = (process.env.DEPLOY_PROFILE || "dev").toLowerCase();
   const infra = await deployVerifiersAndSwapAdaptor();
+  if (profile === "staging" || profile === "production") {
+    if (infra.mockJoinSplit || infra.mockThreshold || infra.mockSwapAdaptor) {
+      throw new Error(
+        "Module 7 invariant: staging/production deploy must not record mock verifier/adaptor addresses — check deployInfrastructure."
+      );
+    }
+    if (!infra.groth16Verifier) {
+      throw new Error("Module 7 invariant: staging/production must deploy real Groth16 verifier (groth16Verifier missing).");
+    }
+  }
 
   const FeeOracle = await ethers.getContractFactory("FeeOracle");
   const feeOracle = await FeeOracle.deploy();

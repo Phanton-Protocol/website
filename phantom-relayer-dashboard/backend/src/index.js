@@ -40,6 +40,8 @@ const fheMatchingRouter = require("./fheMatchingService");
 const { registerOrderAndTryMatch, getFheMatchMode } = require("./fheMatchingService");
 const { createEnterpriseRouter } = require("./enterpriseRoutes");
 const { getSeeConfig, verifyAttestation, requireSeeForSensitiveFlow } = require("./seeGuard");
+const { logRelayerOnchainFailure, logProofFailure } = require("./relayerLog");
+const { assertNoMockRuntimeGate } = require("./noMockRuntimeGate");
 const { computeCanonicalAlignmentWarnings } = require("./configAlignment");
 const {
   assertRelayerRegistered,
@@ -1755,6 +1757,11 @@ app.get("/health", (req, res) => {
       chainalysisApiConfigured: !!CHAINALYSIS_API_URL,
       endpoints: ["/withdraw/generate-proof", "/withdraw", "/withdraw/encrypted"],
     },
+    module7Hardening: {
+      deploymentTier: String(process.env.PHANTOM_DEPLOYMENT_TIER || "").trim() || "unset",
+      noMockGateSkipped: process.env.PHANTOM_SKIP_NO_MOCK_GATE === "true",
+      mockFingerprintFile: "config/module7-mock-bytecode-hashes.json",
+    },
   });
 });
 
@@ -3088,7 +3095,15 @@ function startServer(tryPort) {
 }
 
 if (!process.env.VERCEL) {
-  startServer(PORT);
+  (async () => {
+    try {
+      await assertNoMockRuntimeGate();
+    } catch (e) {
+      console.error("[FATAL] no-mock runtime gate:", e.message || e);
+      process.exit(1);
+    }
+    startServer(PORT);
+  })();
 }
 
 module.exports = { app };
@@ -3252,11 +3267,18 @@ async function submitSwap(swapData) {
   if (skipValidatorQuorum && !DEV_BYPASS_VALIDATORS && VALIDATOR_URLS.length === 0) {
     console.warn("[swap] No VALIDATOR_URLS and RELAYER_REQUIRE_VALIDATOR_QUORUM is not set — skipping validator quorum (single-relayer / dev mode).");
   }
-  const validationResult = skipValidatorQuorum
-    ? { valid: true, signatures: [], reason: DEV_BYPASS_VALIDATORS ? "DEV_BYPASS_VALIDATORS" : "validator_quorum_skipped" }
-    : await validatorNetwork.verifyProof(swapData.proof, publicSignals);
+  let validationResult;
+  try {
+    validationResult = skipValidatorQuorum
+      ? { valid: true, signatures: [], reason: DEV_BYPASS_VALIDATORS ? "DEV_BYPASS_VALIDATORS" : "validator_quorum_skipped" }
+      : await validatorNetwork.verifyProof(swapData.proof, publicSignals);
+  } catch (e) {
+    logProofFailure("validator.verifyProof.swap", e);
+    throw e;
+  }
 
   if (!validationResult.valid) {
+    logProofFailure("validator.verifyProof.swap", new Error(validationResult.reason || "Threshold not met"));
     throw new Error(`Validator consensus failed: ${validationResult.reason || 'Threshold not met'}`);
   }
 
@@ -3332,13 +3354,25 @@ async function submitSwap(swapData) {
     await submitThresholdValidations(signer, swapData.proof, publicSignals, validationResult.signatures, "swap");
   }
 
-  if (swapDataForContract[5] !== ethers.ZeroHash) {
-    await (await contract.commitSwap(swapDataForContract[5], swapDataForContract[6])).wait();
+  let tx;
+  try {
+    if (swapDataForContract[5] !== ethers.ZeroHash) {
+      await (await contract.commitSwap(swapDataForContract[5], swapDataForContract[6])).wait();
+    }
+    tx = await contract.shieldedSwapJoinSplit(swapDataForContract);
+  } catch (e) {
+    logRelayerOnchainFailure("shieldedSwapJoinSplit", e);
+    throw e;
   }
-  const tx = await contract.shieldedSwapJoinSplit(swapDataForContract);
 
   console.log("⏳ Waiting for confirmation...");
-  const receipt = await tx.wait();
+  let receipt;
+  try {
+    receipt = await tx.wait();
+  } catch (e) {
+    logRelayerOnchainFailure("shieldedSwapJoinSplit:wait", e);
+    throw e;
+  }
 
   console.log(`✅ Transaction confirmed: ${receipt.hash}`);
   try {
@@ -3368,15 +3402,22 @@ async function submitWithdraw(withdrawData) {
   const skipValidatorQuorumWd =
     DEV_BYPASS_VALIDATORS ||
     (!RELAYER_REQUIRE_VALIDATOR_QUORUM && VALIDATOR_URLS.length === 0);
-  const validationResult = skipValidatorQuorumWd
-    ? { valid: true, signatures: [], reason: DEV_BYPASS_VALIDATORS ? "DEV_BYPASS_VALIDATORS" : "validator_quorum_skipped" }
-    : await validatorNetwork.verifyProof(withdrawData.proof, publicSignals);
-
-  if (!validationResult.valid) {
-    throw new Error(`Validator consensus failed: ${validationResult.reason || 'Threshold not met'}`);
+  let validationResultWd;
+  try {
+    validationResultWd = skipValidatorQuorumWd
+      ? { valid: true, signatures: [], reason: DEV_BYPASS_VALIDATORS ? "DEV_BYPASS_VALIDATORS" : "validator_quorum_skipped" }
+      : await validatorNetwork.verifyProof(withdrawData.proof, publicSignals);
+  } catch (e) {
+    logProofFailure("validator.verifyProof.withdraw", e);
+    throw e;
   }
 
-  console.log(`✅ Validator consensus achieved (${validationResult.signatures.length} signatures)`);
+  if (!validationResultWd.valid) {
+    logProofFailure("validator.verifyProof.withdraw", new Error(validationResultWd.reason || "Threshold not met"));
+    throw new Error(`Validator consensus failed: ${validationResultWd.reason || 'Threshold not met'}`);
+  }
+
+  console.log(`✅ Validator consensus achieved (${validationResultWd.signatures.length} signatures)`);
 
   const provider = new ethers.JsonRpcProvider(RPC_URL);
   const signer = new ethers.Wallet(RELAYER_PRIVATE_KEY, provider);
@@ -3402,8 +3443,8 @@ async function submitWithdraw(withdrawData) {
 
   if (DEV_BYPASS_VALIDATORS) {
     await submitSelfThresholdValidation(signer, withdrawData.proof, publicSignals, "withdraw bypass");
-  } else if (validationResult.signatures.length > 0) {
-    await submitThresholdValidations(signer, withdrawData.proof, publicSignals, validationResult.signatures, "withdraw");
+  } else if (validationResultWd.signatures.length > 0) {
+    await submitThresholdValidations(signer, withdrawData.proof, publicSignals, validationResultWd.signatures, "withdraw");
   }
 
   const abi = [
@@ -3452,6 +3493,7 @@ async function submitWithdraw(withdrawData) {
     console.log("⏳ Waiting for confirmation...");
     receipt = await tx.wait();
   } catch (e) {
+    logRelayerOnchainFailure("shieldedWithdraw", e);
     const raw = `${e?.message || ""} ${e?.shortMessage || ""} ${e?.reason || ""}`.toLowerCase();
     if (/nullifier|poolerr\(4\)|already|used/.test(raw)) {
       const err = new Error("withdraw_nullifier_already_spent");
@@ -3500,7 +3542,7 @@ async function submitWithdraw(withdrawData) {
   return {
     txHash: receipt.hash,
     blockNumber: receipt.blockNumber,
-    validatorSignatures: validationResult.signatures.length,
+    validatorSignatures: validationResultWd.signatures.length,
     relayer: relayerAddr,
     ...(module3Notes ? { module3Notes } : {}),
     ...(module3NotesWarning ? { module3NotesWarning } : {}),

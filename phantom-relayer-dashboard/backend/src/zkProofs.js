@@ -1,6 +1,7 @@
 
 
 const snarkjs = require("snarkjs");
+const { logProofFailure } = require("./relayerLog");
 let zkKitProve = null;
 try {
   zkKitProve = require("@zk-kit/groth16").prove;
@@ -514,6 +515,7 @@ async function generateSwapProof(swapData) {
   } catch (error) {
     recordProofStats("swap", Date.now() - startTime, false);
     console.error("❌ Proof generation failed:", error.message);
+    logProofFailure("generateSwapProof", error);
     throw new Error(`Proof generation failed: ${error.message}`);
   }
 }
@@ -680,6 +682,7 @@ async function generateWithdrawProof(withdrawData) {
   } catch (error) {
     recordProofStats("withdraw", Date.now() - startTime, false);
     console.error("❌ Proof generation failed:", error.message);
+    logProofFailure("generateWithdrawProof", error);
     throw new Error(`Proof generation failed: ${error.message}`);
   }
 }

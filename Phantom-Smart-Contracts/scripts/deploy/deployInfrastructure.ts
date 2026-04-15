@@ -15,6 +15,16 @@ export function useMockInfrastructure(): boolean {
   return getDeployProfile() === "dev";
 }
 
+/** Refuse accidental mock deploy when operator sets a force flag on staging/production. */
+export function assertDeployProfileForbidsForcedMocks(): void {
+  const p = getDeployProfile();
+  if (p !== "dev" && process.env.FORCE_MOCK_INFRASTRUCTURE === "true") {
+    throw new Error(
+      "FORCE_MOCK_INFRASTRUCTURE=true is forbidden when DEPLOY_PROFILE is staging or production (Module 7 gate)."
+    );
+  }
+}
+
 export function requireEnv(name: string): string {
   const v = process.env[name];
   if (!v || !v.trim()) {
@@ -36,6 +46,7 @@ export type InfraAddresses = {
 };
 
 export async function deployVerifiersAndSwapAdaptor(): Promise<InfraAddresses> {
+  assertDeployProfileForbidsForcedMocks();
   if (useMockInfrastructure()) {
     const MockVerifier = await ethers.getContractFactory("MockVerifier");
     const joinSplitVerifier = await MockVerifier.deploy();

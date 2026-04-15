@@ -96,3 +96,9 @@ Once backend and frontend point at the same RPC and contract set, the full flow 
 - **Fees:** the proof’s `protocolFee` must satisfy the **on-chain** minimum from `feeOracle` (see `MODULE6-WITHDRAW.md` / `CHANGELOG.md`); the backend maps common reverts to readable errors.
 - **Optional recipient screening:** `CHAINALYSIS_ENABLED=true` and `CHAINALYSIS_API_URL=<HTTPS endpoint>` (POST JSON `{ "address": "<recipient>" }`). Default is off for testnet MVP.
 - **Docs:** `phantom-relayer-dashboard/backend/MODULE6-WITHDRAW.md`.
+
+## Module 7 hardening (no mocks on staging paths)
+
+- **Operator guide:** `RUNBOOK.md` (relayer env, E2E script, `PHANTOM_DEPLOYMENT_TIER`, mock bytecode gate).
+- **Contracts:** `DEPLOY_PROFILE=staging|production` never deploys MockVerifier/MockSwapAdaptor; `FORCE_MOCK_INFRASTRUCTURE=true` is rejected. On-chain smoke: `npm run assert:no-mock-pool -w phantom-smart-contracts -- --network bscTestnet` with `SHIELDED_POOL_ADDRESS` set.
+- **Fingerprints:** `npm run fingerprints:mock-bytecode` from repo root after `HH_FULL=1` compile updates `config/module7-mock-bytecode-hashes.json`.

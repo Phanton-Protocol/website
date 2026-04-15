@@ -14,6 +14,8 @@
     "preview": "vite preview",
     "test:backend": "npm run test --prefix phantom-relayer-dashboard/backend",
     "verify": "npm run lint && npm run build && npm run test:backend",
+    "e2e:testnet": "node phantom-relayer-dashboard/backend/scripts/e2e-mvp-testnet.cjs",
+    "fingerprints:mock-bytecode": "npm run fingerprints:mock-bytecode -w phantom-smart-contracts",
     "compile": "npm run compile -w phantom-smart-contracts",
     "compile:full": "npm run compile:full -w phantom-smart-contracts",
     "test": "npm run test -w phantom-smart-contracts",

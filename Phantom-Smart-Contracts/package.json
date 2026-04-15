@@ -12,6 +12,8 @@
     "deploy:handlers": "HH_FULL=1 hardhat run scripts/deploy/deploy-handlers.ts --network bscTestnet",
     "deploy:core:local": "HH_FULL=1 hardhat run scripts/deploy/deploy-core.ts --network hardhat",
     "deploy:all:local": "HH_FULL=1 hardhat run scripts/deploy/deploy-all.ts --network hardhat",
+    "assert:no-mock-pool": "HH_FULL=1 hardhat run scripts/assert-no-mock-pool.ts",
+    "fingerprints:mock-bytecode": "node scripts/compute-mock-bytecode-hashes.cjs",
     "circuit:build:joinsplit": "bash scripts/circuits/build-joinsplit-public9.sh"
   },
   "dependencies": {
