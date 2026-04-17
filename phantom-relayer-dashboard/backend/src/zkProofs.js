@@ -16,8 +16,27 @@ const { mimc7, FIELD } = require("./mimc7");
 const { computeCommitment, computeNullifier } = require("./noteModel");
 const { toBigIntString, toBigInt } = require("./utils/bigint");
 
-const WASM_PATH = process.env.PROVER_WASM || path.join(__dirname, "..", "..", "circuits", "joinsplit_js", "joinsplit.wasm");
-const ZKEY_PATH = process.env.PROVER_ZKEY || path.join(__dirname, "..", "..", "circuits", "joinsplit_0001.zkey");
+/**
+ * Repo layout: `phantom-relayer-dashboard/backend/src` → `core/` is three levels up.
+ * `joinsplit_public9` Groth16 (9 public outputs) proves MiMC7 note commitments + nullifier, depth-10 Merkle
+ * inclusion (same rule as `MerkleTree.sol`), two output commitments, 120-bit conservation
+ * `inputAmount = swapAmount + changeAmount + protocolFee + gasRefund`, and slippage
+ * `outputAmountSwap >= minOutputAmountSwap` when the swap leg is active (`withdrawMode = 0`).
+ * See `Phantom-Smart-Contracts/circuits/joinsplit_public9/joinsplit_public9.circom`.
+ */
+const CORE_ROOT = process.env.PHANTOM_CORE_ROOT || path.join(__dirname, "..", "..", "..");
+const PUBLIC9_WASM = path.join(
+  CORE_ROOT,
+  "Phantom-Smart-Contracts",
+  "circuits",
+  "joinsplit_public9",
+  "build",
+  "joinsplit_public9_js",
+  "joinsplit_public9.wasm"
+);
+const PUBLIC9_ZKEY = path.join(CORE_ROOT, "Phantom-Smart-Contracts", "circuits", "joinsplit_public9", "circuit_final.zkey");
+const LEGACY_WASM = path.join(__dirname, "..", "..", "circuits", "joinsplit_js", "joinsplit.wasm");
+const LEGACY_ZKEY = path.join(__dirname, "..", "..", "circuits", "joinsplit_0001.zkey");
 const PORTFOLIO_WASM = process.env.PORTFOLIO_WASM || path.join(__dirname, "..", "..", "circuits", "portfolio_note_js", "portfolio_note.wasm");
 const PORTFOLIO_ZKEY = process.env.PORTFOLIO_ZKEY || path.join(__dirname, "..", "..", "circuits", "portfolio_note_0001.zkey");
 
@@ -27,6 +46,50 @@ function getRapidsnarkPath() {
 const CIRCUITS_DIR = path.join(__dirname, "..", "..", "circuits");
 
 const DEV_BYPASS_PROOFS = process.env.DEV_BYPASS_PROOFS === "true";
+
+function resolveProverPaths() {
+  if (process.env.PROVER_WASM?.trim() && process.env.PROVER_ZKEY?.trim()) {
+    const w = process.env.PROVER_WASM.trim();
+    const z = process.env.PROVER_ZKEY.trim();
+    const usePublic9 = w.includes("joinsplit_public9") || z.includes("joinsplit_public9");
+    return { wasmPath: w, zkeyPath: z, usePublic9 };
+  }
+  if (fs.existsSync(PUBLIC9_WASM) && fs.existsSync(PUBLIC9_ZKEY)) {
+    return { wasmPath: PUBLIC9_WASM, zkeyPath: PUBLIC9_ZKEY, usePublic9: true };
+  }
+  return { wasmPath: LEGACY_WASM, zkeyPath: LEGACY_ZKEY, usePublic9: false };
+}
+
+/** Flat witness keys for `joinsplit_public9.circom` (matches `main.*` in the compiled .sym). */
+function toJoinSplitPublic9ProverInputs(ci) {
+  const outSwap = BigInt(ci.outputCommitmentSwap || 0);
+  const withdrawMode = outSwap === 0n ? "1" : "0";
+  const pathArr = [];
+  const idxArr = [];
+  for (let i = 0; i < 10; i++) {
+    pathArr.push(String(ci.merklePath[i] ?? "0"));
+    idxArr.push(String(ci.merklePathIndices[i] ?? "0"));
+  }
+  return {
+    inputAssetID: String(ci.inputAssetID),
+    inputAmount: String(ci.inputAmount),
+    inputBlindingFactor: String(ci.inputBlindingFactor),
+    ownerPublicKey: String(ci.ownerPublicKey),
+    outputAssetIDSwap: String(ci.outputAssetIDSwap),
+    outputAmountSwapNote: String(ci.outputAmountSwapNote ?? ci.outputAmountSwapPublic ?? "0"),
+    swapBlindingFactor: String(ci.swapBlindingFactor),
+    outputAssetIDChange: String(ci.outputAssetIDChange),
+    changeAmount: String(ci.changeAmount),
+    changeBlindingFactor: String(ci.changeBlindingFactor),
+    swapAmount: String(ci.swapAmount),
+    withdrawMode,
+    protocolFeeWitness: String(ci.protocolFee),
+    gasRefundWitness: String(ci.gasRefund),
+    minOutputAmountSwapWitness: String(ci.minOutputAmountSwap),
+    merklePath: pathArr,
+    merklePathIndices: idxArr,
+  };
+}
 
 function swapCircuitToPublicInputs(ci) {
   return {
@@ -85,7 +148,20 @@ async function proveWithRapidsnarkOrSnarkjs(circuitInputs, wasmPath, zkeyPath, c
     try {
       fs.writeFileSync(inputPath, JSON.stringify(circuitInputs, null, 0));
 
-      const genWitnessPath = path.join(CIRCUITS_DIR, circuitType === "portfolio" ? "portfolio_note_js" : "joinsplit_js", "generate_witness.js");
+      const witnessDir =
+        circuitType === "portfolio"
+          ? path.join(CIRCUITS_DIR, "portfolio_note_js")
+          : circuitType === "joinsplit_public9"
+            ? path.join(
+                CORE_ROOT,
+                "Phantom-Smart-Contracts",
+                "circuits",
+                "joinsplit_public9",
+                "build",
+                "joinsplit_public9_js"
+              )
+            : path.join(CIRCUITS_DIR, "joinsplit_js");
+      const genWitnessPath = path.join(witnessDir, "generate_witness.js");
       if (!fs.existsSync(genWitnessPath)) throw new Error("generate_witness.js not found");
       await new Promise((resolve, reject) => {
         const proc = spawn("node", [genWitnessPath, wasmPath, inputPath, wtnsPath], { stdio: "pipe" });
@@ -126,7 +202,8 @@ async function proveWithRapidsnarkOrSnarkjs(circuitInputs, wasmPath, zkeyPath, c
   let publicSignals;
   let proverName = "snarkjs";
 
-  if (zkKitProve) {
+  // @zk-kit/groth16 can reject some witness shapes; joinsplit_public9 is tiny — use snarkjs only.
+  if (zkKitProve && circuitType !== "joinsplit_public9") {
     try {
       const result = await zkKitProve(circuitInputs, wasmPath, zkeyPath);
       proof = result.proof;
@@ -347,6 +424,13 @@ async function generateSwapProof(swapData) {
     };
   }
 
+  const prover = resolveProverPaths();
+  if (prover.usePublic9) {
+    console.log("[zk] joinsplit_public9 prover (matches on-chain JoinSplitVerifier.sol / circuit_final.zkey)");
+  } else {
+    console.warn("[zk] legacy joinsplit.wasm prover — must match deployed verifier or proofs will fail on-chain");
+  }
+
   const fieldAdd = (a, b) => {
     return (a + b) % FIELD;
   };
@@ -476,40 +560,43 @@ async function generateSwapProof(swapData) {
   }
 
   console.log(`\n🔍 ATTEMPTING WITNESS GENERATION (to identify failing constraint):`);
-  try {
-    const witness = await snarkjs.wtns.calculate(
-      circuitInputs,
-      WASM_PATH
-    );
-    console.log(`   ✅ Witness generated successfully - all constraints passed!`);
-    console.log(`   This means the issue is in proof generation, not constraints.`);
-  } catch (witnessError) {
-    console.error(`   ❌ Witness generation failed!`);
-    console.error(`   Error: ${witnessError.message}`);
-    console.error(`   Stack: ${witnessError.stack}`);
-    console.error(`   This indicates a CONSTRAINT VIOLATION.`);
-    console.error(`   The circuit's computation doesn't match the inputs.`);
+  if (!prover.usePublic9) {
+    try {
+      const witness = await snarkjs.wtns.calculate(circuitInputs, prover.wasmPath);
+      console.log(`   ✅ Witness generated successfully - all constraints passed!`);
+      console.log(`   This means the issue is in proof generation, not constraints.`);
+    } catch (witnessError) {
+      console.error(`   ❌ Witness generation failed!`);
+      console.error(`   Error: ${witnessError.message}`);
+      console.error(`   Stack: ${witnessError.stack}`);
+      console.error(`   This indicates a CONSTRAINT VIOLATION.`);
+      console.error(`   The circuit's computation doesn't match the inputs.`);
 
-    if (witnessError.message.includes("line:")) {
-      const lineMatch = witnessError.message.match(/line:\s*(\d+)/);
-      if (lineMatch) {
-        const lineNum = lineMatch[1];
-        console.error(`   Failed at circuit line: ${lineNum}`);
-        if (lineNum === "166") {
-          console.error(`   This is the Merkle root constraint!`);
-          console.error(`   Let's verify the exact values being compared...`);
+      if (witnessError.message.includes("line:")) {
+        const lineMatch = witnessError.message.match(/line:\s*(\d+)/);
+        if (lineMatch) {
+          const lineNum = lineMatch[1];
+          console.error(`   Failed at circuit line: ${lineNum}`);
+          if (lineNum === "166") {
+            console.error(`   This is the Merkle root constraint!`);
+            console.error(`   Let's verify the exact values being compared...`);
+          }
         }
       }
-    }
 
-    console.error(`   Continuing to fullProve to get more details...`);
+      console.error(`   Continuing to fullProve to get more details...`);
+    }
+  } else {
+    // joinsplit_public9: Merkle is enforced in-circuit; witness must match pool root + path.
   }
 
   const startTime = Date.now();
 
   try {
     console.log(`\n🔍 Generating proof...`);
-    const result = await proveWithRapidsnarkOrSnarkjs(circuitInputs, WASM_PATH, ZKEY_PATH, "joinsplit");
+    const proverInputs = prover.usePublic9 ? toJoinSplitPublic9ProverInputs(circuitInputs) : circuitInputs;
+    const witnessKind = prover.usePublic9 ? "joinsplit_public9" : "joinsplit";
+    const result = await proveWithRapidsnarkOrSnarkjs(proverInputs, prover.wasmPath, prover.zkeyPath, witnessKind);
     recordProofStats("swap", result.generationTime, true);
     return { ...result, publicInputs: swapCircuitToPublicInputs(circuitInputs) };
   } catch (error) {
@@ -676,7 +763,10 @@ async function generateWithdrawProof(withdrawData) {
   const startTime = Date.now();
 
   try {
-    const result = await proveWithRapidsnarkOrSnarkjs(circuitInputs, WASM_PATH, ZKEY_PATH, "joinsplit");
+    const prover = resolveProverPaths();
+    const proverInputs = prover.usePublic9 ? toJoinSplitPublic9ProverInputs(circuitInputs) : circuitInputs;
+    const witnessKind = prover.usePublic9 ? "joinsplit_public9" : "joinsplit";
+    const result = await proveWithRapidsnarkOrSnarkjs(proverInputs, prover.wasmPath, prover.zkeyPath, witnessKind);
     recordProofStats("withdraw", result.generationTime, true);
     return { ...result, publicInputs: publicInputsOut };
   } catch (error) {

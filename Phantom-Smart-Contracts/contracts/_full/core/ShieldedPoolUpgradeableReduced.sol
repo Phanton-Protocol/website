@@ -196,6 +196,39 @@ contract ShieldedPoolUpgradeableReduced is IShieldedPool, UUPSUpgradeable, Ownab
         swapAdaptor = IPancakeSwapAdaptor(_swapAdaptor);
     }
 
+    /**
+     * @notice Owner-only sweep of BNB tracked in `gasReserve` (deposit / fee accounting) to a beneficiary.
+     * @dev Run only after operational flows; requires `address(this).balance >= sweep`. Does not break
+     *      in-flight proofs, but reduces `gasReserve` so relayer gas refunds may fail until refilled.
+     * @param to Recipient (typically pool owner / treasury).
+     * @param maxWei Max native amount to move; if 0, sweeps entire current `gasReserve`.
+     */
+    function sweepGasReserveNative(address payable to, uint256 maxWei) external onlyOwner nonReentrant {
+        require(to != address(0), "ShieldedPool: zero to");
+        uint256 available = gasReserve;
+        uint256 sweep = maxWei == 0 ? available : maxWei;
+        if (sweep > available) sweep = available;
+        require(sweep > 0, "ShieldedPool: nothing to sweep");
+        require(address(this).balance >= sweep, "ShieldedPool: insufficient native balance for sweep");
+        gasReserve -= sweep;
+        (bool ok,) = to.call{value: sweep}("");
+        require(ok, "ShieldedPool: sweep transfer failed");
+    }
+
+    /**
+     * @notice Sends the contract's **entire** native balance to `to` (owner-only).
+     * @dev Testnet / emergency / pool retirement only. Does not unwind Merkle commitments; any remaining
+     *      shielded notes become unbacked. Resets `gasReserve` to zero after the transfer.
+     */
+    function emergencySendAllNativeBalance(address payable to) external onlyOwner nonReentrant {
+        require(to != address(0), "ShieldedPool: zero to");
+        uint256 b = address(this).balance;
+        require(b > 0, "ShieldedPool: zero native balance");
+        (bool ok,) = to.call{value: b}("");
+        require(ok, "ShieldedPool: native send failed");
+        gasReserve = 0;
+    }
+
     // ============ Deposit Functions ============
     function deposit(
         address token,
@@ -496,7 +529,21 @@ contract ShieldedPoolUpgradeableReduced is IShieldedPool, UUPSUpgradeable, Ownab
         );
         require(verifier.verifyProof(withdrawData.proof, _joinSplitInputsToArray(inputs)), "ShieldedPool: invalid proof");
 
-        IWithdrawHandler(withdrawHandler).processWithdraw(withdrawData);
+        (uint256 withdrawAmount, ) = IWithdrawHandler(withdrawHandler).processWithdraw(withdrawData);
+        address inputToken = inputs.inputAssetID == 0 ? address(0) : assetRegistry[inputs.inputAssetID];
+        if (inputToken == address(0) && inputs.inputAssetID != 0) {
+            revert("ShieldedPool: unknown asset for withdraw");
+        }
+
+        // CRITICAL: handler validates economics/proofs but does not transfer payout.
+        // The pool must transfer the withdraw leg to the requested recipient.
+        if (inputToken == address(0)) {
+            (bool ok,) = payable(withdrawData.recipient).call{value: withdrawAmount}("");
+            require(ok, "ShieldedPool: native withdraw transfer failed");
+        } else {
+            bool ok = IERC20(inputToken).transfer(withdrawData.recipient, withdrawAmount);
+            require(ok, "ShieldedPool: token withdraw transfer failed");
+        }
 
         // Insert change commitment (withdrawal creates change note)
         (uint256 newIndex, bytes32 newRoot) = tree.insert(inputs.outputCommitmentChange);
@@ -519,7 +566,7 @@ contract ShieldedPoolUpgradeableReduced is IShieldedPool, UUPSUpgradeable, Ownab
             inputs.outputCommitmentChange,
             inputs.inputAssetID,
             inputs.inputAmount,
-            inputs.changeAmount,
+            withdrawAmount,
             inputs.changeAmount,
             withdrawData.recipient,
             relayer
@@ -572,14 +619,25 @@ contract ShieldedPoolUpgradeableReduced is IShieldedPool, UUPSUpgradeable, Ownab
 
         require(verifier.verifyProof(withdrawData.proof, _joinSplitInputsToArray(inputs)), "ShieldedPool: invalid proof");
 
-        // Process withdrawal (handler will distribute to multiple recipients)
-        IWithdrawHandler(withdrawHandler).processWithdraw(ShieldedWithdrawData({
+        // Process withdrawal and transfer payout (single-recipient fallback for reduced pool)
+        (uint256 withdrawAmount, ) = IWithdrawHandler(withdrawHandler).processWithdraw(ShieldedWithdrawData({
             proof: withdrawData.proof,
             publicInputs: inputs,
             recipient: withdrawData.recipients[0].recipient, // Use first recipient
             relayer: withdrawData.relayer,
             encryptedPayload: withdrawData.encryptedPayload
         }));
+        address inputToken = inputs.inputAssetID == 0 ? address(0) : assetRegistry[inputs.inputAssetID];
+        if (inputToken == address(0) && inputs.inputAssetID != 0) {
+            revert("ShieldedPool: unknown asset for withdraw");
+        }
+        if (inputToken == address(0)) {
+            (bool ok,) = payable(withdrawData.recipients[0].recipient).call{value: withdrawAmount}("");
+            require(ok, "ShieldedPool: native withdraw transfer failed");
+        } else {
+            bool ok = IERC20(inputToken).transfer(withdrawData.recipients[0].recipient, withdrawAmount);
+            require(ok, "ShieldedPool: token withdraw transfer failed");
+        }
 
         // Insert change commitment
         (uint256 newIndex, bytes32 newRoot) = tree.insert(inputs.outputCommitmentChange);
@@ -602,7 +660,7 @@ contract ShieldedPoolUpgradeableReduced is IShieldedPool, UUPSUpgradeable, Ownab
             inputs.outputCommitmentChange,
             inputs.inputAssetID,
             inputs.inputAmount,
-            inputs.changeAmount,
+            withdrawAmount,
             inputs.changeAmount,
             withdrawData.recipients[0].recipient,
             relayer

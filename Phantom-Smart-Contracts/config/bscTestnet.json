@@ -1,12 +1,12 @@
 {
   "chainId": 97,
-  "rpcUrl": "https://data-seed-prebsc-1-s1.binance.org:8545",
+  "rpcUrl": "https://bnb-testnet.g.alchemy.com/v2/vbmADWvsW3767ovfBVesY",
   "addresses": {
-    "shieldedPool": "0xC6bdf5858e8D4C2fad09d0CA3cE356B2ace0ec99",
-    "swapAdaptor": "0x341a5CA83566688fCf05725Ca7AA6Dc35671ae35",
+    "shieldedPool": "0x49553cbf4642e5eb4E316F2959aF1C906060280A",
+    "swapAdaptor": "0x2eb59FD64bEd076Bea03C8DfD133DEB70bC8D0ed",
     "noteStorage": "",
-    "feeOracle": "0x89Ca5cda0cB774D5b5F80e92a72D62237E4E5e4d",
-    "relayerStaking": "0xf68c0F35075c168289aF67E18698180b7F71a1e8"
+    "feeOracle": "0xCAB096F64A9dD4d506DE2dcF93b8EbB1A90a465B",
+    "relayerStaking": "0x05e3C4723ae6c842a0EF54f9954386E4923B865f"
   },
   "assets": [
     { "assetId": 0, "symbol": "WBNB", "decimals": 18, "address": "0xae13d989dac2f0debff460ac112a837c89baa7cd" },

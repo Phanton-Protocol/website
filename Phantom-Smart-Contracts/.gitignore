@@ -1,6 +1,10 @@
-# Local trusted-setup intermediates (keep circuits/trusted_setup/pot8_bn128_pow8_final.ptau committed)
+# Local trusted-setup intermediates (Hermez PTAU is large — download via `npm run circuit:build:joinsplit`)
+/circuits/trusted_setup/powersOfTau28_hez_final_14.ptau
+/circuits/joinsplit_public9/circuit_0000.zkey
+# Legacy tiny pot (optional)
 /pot8_0000.ptau
 /pot8_0001.ptau
 /pot8_final.ptau
 /circuit_0000.zkey
 /.tools/
+/dist-ts/

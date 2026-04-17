@@ -9,20 +9,42 @@ const WASM = path.join(
 );
 const ZKEY = path.join(PSC_ROOT, "circuits/joinsplit_public9/circuit_final.zkey");
 
+function toDecString(x) {
+  return BigInt(typeof x === "bigint" ? x : String(x)).toString(10);
+}
+
 /**
- * Map JoinSplitPublicInputs-style object to Circom private inputs (field elements as decimal strings).
+ * Flat witness for `joinsplit_public9.circom` (matches circom `main.*` signal names).
  */
-function joinSplitPublicInputsToWitness(inputs) {
+function joinSplitPublicInputsToWitness(pi) {
+  const pathVals = [...(pi.merklePath || [])].slice(0, 10).map((p) => toDecString(p));
+  while (pathVals.length < 10) pathVals.push("0");
+  const idxVals = [...(pi.merklePathIndices || [])]
+    .slice(0, 10)
+    .map((p) => String(BigInt(p) % 2n));
+  while (idxVals.length < 10) idxVals.push("0");
+
+  const outSwap = BigInt(pi.outputCommitmentSwap);
+  const withdrawMode = outSwap === 0n ? "1" : "0";
+
   return {
-    in_nullifier: BigInt(inputs.nullifier).toString(10),
-    in_inputCommitment: BigInt(inputs.inputCommitment).toString(10),
-    in_outputCommitmentSwap: BigInt(inputs.outputCommitmentSwap).toString(10),
-    in_outputCommitmentChange: BigInt(inputs.outputCommitmentChange).toString(10),
-    in_merkleRoot: BigInt(inputs.merkleRoot).toString(10),
-    in_outputAmountSwap: BigInt(inputs.outputAmountSwap).toString(10),
-    in_minOutputAmountSwap: BigInt(inputs.minOutputAmountSwap).toString(10),
-    in_protocolFee: BigInt(inputs.protocolFee).toString(10),
-    in_gasRefund: BigInt(inputs.gasRefund).toString(10),
+    inputAssetID: toDecString(pi.inputAssetID),
+    inputAmount: toDecString(pi.inputAmount),
+    inputBlindingFactor: toDecString(pi.inputBlindingFactor),
+    ownerPublicKey: toDecString(pi.ownerPublicKey),
+    outputAssetIDSwap: toDecString(pi.outputAssetIDSwap),
+    outputAmountSwapNote: toDecString(pi.outputAmountSwapNote ?? pi.outputAmountSwap),
+    swapBlindingFactor: toDecString(pi.swapBlindingFactor),
+    outputAssetIDChange: toDecString(pi.outputAssetIDChange ?? pi.inputAssetID),
+    changeAmount: toDecString(pi.changeAmount),
+    changeBlindingFactor: toDecString(pi.changeBlindingFactor),
+    swapAmount: toDecString(pi.swapAmount),
+    withdrawMode,
+    protocolFeeWitness: toDecString(pi.protocolFee),
+    gasRefundWitness: toDecString(pi.gasRefund),
+    minOutputAmountSwapWitness: toDecString(pi.minOutputAmountSwap),
+    merklePath: pathVals,
+    merklePathIndices: idxVals,
   };
 }
 

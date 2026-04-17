@@ -18,15 +18,15 @@
 
 **Field reduction:** `ShieldedPool._joinSplitPublicInputsToArray` (and handler helpers) pass each value as `uint256(...) % SNARK_SCALAR_FIELD` so calldata matches Circom’s `Fr` semantics (same reduction snarkjs uses in public signals). Merkle / nullifier logic still uses the full `bytes32` keys from `JoinSplitPublicInputs`.
 
-`JoinSplitPublicInputs` also carries **private-to-verifier** fields used only by the pool (`inputAssetID`, amounts, Merkle path, etc.). Those are **not** fed into the Groth16 verifier on-chain; the pool checks them separately (conservation, Merkle, fees).
+`JoinSplitPublicInputs` also carries **calldata-only** fields (asset IDs, `swapAmount`, Merkle siblings, etc.). The Groth16 verifier still receives **only** the nine public field elements above; the circuit witness binds those to the spent note, Merkle path, splits, and fees.
 
 **Note:** `ShieldedPoolUpgradeable` uses a **29-element** public vector for join-split (includes Merkle path indices in-circuit). That path is not covered by `joinsplit_public9`; only the **non-upgradeable `ShieldedPool`** 9-signal layout matches this artifact.
 
 ## Circom: `joinsplit_public9`
 
-- Source: `circuits/joinsplit_public9/joinsplit_public9.circom`
-- Nine **public outputs** in the same order as the table above; nine private inputs copy through (`in_*`).
-- **MVP scope:** proves nothing about note soundness—only alignment + toolchain. Replace with a real join-split circuit before mainnet.
+- Source: `circuits/joinsplit_public9/joinsplit_public9.circom` (+ `mimc7.circom`, `mimc7_constants.circom`).
+- Nine **public outputs** in the same order as the table above.
+- Constraints: MiMC7 commitments + nullifier (`noteModel.js` chain), depth-10 Merkle (`MerkleTree.sol`), conservation with **120-bit** range checks, slippage when `withdrawMode = 0`.
 
 ## Pinning & artifacts
 
@@ -43,7 +43,7 @@ cd core/Phantom-Smart-Contracts
 npm run circuit:build:joinsplit
 ```
 
-This recompiles the circuit, runs Groth16 setup (needs `circuits/trusted_setup/pot8_bn128_pow8_final.ptau` or regenerates a local pot—see script), contributes a new `circuit_final.zkey`, exports `verification_key.json` and overwrites `contracts/_full/verifiers/JoinSplitVerifier.sol`. **After any rebuild**, refresh `manifest.json` hashes and run `HH_FULL=1 npm test`.
+This recompiles the circuit, runs Groth16 setup on **Hermez `powersOfTau28_hez_final_14.ptau`** (downloaded on first run if missing), contributes a dev `circuit_final.zkey`, exports `verification_key.json` and overwrites `contracts/_full/verifiers/JoinSplitVerifier.sol`. **After any rebuild**, refresh `manifest.json` hashes and run `HH_FULL=1 npm test`.
 
 ## Prove / verify (CLI)
 
