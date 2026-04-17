@@ -85,6 +85,7 @@ struct PublicInputs {
  * @dev Enables partial swaps and withdrawals with change notes
  * 
  * Conservation Rule: Input_Amount = Swap_Amount + Change_Amount + Protocol_Fee + Gas_Refund
+ * On withdraw flows, `swapAmount` is the transparent withdraw leg (see `withdrawValidate.js`); swap public amounts are zero.
  * 
  * Example: 10 BNB input → Swap 4 BNB to USDT + Keep 6 BNB as change
  * - inputAmount: 10 BNB

@@ -170,7 +170,7 @@ describe("ShieldedPoolUpgradeableReduced — Merkle root spend policy", function
     };
 
     await expect(pool.connect(deployer).shieldedSwapJoinSplit(joinSplitStub)).to.be.revertedWith(
-      "ShieldedPool: merkle root not spendable"
+      "SP: merkle root not spendable"
     );
   });
 
