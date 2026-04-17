@@ -5,8 +5,17 @@ const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const { mimc7, FIELD } = require("../src/mimc7");
 
-const wasmPath = path.join(__dirname, "..", "..", "circuits", "joinsplit_js", "joinsplit.wasm");
-const zkeyPath = path.join(__dirname, "..", "..", "circuits", "joinsplit_0001.zkey");
+const coreRoot = path.join(__dirname, "..", "..", "..");
+const wasmPath = path.join(
+  coreRoot,
+  "Phantom-Smart-Contracts",
+  "circuits",
+  "joinsplit_public9",
+  "build",
+  "joinsplit_public9_js",
+  "joinsplit_public9.wasm"
+);
+const zkeyPath = path.join(coreRoot, "Phantom-Smart-Contracts", "circuits", "joinsplit_public9", "circuit_final.zkey");
 
 function loadZkProofs(bypassTrue) {
   process.env.DEV_BYPASS_PROOFS = bypassTrue ? "true" : "false";

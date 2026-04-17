@@ -1,5 +1,6 @@
 const { expect } = require("chai");
 const { ethers } = require("hardhat");
+const MOCK_ERC20_FQN = "contracts/_full/mocks/MockERC20.sol:MockERC20";
 
 /**
  * Module 4 acceptance: relayer calls depositFor for ERC20 with msg.value=0 (fee path).
@@ -61,7 +62,7 @@ describe("depositFor ERC20 (relayer, zero msg.value fee)", function () {
     await (await pool.setDepositHandler(depositHandlerAddr)).wait();
     await (await pool.setTransactionHistory(txHistoryAddr)).wait();
 
-    const MockERC20 = await ethers.getContractFactory("MockERC20");
+    const MockERC20 = await ethers.getContractFactory(MOCK_ERC20_FQN);
     const token = await MockERC20.deploy("T", "T", 18);
     await token.waitForDeployment();
     const tokenAddr = await token.getAddress();

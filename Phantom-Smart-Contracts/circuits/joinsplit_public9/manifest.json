@@ -1,6 +1,6 @@
 {
   "circuit": "joinsplit_public9",
-  "description": "MVP public-signal layout only; binds 9 outputs to private inputs. Production must replace with soundness constraints.",
+  "description": "Groth16 join-split: MiMC7 commitments + nullifier (noteModel), depth-10 Merkle, conservation + 120-bit range checks, slippage when swap leg active; withdrawMode=1 zeros swap commitment.",
   "circom": "2.2.3",
   "snarkjs": "0.7.5",
   "curve": "bn128",
@@ -20,24 +20,24 @@
   "artifacts": {
     "circomSource": {
       "path": "circuits/joinsplit_public9/joinsplit_public9.circom",
-      "sha256": "ce5f2579d9c298247e69c587e2868d774ddb8ddf6d70b07608c47e432b81fdf2"
+      "sha256": "576badc62ab013ce20f97b793c1822a1658d922b551e2f14edc6e333066a87c4"
     },
     "wasm": {
       "path": "circuits/joinsplit_public9/build/joinsplit_public9_js/joinsplit_public9.wasm",
-      "sha256": "713751bef3cd68b74faa16297e0e912c7ede190cc1c0290d532a1546ebbe266a"
+      "sha256": "606ca47f76f0195c5026f20be8f12e723f6a9e0aa45d4d94a958be050608da80"
     },
     "zkeyFinal": {
       "path": "circuits/joinsplit_public9/circuit_final.zkey",
-      "sha256": "2e755d90ff0946ee210115ea05dc1cdb508ede8cb3863390ec84ac281820833f"
+      "sha256": "86fc81eaf136a7967e297a71894112e7cb3e8a319620adb2d68b720f27526e11"
     },
     "verificationKeyJson": {
       "path": "circuits/joinsplit_public9/verification_key.json",
-      "sha256": "7eb1186f12d13e77a45cf4429371d38fc9ff2855237f3b7a5b265721008f9345"
+      "sha256": "0cfe23518ab0f508976b164061e6c89458e4ed59ca035ca8ff2ed0af4a79038c"
     },
     "powersOfTau": {
-      "path": "circuits/trusted_setup/pot8_bn128_pow8_final.ptau",
-      "sha256": "79bdce6e3365f5b9af7ac6b14d0a717ff3653dc11136a6bf7d346a3aed1c0dbd",
-      "note": "Local dev pot (snarkjs powersoftau new bn128 8 + 1 contribution). Use Hermez/challenge ceremony for production."
+      "path": "circuits/trusted_setup/powersOfTau28_hez_final_14.ptau",
+      "sha256": "489be9e5ac65d524f7b1685baac8a183c6e77924fdb73d2b8105e335f277895d",
+      "note": "Hermez bn128 final_14 (public). Groth16 phase2 in circuit_final.zkey is dev-only single contribution — not production MPC."
     },
     "solidityVerifier": {
       "path": "contracts/_full/verifiers/JoinSplitVerifier.sol",

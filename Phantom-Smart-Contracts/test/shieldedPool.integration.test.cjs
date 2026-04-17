@@ -6,6 +6,7 @@ const {
   deployPoolFixture,
   totalJoinSplitFeeBnb,
 } = require("./helpers/poolFixtures.cjs");
+const MOCK_ERC20_FQN = "contracts/_full/mocks/MockERC20.sol:MockERC20";
 
 describe("ShieldedPool — deposit / swap / withdraw (integration)", function () {
   describe("deposit", function () {
@@ -34,7 +35,7 @@ describe("ShieldedPool — deposit / swap / withdraw (integration)", function ()
 
     it("owner registers MockERC20 on assetRegistry (used by swap output path)", async function () {
       const { deployer, pool } = await deployPoolFixture();
-      const MockERC20 = await ethers.getContractFactory("MockERC20");
+      const MockERC20 = await ethers.getContractFactory(MOCK_ERC20_FQN);
       const token = await MockERC20.deploy("T", "T", 18);
       await token.waitForDeployment();
       const tAddr = await token.getAddress();
@@ -44,7 +45,7 @@ describe("ShieldedPool — deposit / swap / withdraw (integration)", function ()
 
     it("ERC20 deposit: transferFrom pulls tokens to pool + commitment + Deposit event", async function () {
       const { deployer, pool } = await deployPoolFixture();
-      const MockERC20 = await ethers.getContractFactory("MockERC20");
+      const MockERC20 = await ethers.getContractFactory(MOCK_ERC20_FQN);
       const token = await MockERC20.deploy("T2", "T2", 18);
       await token.waitForDeployment();
       const tAddr = await token.getAddress();
@@ -67,7 +68,7 @@ describe("ShieldedPool — deposit / swap / withdraw (integration)", function ()
     it("spends note, runs mock swap, inserts swap + change commitments", async function () {
       const { deployer, pool, feeOracle } = await deployPoolFixture();
 
-      const MockERC20 = await ethers.getContractFactory("MockERC20");
+      const MockERC20 = await ethers.getContractFactory(MOCK_ERC20_FQN);
       const outTok = await MockERC20.deploy("Out", "O", 18);
       await outTok.waitForDeployment();
       const outAddr = await outTok.getAddress();
@@ -143,7 +144,7 @@ describe("ShieldedPool — deposit / swap / withdraw (integration)", function ()
     it("reverts when merkleRoot does not match pool (PoolErr 41)", async function () {
       const { deployer, pool, feeOracle } = await deployPoolFixture();
 
-      const MockERC20 = await ethers.getContractFactory("MockERC20");
+      const MockERC20 = await ethers.getContractFactory(MOCK_ERC20_FQN);
       const outTok = await MockERC20.deploy("Out", "O", 18);
       await outTok.waitForDeployment();
       await pool.connect(deployer).registerAsset(1n, await outTok.getAddress());
@@ -206,7 +207,7 @@ describe("ShieldedPool — deposit / swap / withdraw (integration)", function ()
     it("reverts when merkle path does not prove inputCommitment (PoolErr 42)", async function () {
       const { deployer, pool, feeOracle } = await deployPoolFixture();
 
-      const MockERC20 = await ethers.getContractFactory("MockERC20");
+      const MockERC20 = await ethers.getContractFactory(MOCK_ERC20_FQN);
       const outTok = await MockERC20.deploy("Out", "O", 18);
       await outTok.waitForDeployment();
       await pool.connect(deployer).registerAsset(1n, await outTok.getAddress());

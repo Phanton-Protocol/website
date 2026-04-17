@@ -683,6 +683,26 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
             `Shadow funded at ${shadow.shadowAddress} but sweep has not completed yet. Retry sweep from backend. Last error: ${sweepErr?.message || String(sweepErr)}`
           );
         }
+        let serverNote = null;
+        if (sweep?.txHash && wallet.address) {
+          try {
+            serverNote = await fetchJson(`${base}/notes/from-deposit`, {
+              method: "POST",
+              body: JSON.stringify({
+                txHash: sweep.txHash,
+                ownerAddress: wallet.address,
+                note: {
+                  assetID,
+                  amount: amountWei.toString(),
+                  blindingFactor: depositBlinding,
+                  ownerPublicKey: addressToOwnerPublicKey(wallet.address),
+                },
+              }),
+            });
+          } catch (noteErr) {
+            console.warn("[shadow-flow] notes/from-deposit failed (local vault still has note)", noteErr);
+          }
+        }
         setLastResult({
           via: "shadow-flow",
           shadowAddress: shadow.shadowAddress,
@@ -690,6 +710,7 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
           fundingWei: totalFunding.toString(),
           gasBufferWei: SHADOW_SWEEP_GAS_BUFFER_WEI.toString(),
           feeWei: feeWei.toString(),
+          serverNote,
           ...sweep,
         });
       } else {
@@ -962,8 +983,8 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
           throw new Error("Invalid withdraw JSON in Advanced.");
         }
         withdrawData = parsed.withdrawData || parsed;
-        if (!withdrawData?.proof || !withdrawData?.publicInputs || !withdrawData?.recipient) {
-          throw new Error("Withdraw JSON must include proof, publicInputs, and recipient.");
+        if (!withdrawData?.proof || !withdrawData?.publicInputs || (!withdrawData?.recipient && !withdrawData?.finalRecipient)) {
+          throw new Error("Withdraw JSON must include proof, publicInputs, and recipient or finalRecipient.");
         }
       } else {
         const spend = spendableNoteEntries(vault.data, withdrawForm.token);
@@ -1022,6 +1043,7 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
           proof: gen.proof,
           publicInputs: gen.publicInputs,
           recipient,
+          finalRecipient: recipient,
           ownerAddress: wallet.address.toLowerCase(),
           noteHints: {
             change: {

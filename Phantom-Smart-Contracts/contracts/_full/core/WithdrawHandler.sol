@@ -82,9 +82,11 @@ contract WithdrawHandler {
         
         // Fee calculation
         address inputToken = shieldedPool.assetRegistry(inputs.inputAssetID);
-        // Allow native token (address(0)) for BNB withdrawals in dev/testing
+        // ERC20: prefer a fresh off-chain quote when configured, but do not brick withdrawals if the
+        // oracle has no price for this token yet (common on testnets). Fee enforcement below still uses
+        // getUSDValue when available.
         if (inputToken != address(0)) {
-            feeOracle.requireFreshPrice(inputToken);
+            try feeOracle.requireFreshPrice(inputToken) {} catch {}
         }
         
         if (inputToken != address(0)) {

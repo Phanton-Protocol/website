@@ -85,7 +85,15 @@ const MODULE4_MAX_BNB_WEI = (() => {
     return 50000000000000000n;
   }
 })();
+const SHADOW_SWEEP_GAS_BUFFER_WEI = (() => {
+  try {
+    return BigInt(process.env.SHADOW_SWEEP_GAS_BUFFER_WEI || "2000000000000000"); // 0.002 BNB
+  } catch {
+    return 2000000000000000n;
+  }
+})();
 const CHAINALYSIS_ENABLED = process.env.CHAINALYSIS_ENABLED === "true";
+const CHAINALYSIS_API_KEY = String(process.env.CHAINALYSIS_API_KEY || "").trim();
 const CHAINALYSIS_API_URL = String(process.env.CHAINALYSIS_API_URL || "").trim();
 const rlBuckets = new Map();
 function rateLimit(req, res, next) {
@@ -236,6 +244,12 @@ const RUNTIME_PARAMS = {
     oracleFeeRateBps: toBps(process.env.PHANTOM_ORACLE_FEE_BPS, 50), // 0.5%
   },
 };
+
+function sleep(ms) {
+  const n = Number(ms);
+  if (!Number.isFinite(n) || n <= 0) return Promise.resolve();
+  return new Promise((resolve) => setTimeout(resolve, n));
+}
 
 let db;
 try {
@@ -513,10 +527,169 @@ function getShadowSeed({ depositor, commitment, deadline }) {
   ]));
 }
 
+/** One-time withdraw payout shadow (diagram: pool → SA → relayer → user). Domain tag 0x02 vs deposit seed. */
+function normalizeNullifierBytes32(nullifier) {
+  const s = String(nullifier).trim();
+  if (s.startsWith("0x")) return ethers.zeroPadValue(s, 32);
+  return ethers.zeroPadValue(ethers.toBeHex(BigInt(s)), 32);
+}
+
+function getWithdrawShadowSeed({ finalRecipient, nullifier }) {
+  const pk = ethers.isHexString(RELAYER_PRIVATE_KEY) ? RELAYER_PRIVATE_KEY : "0x" + Buffer.from(RELAYER_PRIVATE_KEY, "utf8").toString("hex");
+  const addr = ethers.getAddress(String(finalRecipient).trim());
+  return ethers.keccak256(ethers.concat([
+    ethers.getBytes(pk),
+    ethers.getBytes(ethers.zeroPadValue(addr, 32)),
+    ethers.getBytes(normalizeNullifierBytes32(nullifier)),
+    new Uint8Array([2]),
+  ]));
+}
+
+async function forwardWithdrawPayoutFromShadow(shadowSigner, finalRecipient) {
+  if (!finalRecipient || !ethers.isAddress(finalRecipient)) {
+    return { shadowForwardError: "Invalid finalRecipient for shadow forward" };
+  }
+  const provider = shadowSigner.provider;
+  const bal = await provider.getBalance(shadowSigner.address);
+  if (bal <= 0n) return { shadowForwardWei: "0", shadowForwardError: "Shadow has zero balance (pool may not have sent native yet)" };
+  const fee = await provider.getFeeData();
+  const gasPrice = fee.gasPrice ?? fee.maxFeePerGas ?? 0n;
+  if (gasPrice <= 0n) return { shadowForwardError: "Cannot estimate gas price for shadow forward" };
+  const gasCost = gasPrice * 21000n;
+  if (bal <= gasCost) return { shadowForwardWei: bal.toString(), shadowForwardError: "Insufficient shadow balance after gas reserve" };
+  const value = bal - gasCost;
+  try {
+    const tx = await shadowSigner.sendTransaction({
+      to: ethers.getAddress(finalRecipient),
+      value,
+      gasLimit: 21000n,
+      gasPrice,
+    });
+    const receipt = await tx.wait();
+    return {
+      shadowForwardTxHash: tx.hash,
+      shadowForwardWei: value.toString(),
+      shadowForwardBlockNumber: receipt?.blockNumber,
+    };
+  } catch (e) {
+    return { shadowForwardError: e?.reason || e?.shortMessage || e?.message || String(e) };
+  }
+}
+
+/** Native BNB on shadow for paying gas on an ERC20 `transfer` (pool pays tokens, not gas). */
+async function topUpWithdrawShadowNativeGasIfNeeded({ payerSigner, shadowSigner, minBalanceWei }) {
+  const min = BigInt(minBalanceWei || "0");
+  if (min <= 0n) return { shadowGasTopUpSkipped: true };
+  const provider = shadowSigner.provider;
+  const bal = await provider.getBalance(shadowSigner.address);
+  if (bal >= min) return { shadowGasTopUpSkipped: true, shadowNativeBalanceWei: bal.toString() };
+  const deficit = min - bal;
+  const tx = await payerSigner.sendTransaction({ to: shadowSigner.address, value: deficit });
+  const receipt = await tx.wait();
+  return {
+    shadowGasTopUpTxHash: tx.hash,
+    shadowGasTopUpWei: deficit.toString(),
+    shadowGasTopUpBlockNumber: receipt?.blockNumber,
+    shadowNativeBalanceWei: (await provider.getBalance(shadowSigner.address)).toString(),
+  };
+}
+
+/**
+ * Forward full ERC20 balance from withdraw-shadow to the user's wallet (e.g. BUSD after shieldedWithdraw).
+ * Polls balance briefly: some RPCs lag one block behind `withdraw` receipt state.
+ */
+async function forwardWithdrawTokenFromShadow(shadowSigner, tokenAddress, finalRecipient, opts = {}) {
+  if (!finalRecipient || !ethers.isAddress(finalRecipient)) {
+    return { shadowForwardTokenError: "Invalid finalRecipient for token shadow forward" };
+  }
+  const token = ethers.getAddress(String(tokenAddress).trim());
+  const erc20 = new ethers.Contract(
+    token,
+    ["function balanceOf(address) view returns (uint256)", "function transfer(address to, uint256 amount) returns (bool)"],
+    shadowSigner
+  );
+  const maxPolls = Number(opts.maxPolls ?? process.env.SHADOW_ERC20_FORWARD_BALANCE_POLLS ?? 12) || 12;
+  const pollMs = Number(opts.pollMs ?? process.env.SHADOW_ERC20_FORWARD_POLL_MS ?? 700) || 700;
+  const initialDelayMs = Number(opts.initialDelayMs ?? process.env.SHADOW_ERC20_FORWARD_INITIAL_DELAY_MS ?? 400) || 400;
+  await sleep(initialDelayMs);
+  let bal = 0n;
+  let lastPollErr;
+  for (let i = 0; i < maxPolls; i += 1) {
+    try {
+      bal = await erc20.balanceOf(shadowSigner.address);
+    } catch (e) {
+      lastPollErr = e?.message || String(e);
+      bal = 0n;
+    }
+    if (bal > 0n) break;
+    if (i < maxPolls - 1) await sleep(pollMs);
+  }
+  if (bal <= 0n) {
+    return {
+      shadowForwardTokenWei: "0",
+      shadowForwardTokenError: lastPollErr
+        ? `Shadow has zero token balance after ${maxPolls} polls (${lastPollErr})`
+        : "Shadow has zero token balance (pool may not have sent ERC20 yet; check withdraw recipient vs shadow seed)",
+      shadowForwardTokenPolls: String(maxPolls),
+    };
+  }
+  try {
+    const to = ethers.getAddress(finalRecipient);
+    let gasLimit = 120000n;
+    try {
+      const est = await erc20.transfer.estimateGas(to, bal);
+      gasLimit = (BigInt(est) * 115n) / 100n + 15000n;
+      if (gasLimit > 500000n) gasLimit = 500000n;
+    } catch {
+      /* fixed limit */
+    }
+    const fee = await shadowSigner.provider.getFeeData();
+    const txOpts = { gasLimit };
+    if (fee.maxFeePerGas != null && fee.maxPriorityFeePerGas != null) {
+      txOpts.maxFeePerGas = fee.maxFeePerGas;
+      txOpts.maxPriorityFeePerGas = fee.maxPriorityFeePerGas;
+    } else if (fee.gasPrice != null) {
+      txOpts.gasPrice = fee.gasPrice;
+    }
+    const tx = await erc20.transfer(to, bal, txOpts);
+    const receipt = await tx.wait();
+    return {
+      shadowForwardTokenTxHash: tx.hash,
+      shadowForwardTokenWei: bal.toString(),
+      shadowForwardToken: token,
+      shadowForwardTokenBlockNumber: receipt?.blockNumber,
+    };
+  } catch (e) {
+    return { shadowForwardTokenError: e?.reason || e?.shortMessage || e?.message || String(e) };
+  }
+}
+
+async function topUpWithdrawShadowIfNeeded({ payerSigner, shadowSigner, requiredWei }) {
+  const needed = BigInt(requiredWei || "0");
+  if (needed <= 0n) return { shadowTopUpSkipped: true };
+  const provider = shadowSigner.provider;
+  const bal = await provider.getBalance(shadowSigner.address);
+  if (bal >= needed) return { shadowTopUpSkipped: true, shadowBalanceWei: bal.toString() };
+  const deficit = needed - bal;
+  const tx = await payerSigner.sendTransaction({
+    to: shadowSigner.address,
+    value: deficit,
+  });
+  const receipt = await tx.wait();
+  return {
+    shadowTopUpTxHash: tx.hash,
+    shadowTopUpWei: deficit.toString(),
+    shadowTopUpBlockNumber: receipt?.blockNumber,
+  };
+}
+
 async function sweepShadowDeposit(shadowAddress, deposit) {
   const provider = new ethers.JsonRpcProvider(RPC_URL);
   const seed = getShadowSeed(deposit);
   const shadowSigner = new ethers.Wallet(seed, provider);
+  // On-chain `Deposit(depositor, …)` must use the shadow EOA so the pool tx does not leak the
+  // user's main wallet. The real depositor is still authenticated off-chain via EIP-712 (`deposit.depositor`).
+  const poolDepositor = shadowSigner.address;
   const poolAbi = [
     "function depositForBNB(address depositor,bytes32 commitment,uint256 assetID) external payable",
     "function depositFor(address depositor,address token,uint256 amount,bytes32 commitment,uint256 assetID) external",
@@ -528,7 +701,7 @@ async function sweepShadowDeposit(shadowAddress, deposit) {
     const totalValue = BigInt(deposit.amount) + feeWei;
     try {
       const tx = await pool.depositForBNB(
-        deposit.depositor,
+        poolDepositor,
         deposit.commitment,
         deposit.assetID,
         { value: totalValue }
@@ -560,7 +733,7 @@ async function sweepShadowDeposit(shadowAddress, deposit) {
     await approveTx.wait();
   }
   const tx = await pool.depositFor(
-    deposit.depositor,
+    poolDepositor,
     deposit.token,
     deposit.amount,
     deposit.commitment,
@@ -654,7 +827,26 @@ const poolInterface = new ethers.Interface([
 ]);
 
 const dexApiToken = "https://api.dexscreener.com/latest/dex/tokens/";
-const DEPOSIT_FEE_USD = RUNTIME_PARAMS.fees.depositFeeUsdE8;
+
+let cachedPoolDepositFeeUsdE8 = null;
+let depositFeeBelowChainWarned = false;
+
+async function readPoolDepositFeeUsdE8() {
+  if (cachedPoolDepositFeeUsdE8 != null) return cachedPoolDepositFeeUsdE8;
+  if (!RPC_URL || !SHIELDED_POOL_ADDRESS) return null;
+  try {
+    const provider = new ethers.JsonRpcProvider(RPC_URL);
+    const pool = new ethers.Contract(
+      SHIELDED_POOL_ADDRESS,
+      ["function DEPOSIT_FEE_USD() view returns (uint256)"],
+      provider
+    );
+    cachedPoolDepositFeeUsdE8 = BigInt(await pool.DEPOSIT_FEE_USD());
+    return cachedPoolDepositFeeUsdE8;
+  } catch {
+    return null;
+  }
+}
 
 const WBNB_BSC_MAINNET = "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c";
 const WBNB_BSC_TESTNET = "0xae13d989dac2f0debff460ac112a837c89baa7cd";
@@ -779,14 +971,24 @@ async function tryQuotePancakeV3Quoter(provider, tokenIn, tokenOut, amountInBn, 
 }
 
 async function getDepositFeeBNBWei() {
+  const envUsd = RUNTIME_PARAMS.fees.depositFeeUsdE8;
+  const chainMinUsd = await readPoolDepositFeeUsdE8();
+  const effectiveUsd = chainMinUsd != null && envUsd < chainMinUsd ? chainMinUsd : envUsd;
+  if (chainMinUsd != null && envUsd < chainMinUsd && !depositFeeBelowChainWarned) {
+    depositFeeBelowChainWarned = true;
+    console.warn(
+      `[deposit fee] PHANTOM_DEPOSIT_FEE_USD_E8 (${envUsd}) is below on-chain pool DEPOSIT_FEE_USD (${chainMinUsd}); ` +
+        "using chain minimum for BNB fee conversion (lower env alone cannot bypass the contract)."
+    );
+  }
   const wbnb = CHAIN_ID === 56 ? WBNB_BSC_MAINNET : WBNB_BSC_TESTNET;
   const chainSlug = CHAIN_ID === 56 ? "bsc" : "bsc-testnet";
   try {
     const price = await getDexPriceUsd(wbnb, chainSlug);
     if (!price || price === 0n) throw new Error("No BNB price");
-    return (DEPOSIT_FEE_USD * 10n ** 18n) / price;
+    return (effectiveUsd * 10n ** 18n) / price;
   } catch (e) {
-    const fallback = CHAIN_ID === 97 ? 3333333333333333n : 3333333333333333n; 
+    const fallback = CHAIN_ID === 97 ? 3333333333333333n : 3333333333333333n;
 
     return fallback;
   }
@@ -914,11 +1116,16 @@ const withdrawSchema = z.object({
     proof: proofShape,
     publicInputs: z.any(),
     relayer: z.string().optional(),
-    recipient: z.string(),
+    recipient: z.string().optional(),
+    /** When set, pool pays this 1-time shadow EOA; relayer then forwards native to `recipient` / this address. */
+    finalRecipient: z.string().optional(),
     encryptedPayload: z.string().optional(),
     noteHints: z.any().optional(),
     ownerAddress: z.string().optional(),
-  }),
+  }).refine(
+    (d) => (d.recipient && String(d.recipient).trim()) || (d.finalRecipient && String(d.finalRecipient).trim()),
+    { message: "withdrawData.recipient or withdrawData.finalRecipient is required" }
+  ),
 });
 
 const depositSchema = z.object({
@@ -948,12 +1155,33 @@ async function processWithdrawRequestBody(body) {
     err.code = e.code;
     throw err;
   }
-  if (!ethers.isAddress(withdrawData.recipient)) {
-    const err = new Error("withdraw_invalid_recipient");
-    err.status = 400;
-    throw err;
+  const frOpt = withdrawData.finalRecipient != null ? String(withdrawData.finalRecipient).trim() : "";
+  if (frOpt) {
+    if (!ethers.isAddress(frOpt)) {
+      const err = new Error("withdraw_invalid_finalRecipient");
+      err.status = 400;
+      throw err;
+    }
+    const fr = ethers.getAddress(frOpt);
+    const nf = withdrawData.publicInputs?.nullifier;
+    if (nf === undefined || nf === null) {
+      const err = new Error("withdraw_finalRecipient_requires_publicInputs_nullifier");
+      err.status = 400;
+      throw err;
+    }
+    await screenWithdrawRecipient(fr);
+    const seed = getWithdrawShadowSeed({ finalRecipient: fr, nullifier: nf });
+    const shadowAddr = new ethers.Wallet(seed).address;
+    withdrawData.recipient = shadowAddr;
+    withdrawData._shadowPayoutTo = fr;
+  } else {
+    if (!withdrawData.recipient || !ethers.isAddress(String(withdrawData.recipient).trim())) {
+      const err = new Error("withdraw_invalid_recipient");
+      err.status = 400;
+      throw err;
+    }
+    await screenWithdrawRecipient(withdrawData.recipient);
   }
-  await screenWithdrawRecipient(withdrawData.recipient);
   return RELAYER_DRY_RUN
     ? await simulateSwap(ethers.keccak256(ethers.toUtf8Bytes(JSON.stringify(withdrawData))))
     : await submitWithdraw(withdrawData);
@@ -991,6 +1219,7 @@ async function processDepositRequestBody(body) {
     err.status = 400;
     throw err;
   }
+  await screenDepositDepositor(payload.depositor, "deposit");
   try {
     return RELAYER_DRY_RUN
       ? await simulateSwap(ethers.keccak256(ethers.toUtf8Bytes(JSON.stringify({
@@ -1090,13 +1319,17 @@ async function persistNoteFromDepositReceipt(txHash, noteInput, ownerAddressOver
     throw err;
   }
 
-  const ownerAddress = (ownerAddressOverride || String(depositEvt.args.depositor)).toLowerCase();
+  const rawEventDepositor = String(depositEvt.args.depositor);
+  const ownerAddress = (ownerAddressOverride || rawEventDepositor).toLowerCase();
   const noteId = noteIdFromCanonical(canonical, `${String(receipt.hash).toLowerCase()}:${ownerAddress}`);
   const encryptedPayload = encryptJsonAtRest({
     note: canonical,
     txHash: receipt.hash,
     blockNumber: receipt.blockNumber,
-    depositor: String(depositEvt.args.depositor),
+    depositor: ownerAddress,
+    ...(ownerAddress !== rawEventDepositor.toLowerCase()
+      ? { poolDepositorOnChain: rawEventDepositor }
+      : {}),
     token: String(depositEvt.args.token),
     assetId: String(depositEvt.args.assetID),
     amount: String(depositEvt.args.amount),
@@ -1185,15 +1418,21 @@ async function persistSwapOutputNotes({ txHash, ownerAddress, noteHints, publicI
 
 async function screenWithdrawRecipient(addr) {
   if (!CHAINALYSIS_ENABLED) return { ok: true, skipped: true };
-  if (!CHAINALYSIS_API_URL) {
-    console.warn("[module6] CHAINALYSIS_ENABLED but CHAINALYSIS_API_URL unset; skipping recipient screen");
+  if (!CHAINALYSIS_API_URL || !CHAINALYSIS_API_KEY) {
+    console.warn("[module6] CHAINALYSIS_ENABLED but API URL/KEY missing; skipping recipient screen");
     return { ok: true, skipped: true };
   }
   try {
     const r = await axios.post(
       CHAINALYSIS_API_URL,
       { address: ethers.getAddress(addr) },
-      { timeout: 12_000, validateStatus: () => true }
+      {
+        timeout: 12_000,
+        validateStatus: () => true,
+        headers: {
+          Authorization: `Bearer ${CHAINALYSIS_API_KEY}`,
+        },
+      }
     );
     if (r.status >= 400) {
       const e = new Error(`chainalysis_http_${r.status}`);
@@ -1209,6 +1448,42 @@ async function screenWithdrawRecipient(addr) {
   } catch (e) {
     if (e.status) throw e;
     console.warn("[module6] Chainalysis request failed (non-fatal):", e.message || e);
+    return { ok: true, warn: String(e.message || e) };
+  }
+}
+
+async function screenDepositDepositor(addr, source = "deposit") {
+  if (!CHAINALYSIS_ENABLED) return { ok: true, skipped: true };
+  if (!CHAINALYSIS_API_URL || !CHAINALYSIS_API_KEY) {
+    console.warn(`[${source}] CHAINALYSIS_ENABLED but API URL/KEY missing; skipping depositor screen`);
+    return { ok: true, skipped: true };
+  }
+  try {
+    const r = await axios.post(
+      CHAINALYSIS_API_URL,
+      { address: ethers.getAddress(addr) },
+      {
+        timeout: 12_000,
+        validateStatus: () => true,
+        headers: {
+          Authorization: `Bearer ${CHAINALYSIS_API_KEY}`,
+        },
+      }
+    );
+    if (r.status >= 400) {
+      const e = new Error(`chainalysis_http_${r.status}`);
+      e.status = 403;
+      throw e;
+    }
+    if (r.data?.blocked === true || String(r.data?.risk || "").toLowerCase() === "severe") {
+      const e = new Error("chainalysis_depositor_not_allowed");
+      e.status = 403;
+      throw e;
+    }
+    return { ok: true };
+  } catch (e) {
+    if (e.status) throw e;
+    console.warn(`[${source}] Chainalysis request failed (non-fatal):`, e.message || e);
     return { ok: true, warn: String(e.message || e) };
   }
 }
@@ -1281,6 +1556,11 @@ app.post("/relayer/deposit/session", module4RateLimit, async (req, res) => {
   const { idempotencyKey, depositor, mode, assetId } = parsed.data;
   const token = parsed.data.token ? String(parsed.data.token) : "";
   const amount = parsed.data.amount != null ? String(parsed.data.amount) : "";
+  try {
+    await screenDepositDepositor(depositor, "module4.deposit.session");
+  } catch (e) {
+    return res.status(e.status || 403).json({ error: e.message || "chainalysis_depositor_not_allowed" });
+  }
 
   if (mode === "erc20") {
     if (!token || !ethers.isAddress(token) || token === ethers.ZeroAddress) {
@@ -1351,7 +1631,7 @@ app.post("/relayer/deposit/session", module4RateLimit, async (req, res) => {
     amount,
     assetId: String(assetId),
     status: "pending",
-    payload: {},
+    payload: { shadowDeadline: Math.floor((now + MODULE4_SESSION_TTL_MS) / 1000) },
     createdAt: now,
     updatedAt: now,
   };
@@ -1367,7 +1647,7 @@ app.post("/relayer/deposit/session", module4RateLimit, async (req, res) => {
     assetId: row.assetId,
     expiresAt: now + MODULE4_SESSION_TTL_MS,
     flow: "A",
-    primaryMvpFlow: "erc20_user_approves_pool_relayer_depositFor",
+    primaryMvpFlow: "bnb_shadow_or_erc20_pool_approve",
     instructions:
       mode === "erc20"
         ? {
@@ -1452,13 +1732,26 @@ app.post("/relayer/deposit/submit", requireModule4SubmitAuth, module4RateLimit, 
         assetID: session.assetId,
       });
     } else {
-      const valueWei = BigInt(session.amount);
-      tx = await sendDepositForBnb(wallet, SHIELDED_POOL_ADDRESS, {
+      // For BNB, force shadow route so on-chain Deposit.depositor is shadow, not user EOA.
+      const shadowReq = {
         depositor,
+        token: ethers.ZeroAddress,
+        amount: session.amount,
         commitment,
-        assetID: session.assetId,
-        valueWei,
-      });
+        assetID: Number(session.assetId),
+        deadline: Number(session.payload?.shadowDeadline || Math.floor(Date.now() / 1000) + 900),
+      };
+      const shadowSeed = getShadowSeed(shadowReq);
+      const shadowSigner = new ethers.Wallet(shadowSeed, provider);
+      const feeWei = await getDepositFeeBNBWei();
+      const totalFunding = BigInt(session.amount) + feeWei + SHADOW_SWEEP_GAS_BUFFER_WEI;
+      const fundTx = await wallet.sendTransaction({ to: shadowSigner.address, value: totalFunding });
+      await fundTx.wait();
+      const sweepOut = await sweepShadowDeposit(shadowSigner.address, shadowReq);
+      if (sweepOut?.shadowSweepFailed || !sweepOut?.txHash) {
+        throw new Error(sweepOut?.shadowSweepError || "module4_bnb_shadow_sweep_failed");
+      }
+      tx = { hash: sweepOut.txHash, wait: async () => await provider.getTransactionReceipt(sweepOut.txHash) };
     }
   } catch (e) {
     logModule4("deposit.submit.tx_failed", { message: e?.shortMessage || e?.message });
@@ -2661,6 +2954,11 @@ app.post("/shadow-address", async (req, res) => {
   if (signerAddr.toLowerCase() !== payload.depositor.toLowerCase()) {
     return res.status(400).json({ error: "Invalid deposit signature" });
   }
+  try {
+    await screenDepositDepositor(payload.depositor, "shadow-address");
+  } catch (e) {
+    return res.status(e.status || 403).json({ error: e.message || "chainalysis_depositor_not_allowed" });
+  }
   const seed = getShadowSeed(payload);
   const shadowWallet = new ethers.Wallet(seed);
   const shadowAddress = shadowWallet.address;
@@ -2708,9 +3006,23 @@ app.post("/shadow-sweep", async (req, res) => {
   }
   try {
     const result = await sweepShadowDeposit(entryAddress, entry);
+    if (result?.shadowSweepFailed || !result?.txHash) {
+      return res.status(500).json({
+        error: result?.shadowSweepError || "Shadow sweep failed",
+        shadowAddress: entryAddress,
+        signedDepositor: entry.depositor,
+        poolDepositorOnChain: String(entryAddress).toLowerCase(),
+        ...result,
+      });
+    }
     shadowDeposits.delete(String(entryAddress).toLowerCase());
     persistShadowDeposits();
-    res.json({ shadowAddress: entryAddress, ...result });
+    res.json({
+      shadowAddress: entryAddress,
+      signedDepositor: entry.depositor,
+      poolDepositorOnChain: String(entryAddress).toLowerCase(),
+      ...result,
+    });
   } catch (err) {
     res.status(500).json({ error: err.message || "Shadow sweep failed" });
   }
@@ -3112,6 +3424,10 @@ function startServer(tryPort) {
       for (const line of w) console.warn(`  - ${line}`);
     }
   });
+  // Groth16 prove can exceed Node's default HTTP server timeouts (client sees "socket hang up").
+  const proveMs = Number(process.env.HTTP_SERVER_PROVE_TIMEOUT_MS || 900000);
+  server.requestTimeout = proveMs;
+  server.headersTimeout = proveMs + 60000;
   server.on("error", (err) => {
     const portNum = Number(tryPort);
     if (err.code === "EADDRINUSE" && portNum < Number(PORT) + 10) {
@@ -3283,10 +3599,44 @@ const submitSelfThresholdValidation = async (signer, proof, publicSignals, label
   await submitThresholdValidations(signer, proof, publicSignals, [validatorSig], label);
 };
 
+/**
+ * Match swapParams to ShieldedPool + PancakeSwapAdaptor semantics:
+ * - Pool assetID 0 is native BNB; the pool forwards swapAmount as msg.value. Adaptor must see tokenIn == 0x0
+ *   to use swapExactETHForTokens (not ERC20 transferFrom from the pool).
+ * - Likewise tokenOut == 0x0 selects the native-BNB-out branch.
+ * - Adaptor decodes `path` as abi.encode(address[]). V3-style compact paths from Quoter must be cleared so
+ *   _getPath() builds the default [WBNB, token] hop list for the pinned V2 router.
+ */
+function normalizeJoinSplitSwapParamsForChain(swapData) {
+  const pi = swapData?.publicInputs;
+  const sp = swapData?.swapParams;
+  if (!pi || !sp) return;
+  let path = sp.path;
+  if (path && path !== "0x" && typeof path === "string" && path.length > 2) {
+    try {
+      ethers.AbiCoder.defaultAbiCoder().decode(["address[]"], path);
+    } catch {
+      path = "0x";
+    }
+  } else {
+    path = sp.path || "0x";
+  }
+  const next = { ...sp, path };
+  if (Number(pi.inputAssetID) === 0) {
+    next.tokenIn = ethers.ZeroAddress;
+  }
+  if (Number(pi.outputAssetIDSwap) === 0) {
+    next.tokenOut = ethers.ZeroAddress;
+  }
+  swapData.swapParams = next;
+}
+
 async function submitSwap(swapData) {
   if (!RPC_URL || !RELAYER_PRIVATE_KEY || !SHIELDED_POOL_ADDRESS) {
     throw new Error("Relayer env not configured");
   }
+
+  normalizeJoinSplitSwapParamsForChain(swapData);
 
   console.log("\n🔐 Phase 2: Collecting validator signatures...");
 
@@ -3389,7 +3739,17 @@ async function submitSwap(swapData) {
   let tx;
   try {
     if (swapDataForContract[5] !== ethers.ZeroHash) {
-      await (await contract.commitSwap(swapDataForContract[5], swapDataForContract[6])).wait();
+      try {
+        await (await contract.commitSwap(swapDataForContract[5], swapDataForContract[6])).wait();
+      } catch (commitErr) {
+        const raw = `${commitErr?.message || ""} ${commitErr?.shortMessage || ""}`.toLowerCase();
+        // Reduced pool deployments do not implement commitSwap; continue without pre-commit in that case.
+        if (/no data present|unsupported|is not a function|call_exception/.test(raw)) {
+          console.warn("[swap] commitSwap unavailable on this pool; continuing without commitSwap pre-step");
+        } else {
+          throw commitErr;
+        }
+      }
     }
     tx = await contract.shieldedSwapJoinSplit(swapDataForContract);
   } catch (e) {
@@ -3526,6 +3886,14 @@ async function submitWithdraw(withdrawData) {
   ];
   let receipt;
   try {
+    await contract.shieldedWithdraw.staticCall(withdrawDataForContract);
+  } catch (simErr) {
+    logRelayerOnchainFailure("shieldedWithdraw.staticCall", simErr);
+    const err = new Error(`withdraw_simulation_failed: ${simErr?.reason || simErr?.message || String(simErr)}`);
+    err.status = 400;
+    throw err;
+  }
+  try {
     const tx = await contract.shieldedWithdraw(withdrawDataForContract);
     console.log("⏳ Waiting for confirmation...");
     receipt = await tx.wait();
@@ -3542,7 +3910,7 @@ async function submitWithdraw(withdrawData) {
       err.status = 400;
       throw err;
     }
-    if (/poolerr\(5\)|protocol|fee/.test(raw)) {
+    if (/poolerr\(5\)|fee\s*mismatch|withdrawhandler:\s*fee\s*mismatch|protocol\s*fee\s*insufficient/i.test(raw)) {
       const err = new Error("withdraw_protocol_fee_insufficient_for_on_chain_policy");
       err.status = 400;
       throw err;
@@ -3556,6 +3924,59 @@ async function submitWithdraw(withdrawData) {
   }
 
   console.log(`✅ Withdrawal confirmed: ${receipt.hash}`);
+  let shadowForward = null;
+  if (withdrawData._shadowPayoutTo) {
+    try {
+      const wSeed = getWithdrawShadowSeed({ finalRecipient: withdrawData._shadowPayoutTo, nullifier: pi.nullifier });
+      const shadowSigner = new ethers.Wallet(wSeed, provider);
+      if (String(shadowSigner.address).toLowerCase() !== String(recipient).toLowerCase()) {
+        console.warn("[withdraw] shadow address mismatch vs contract recipient; skip forward");
+        shadowForward = {
+          shadowForwardSkippedMismatch: true,
+          shadowSignerDerived: shadowSigner.address,
+          withdrawRecipient: recipient,
+        };
+      } else {
+        const poolAsset = new ethers.Contract(
+          SHIELDED_POOL_ADDRESS,
+          ["function assetRegistry(uint256) view returns (address)"],
+          provider
+        );
+        const inputAssetIdBn = toBigInt(pi.inputAssetID ?? 0);
+        const inputTokenAddr = inputAssetIdBn === 0n ? ethers.ZeroAddress : await poolAsset.assetRegistry(inputAssetIdBn);
+        const isNativePayout =
+          !inputTokenAddr || String(inputTokenAddr).toLowerCase() === ethers.ZeroAddress.toLowerCase();
+
+        if (isNativePayout) {
+          const topUp = await topUpWithdrawShadowIfNeeded({
+            payerSigner: signer,
+            shadowSigner,
+            requiredWei: pi.swapAmount ?? "0",
+          });
+          shadowForward = await forwardWithdrawPayoutFromShadow(shadowSigner, withdrawData._shadowPayoutTo);
+          shadowForward = { ...topUp, ...shadowForward };
+        } else {
+          const minGasWei = BigInt(
+            process.env.SHADOW_ERC20_FORWARD_MIN_NATIVE_WEI || "5000000000000000"
+          );
+          const topGas = await topUpWithdrawShadowNativeGasIfNeeded({
+            payerSigner: signer,
+            shadowSigner,
+            minBalanceWei: minGasWei,
+          });
+          shadowForward = await forwardWithdrawTokenFromShadow(
+            shadowSigner,
+            inputTokenAddr,
+            withdrawData._shadowPayoutTo
+          );
+          shadowForward = { ...topGas, ...shadowForward };
+        }
+      }
+    } catch (e) {
+      shadowForward = { shadowForwardError: e?.message || String(e) };
+      console.error("[withdraw] shadow forward failed", e);
+    }
+  }
   try {
     pushTransaction({ op: "shieldedWithdraw", txHash: receipt.hash, blockNumber: receipt.blockNumber });
   } catch (_) {
@@ -3586,6 +4007,13 @@ async function submitWithdraw(withdrawData) {
     blockNumber: receipt.blockNumber,
     validatorSignatures: validationResultWd.signatures.length,
     relayer: relayerAddr,
+    ...(withdrawData._shadowPayoutTo
+      ? {
+          withdrawPayoutShadow: recipient,
+          userFinalRecipient: withdrawData._shadowPayoutTo,
+        }
+      : {}),
+    ...(shadowForward || {}),
     ...(module3Notes ? { module3Notes } : {}),
     ...(module3NotesWarning ? { module3NotesWarning } : {}),
   };
