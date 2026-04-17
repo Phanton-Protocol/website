@@ -49,7 +49,7 @@ const Hero = () => {
               {...fade(0.4)}
               style={{
                 maxWidth: 'min(520px, 100%)',
-                color: '#ffffff',
+                color: 'rgba(223, 238, 255, 0.94)',
                 fontSize: 'var(--body-size)',
                 fontWeight: 500,
                 lineHeight: 'var(--body-line)',
@@ -66,20 +66,21 @@ const Hero = () => {
               <Link
                 to="/trade"
                 style={{
-                  fontFamily: 'var(--font-mono)',
+                  fontFamily: 'var(--font-body)',
                   fontSize: 'var(--btn-text-size)',
-                  letterSpacing: '0.12em',
+                  letterSpacing: '0.08em',
                   textTransform: 'uppercase',
                   background: 'var(--cyan)',
-                  color: '#0a0a0a',
+                  color: '#051124',
                   padding: '0.85rem 1.75rem',
                   textDecoration: 'none',
                   fontWeight: 600,
-                  transition: 'opacity 0.3s, box-shadow 0.3s',
+                  transition: 'opacity 0.3s, box-shadow 0.3s, transform 0.3s',
+                  border: '1px solid rgba(145, 205, 255, 0.58)',
                 }}
                 className="btn-cyan"
-                onMouseEnter={e => { e.target.style.opacity = '0.9'; e.target.style.boxShadow = '0 0 32px rgba(0,229,199,0.4)'; }}
-                onMouseLeave={e => { e.target.style.opacity = '1'; e.target.style.boxShadow = 'none'; }}
+                onMouseEnter={e => { e.target.style.opacity = '0.93'; e.target.style.boxShadow = '0 10px 28px rgba(86, 158, 224, 0.32)'; e.target.style.transform = 'translateY(-1px)'; }}
+                onMouseLeave={e => { e.target.style.opacity = '1'; e.target.style.boxShadow = 'none'; e.target.style.transform = 'none'; }}
               >
                 InternalMatching
               </Link>
@@ -129,14 +130,14 @@ const Hero = () => {
         </div>
       </div>
 
-      {/* Bottom gradient fade */}
+      {/* Bottom fade */}
       <div style={{
         position: 'absolute',
         bottom: 0,
         left: 0,
         right: 0,
         height: '120px',
-        background: 'linear-gradient(to bottom, transparent, rgba(10,10,10,0.6))',
+        background: 'linear-gradient(to bottom, transparent, rgba(5, 14, 28, 0.82))',
         pointerEvents: 'none',
       }} />
 

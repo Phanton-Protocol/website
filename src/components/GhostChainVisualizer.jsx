@@ -5,6 +5,11 @@ const GhostChainVisualizer = () => {
     const mouseRef = useRef({ x: -9999, y: -9999 });
 
     useEffect(() => {
+        const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+        const coarsePointer = window.matchMedia?.('(pointer: coarse)')?.matches;
+        const narrow = typeof window !== 'undefined' && window.innerWidth <= 900;
+        if (reduceMotion || coarsePointer || narrow) return;
+
         const canvas = canvasRef.current;
         const ctx = canvas.getContext('2d');
         let raf;
@@ -29,9 +34,9 @@ const GhostChainVisualizer = () => {
         const PARTICLE_COUNT = 12;
         const HEX = '0123456789ABCDEF';
 
-        const C_CYAN = '0, 229, 255';
+        const C_CYAN = '76, 159, 255';
         const C_WHITE = '255, 255, 255';
-        const C_GHOST = '120, 210, 255';
+        const C_GHOST = '120, 200, 255';
 
         const nodes = [];
 
@@ -198,7 +203,7 @@ const GhostChainVisualizer = () => {
                     : `rgba(${C_CYAN},  0.55)`;
                 ctx.fill();
 
-                ctx.font = '7.5px JetBrains Mono';
+                ctx.font = '7.5px Public Sans, sans-serif';
                 ctx.fillStyle = `rgba(${C_CYAN}, ${0.18 + glow * 0.12})`;
                 ctx.fillText(node.label, node.x + 8, node.y + 3);
             });
@@ -255,6 +260,11 @@ const GhostChainVisualizer = () => {
             window.removeEventListener('mousemove', onMouseMove);
         };
     }, []);
+
+    const reduceMotion = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+    const coarsePointer = typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)')?.matches;
+    const narrow = typeof window !== 'undefined' && window.innerWidth <= 900;
+    if (reduceMotion || coarsePointer || narrow) return null;
 
     return (
         <canvas

@@ -704,10 +704,10 @@ Voting Eligibility:
    * Voting power is proportional to token amount held or staked
    * No lock-up required to vote—holding tokens grants voting rights
 Voting Process:
-   1. Proposal submission (requires minimum token threshold TBD) 
-   2. Community discussion period
-   3. Voting period (duration governance-defined TBD)
-   4. If approved: mandatory time delay before implementation (timelock TBD)
+   1. Proposal submission (minimum threshold: 1 token = 1 vote, including held or staked tokens for active relayers)
+   2. Community discussion period: 3 days
+   3. Voting period: 4 days for on-chain voting
+   4. If approved: mandatory time delay before implementation (timelock: 72 hours)
    5. Automated on-chain execution after timelock expires
 Timelock for Security:
 All approved governance changes are subject to a mandatory time delay before implementation. This provides:
@@ -715,7 +715,7 @@ All approved governance changes are subject to a mandatory time delay before imp
    * Opportunity to exit if disagreeing with governance decisions
    * Protection against malicious or rushed proposals
    * Enhanced decentralization and security
-Timelock duration is governance-configurable.
+Timelock duration is fixed at 72 hours.
 Scope of Governance:
    * Fee parameter updates
    * Asset registry modifications

@@ -10,6 +10,7 @@ const primaryLinks = [
     { name: 'Relayers', sectionId: 'relayers' },
     { name: 'Architecture', sectionId: 'architecture' },
     { name: 'Technology', sectionId: 'technology' },
+    { name: 'Tokenomics', sectionId: 'tokenomics' },
     { name: 'Fees', sectionId: 'fees' },
     { name: 'Roadmap', sectionId: 'roadmap' },
     { name: 'Backers & Partners', sectionId: 'backers-partners' },
@@ -117,7 +118,7 @@ const Navbar = () => {
                 right: 0,
                 zIndex: 200,
                 padding: scrolled ? '1rem 0' : '1.75rem 0',
-                background: scrolled ? 'rgba(10,10,10,0.97)' : 'rgba(10,10,10,0.88)',
+                background: scrolled ? 'rgba(6, 14, 27, 0.97)' : 'rgba(7, 16, 30, 0.9)',
                 backdropFilter: scrolled ? 'blur(16px)' : 'blur(12px)',
                 WebkitBackdropFilter: scrolled ? 'blur(16px)' : 'blur(12px)',
                 borderBottom: scrolled ? '1px solid var(--border)' : '1px solid transparent',
@@ -143,19 +144,19 @@ const Navbar = () => {
                             height: 40,
                             objectFit: 'contain',
                             borderRadius: '10px',
-                            background: 'rgba(0,0,0,0.78)',
+                            background: 'rgba(8, 18, 34, 0.85)',
                             padding: '5px',
-                            border: '1px solid rgba(255,255,255,0.16)',
-                            boxShadow: '0 0 18px rgba(0,0,0,0.55)',
+                            border: '1px solid rgba(136, 196, 255, 0.36)',
+                            boxShadow: '0 0 20px rgba(83, 153, 221, 0.28)',
                         }}
                     />
                     <span style={{
-                        fontFamily: 'var(--font-mono)',
+                        fontFamily: 'var(--font-body)',
                         fontSize: 'var(--nav-brand-size)',
-                        letterSpacing: '0.12em',
+                        letterSpacing: '0.08em',
                         textTransform: 'uppercase',
                         color: '#ffffff',
-                        fontWeight: 600,
+                        fontWeight: 700,
                         whiteSpace: 'nowrap',
                     }}>
                         PHANTOM<span style={{ color: 'var(--cyan)' }}>.</span>PROTOCOL
@@ -171,9 +172,9 @@ const Navbar = () => {
                                 to={link.to}
                                 className="hover-underline"
                                 style={{
-                                    fontFamily: 'var(--font-mono)',
+                                    fontFamily: 'var(--font-body)',
                                     fontSize: 'var(--nav-link-size)',
-                                    letterSpacing: '0.1em',
+                                    letterSpacing: '0.06em',
                                     textTransform: 'uppercase',
                                     color: '#ffffff',
                                     fontWeight: 500,
@@ -193,9 +194,9 @@ const Navbar = () => {
                                 href={`#${link.sectionId}`}
                                 className={`hover-underline${link.oneWordLabel ? ' nav-link--oneword' : ''}`}
                                 style={{
-                                    fontFamily: 'var(--font-mono)',
+                                    fontFamily: 'var(--font-body)',
                                     fontSize: 'var(--nav-link-size)',
-                                    letterSpacing: link.oneWordLabel ? '0.04em' : '0.1em',
+                                    letterSpacing: link.oneWordLabel ? '0.02em' : '0.06em',
                                     textTransform: link.oneWordLabel ? 'none' : 'uppercase',
                                     color: activeSection === link.sectionId ? 'var(--cyan)' : '#ffffff',
                                     fontWeight: activeSection === link.sectionId ? 600 : 500,
@@ -229,12 +230,12 @@ const Navbar = () => {
                             display: 'inline-flex',
                             alignItems: 'center',
                             gap: '0.45rem',
-                            background: 'rgba(255,255,255,0.06)',
-                            border: '1px solid rgba(255,255,255,0.22)',
-                            color: '#fff',
-                            fontFamily: 'var(--font-mono)',
+                            background: 'rgba(121, 187, 255, 0.12)',
+                            border: '1px solid rgba(151, 210, 255, 0.36)',
+                            color: 'rgba(233, 244, 255, 0.96)',
+                            fontFamily: 'var(--font-body)',
                             fontSize: 'var(--btn-text-size)',
-                            letterSpacing: '0.1em',
+                            letterSpacing: '0.06em',
                             textTransform: 'uppercase',
                             padding: 'clamp(0.5rem, 1.2vw, 0.6rem) clamp(0.85rem, 1.8vw, 1rem)',
                             cursor: 'pointer',
@@ -285,7 +286,7 @@ const Navbar = () => {
                         exit={{ opacity: 0, height: 0 }}
                         transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
                         style={{
-                            background: 'rgba(10,10,10,0.97)',
+                            background: 'rgba(6, 14, 27, 0.97)',
                             borderTop: '1px solid var(--border)',
                             overflow: 'hidden',
                         }}
@@ -310,9 +311,9 @@ const Navbar = () => {
                                         href={`#${link.sectionId}`}
                                         onClick={(e) => handleSectionNav(e, link.sectionId)}
                                         style={{
-                                            fontFamily: 'var(--font-mono)',
+                                            fontFamily: 'var(--font-body)',
                                             fontSize: 'var(--nav-drawer-size)',
-                                            letterSpacing: link.oneWordLabel ? '0.06em' : '0.12em',
+                                            letterSpacing: link.oneWordLabel ? '0.03em' : '0.07em',
                                             textTransform: link.oneWordLabel ? 'none' : 'uppercase',
                                             color: location.pathname === '/' && activeSection === link.sectionId ? 'var(--cyan)' : 'rgba(255, 255, 255, 0.95)',
                                             fontWeight: location.pathname === '/' && activeSection === link.sectionId ? 600 : 500,
@@ -324,7 +325,7 @@ const Navbar = () => {
                                     </a>
                                 ))}
                             </div>
-                            <div style={{ height: 1, background: 'rgba(255,255,255,0.12)', margin: '0.15rem 0' }} />
+                            <div style={{ height: 1, background: 'rgba(151, 210, 255, 0.22)', margin: '0.15rem 0' }} />
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                                 {moreLinks.map((link) => (
                                     link.to ? (
@@ -333,9 +334,9 @@ const Navbar = () => {
                                             to={link.to}
                                             onClick={() => setOpen(false)}
                                             style={{
-                                                fontFamily: 'var(--font-mono)',
+                                                fontFamily: 'var(--font-body)',
                                                 fontSize: 'var(--nav-drawer-size)',
-                                                letterSpacing: '0.12em',
+                                                letterSpacing: '0.07em',
                                                 textTransform: 'uppercase',
                                                 color: 'rgba(255, 255, 255, 0.95)',
                                                 fontWeight: 500,
@@ -351,9 +352,9 @@ const Navbar = () => {
                                             href={`#${link.sectionId}`}
                                             onClick={(e) => handleSectionNav(e, link.sectionId)}
                                             style={{
-                                                fontFamily: 'var(--font-mono)',
+                                                fontFamily: 'var(--font-body)',
                                                 fontSize: 'var(--nav-drawer-size)',
-                                                letterSpacing: '0.12em',
+                                                letterSpacing: '0.07em',
                                                 textTransform: 'uppercase',
                                                 color: 'rgba(255, 255, 255, 0.95)',
                                                 fontWeight: 500,
@@ -370,9 +371,9 @@ const Navbar = () => {
                                 href={EPAPER_PUBLIC_URL}
                                 onClick={() => setOpen(false)}
                                 style={{
-                                    fontFamily: 'var(--font-mono)',
+                                    fontFamily: 'var(--font-body)',
                                     fontSize: 'var(--nav-drawer-size)',
-                                    letterSpacing: '0.12em',
+                                    letterSpacing: '0.07em',
                                     textTransform: 'uppercase',
                                     color: 'var(--cyan)',
                                     fontWeight: 600,

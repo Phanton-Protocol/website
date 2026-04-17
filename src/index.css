@@ -1,28 +1,30 @@
-@import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
 
 :root {
-  --bg: #141418;
-  --bg-card: #1c1c22;
-  --bg-card-hover: #222228;
-  --border: rgba(255, 255, 255, 0.22);
-  --border-accent: rgba(0, 229, 199, 0.35);
+  --bg: #070f1b;
+  --bg-card: #0d182a;
+  --bg-card-hover: #122036;
+  --border: rgba(157, 203, 255, 0.18);
+  --border-accent: rgba(110, 179, 255, 0.35);
 
-  --text-primary: #ffffff;
-  --text-secondary: #ffffff;
-  --text-tertiary: rgba(255, 255, 255, 0.92);
+  --text-primary: #e7f1ff;
+  --text-secondary: rgba(218, 233, 252, 0.86);
+  --text-tertiary: rgba(184, 207, 236, 0.74);
 
-  --cyan: #00e5c7;
-  --cyan-dim: rgba(0, 229, 199, 0.15);
+  --cyan: #79bbff;
+  --cyan-dim: rgba(121, 187, 255, 0.18);
 
-  --font-display: 'DM Serif Display', Georgia, serif;
-  --font-body: 'Inter', sans-serif;
-  --font-mono: 'JetBrains Mono', monospace;
+  --font-display: 'Newsreader', Georgia, serif;
+  --font-body: 'Public Sans', sans-serif;
+  --font-mono: 'Public Sans', sans-serif;
+  --font-editorial: var(--font-display);
+  --font-system: var(--font-body);
 
   --container: 100%;
   --pad: clamp(1rem, 2.5vw, 2.5rem);
 
-  --body-line: 1.72;
-  --body-weight: 500;
+  --body-line: 1.66;
+  --body-weight: 400;
   --body-size: clamp(0.9375rem, 0.35vw + 0.82rem, 1.25rem);
   --label-size: clamp(0.5625rem, 0.22vw + 0.48rem, 0.8125rem);
   --mono-size: clamp(0.65rem, 0.18vw + 0.58rem, 0.8125rem);
@@ -55,8 +57,8 @@
   max-width: 100%;
   box-sizing: border-box;
   margin: clamp(1.75rem, 5vw, 4rem) 0;
-  background: rgba(5, 5, 5, 0.8);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(8, 16, 30, 0.82);
+  border: 1px solid rgba(140, 195, 255, 0.2);
   border-radius: 12px;
   overflow: hidden;
   position: relative;
@@ -121,42 +123,6 @@ body {
   overflow-x: clip;
 }
 
-body.landing-cursor-hidden {
-  cursor: none;
-}
-
-/* ── CUSTOM CURSOR ─────────────────────────────────────────────── */
-.cursor-dot {
-  width: 6px;
-  height: 6px;
-  background: var(--cyan);
-  border-radius: 50%;
-  position: fixed;
-  pointer-events: none;
-  z-index: 9999;
-  transform: translate(-50%, -50%);
-  transition: transform 0.08s ease;
-}
-
-.cursor-ring {
-  width: 36px;
-  height: 36px;
-  border: 1px solid rgba(0, 229, 199, 0.4);
-  border-radius: 50%;
-  position: fixed;
-  pointer-events: none;
-  z-index: 9998;
-  transform: translate(-50%, -50%);
-  transition: transform 0.18s ease, width 0.25s ease, height 0.25s ease, border-color 0.25s ease;
-}
-
-.cursor-hover .cursor-ring {
-  width: 56px;
-  height: 56px;
-  border-color: var(--cyan);
-  background: rgba(0, 229, 199, 0.04);
-}
-
 /* ── CONTAINER ─────────────────────────────────────────────────── */
 .container {
   max-width: none;
@@ -170,10 +136,10 @@ body.landing-cursor-hidden {
   display: flex;
   align-items: center;
   gap: 1rem;
-  font-family: var(--font-mono);
+  font-family: var(--font-body);
   font-size: var(--label-size);
-  font-weight: 500;
-  letter-spacing: 0.16em;
+  font-weight: 600;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--cyan);
   margin-bottom: clamp(1.25rem, 2.5vw, 2.5rem);
@@ -190,8 +156,8 @@ body.landing-cursor-hidden {
 .display-xl {
   font-family: var(--font-display);
   font-size: clamp(2.125rem, 5vw + 0.85rem, 9rem);
-  line-height: 1;
-  letter-spacing: -0.01em;
+  line-height: 0.98;
+  letter-spacing: -0.025em;
   font-weight: 400;
 }
 
@@ -203,7 +169,7 @@ body.landing-cursor-hidden {
 .display-lg {
   font-family: var(--font-display);
   font-size: clamp(1.625rem, 3.2vw + 0.9rem, 5.5rem);
-  line-height: 1.05;
+  line-height: 1.02;
   font-weight: 400;
 }
 
@@ -215,7 +181,7 @@ body.landing-cursor-hidden {
 .mono {
   font-family: var(--font-mono);
   font-size: var(--mono-size);
-  letter-spacing: 0.1em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
 }
 
@@ -231,13 +197,13 @@ body.landing-cursor-hidden {
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
-  font-family: var(--font-mono);
+  font-family: var(--font-body);
   font-size: var(--btn-text-size);
-  letter-spacing: 0.12em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--text-primary);
-  background: transparent;
-  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: rgba(116, 181, 255, 0.06);
+  border: 1px solid rgba(138, 196, 255, 0.28);
   padding: clamp(0.55rem, 1vw, 0.75rem) clamp(1rem, 2.2vw, 1.5rem);
   cursor: pointer;
   text-decoration: none;
@@ -247,8 +213,8 @@ body.landing-cursor-hidden {
 }
 
 .btn-outline:hover {
-  border-color: var(--text-primary);
-  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(166, 215, 255, 0.52);
+  background: rgba(127, 190, 255, 0.14);
 }
 
 .btn-outline-cyan {
@@ -257,7 +223,7 @@ body.landing-cursor-hidden {
 }
 
 .btn-outline-cyan:hover {
-  background: rgba(0, 229, 199, 0.06);
+  background: rgba(121, 187, 255, 0.16);
   border-color: var(--cyan);
 }
 
@@ -266,13 +232,14 @@ body.landing-cursor-hidden {
   background: var(--bg-card);
   border: 1px solid var(--border);
   padding: 2.5rem;
-  transition: border-color 0.4s ease, background 0.4s ease;
+  transition: border-color 0.4s ease, background 0.4s ease, transform 0.4s ease;
   position: relative;
 }
 
 .card:hover {
-  border-color: rgba(255, 255, 255, 0.28);
+  border-color: rgba(157, 203, 255, 0.42);
   background: var(--bg-card-hover);
+  transform: translateY(-2px);
 }
 
 /* ── DIVIDER ───────────────────────────────────────────────────── */
@@ -336,16 +303,16 @@ body.landing-cursor-hidden {
 
 .watermark img {
   width: min(500px, 55vw);
-  opacity: 0.006;
+  opacity: 0.009;
   filter: grayscale(1);
-  mix-blend-mode: screen;
+  mix-blend-mode: normal;
   user-select: none;
   -webkit-user-drag: none;
 }
 
 /* ── TERMINAL BLOCK ────────────────────────────────────────────── */
 .terminal {
-  background: #0d0d0d;
+  background: #071120;
   border: 1px solid var(--border);
   font-family: var(--font-mono);
   font-size: 0.72rem;
@@ -359,7 +326,7 @@ body.landing-cursor-hidden {
   gap: 0.5rem;
   padding: 0.7rem 1rem;
   border-bottom: 1px solid var(--border);
-  background: #111111;
+  background: #0a1627;
 }
 
 .terminal-dot {
@@ -375,7 +342,7 @@ body.landing-cursor-hidden {
 }
 
 .t-dim {
-  color: rgba(255, 255, 255, 0.7);
+  color: rgba(207, 228, 252, 0.75);
 }
 
 .t-white {
@@ -395,7 +362,7 @@ body.landing-cursor-hidden {
 }
 
 .t-label {
-  color: rgba(255, 255, 255, 0.9);
+  color: rgba(232, 243, 255, 0.92);
 }
 
 /* ── ANIMATED UNDERLINE ────────────────────────────────────────── */
@@ -410,7 +377,7 @@ body.landing-cursor-hidden {
   left: 0;
   width: 0;
   height: 1px;
-  background: var(--cyan);
+  background: rgba(121, 187, 255, 0.7);
   transition: width 0.4s ease;
 }
 
@@ -441,8 +408,7 @@ body.landing-cursor-hidden {
   min-height: 100vh;
   background-color: var(--bg);
   background-image:
-    radial-gradient(ellipse 120% 80% at 50% -20%, rgba(0, 229, 199, 0.09), transparent 55%),
-    radial-gradient(ellipse 70% 50% at 100% 50%, rgba(0, 229, 199, 0.04), transparent 45%);
+    radial-gradient(ellipse 120% 90% at 50% -18%, rgba(121, 187, 255, 0.16), transparent 58%);
 }
 
 .app-page__inner {
@@ -473,9 +439,9 @@ body.landing-cursor-hidden {
 
 .app-page__subtitle {
   max-width: 42rem;
-  color: rgba(255, 255, 255, 0.78);
+  color: rgba(201, 223, 247, 0.82);
   font-size: clamp(0.9375rem, 0.4vw + 0.85rem, 1.125rem);
-  font-weight: 500;
+  font-weight: 400;
   line-height: 1.65;
   margin: 0;
 }
@@ -523,7 +489,7 @@ body.landing-cursor-hidden {
   text-align: center;
   font-size: clamp(0.875rem, 0.35vw + 0.8rem, 1.0625rem);
   line-height: 1.62;
-  color: rgba(255, 255, 255, 0.72);
+  color: rgba(194, 216, 242, 0.78);
 }
 
 .app-page__body--trade {
@@ -554,7 +520,7 @@ body.landing-cursor-hidden {
 }
 
 .app-page__footer-link {
-  color: rgba(255, 255, 255, 0.85);
+  color: rgba(220, 236, 255, 0.88);
   text-decoration: none;
   transition: color 0.25s ease;
 }

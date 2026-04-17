@@ -12,8 +12,8 @@ export default {
                 mono: ['JetBrains Mono', 'monospace'],
             },
             colors: {
-                'bg-deep': '#030407',
-                'bg-surface': '#0a0c10',
+                'bg-deep': '#16222b',
+                'bg-surface': '#1f2a35',
                 'text-primary': 'rgba(255, 255, 255, 0.95)',
                 'text-secondary': 'rgba(255, 255, 255, 0.5)',
                 'accent-cyan': '#00e5ff',
