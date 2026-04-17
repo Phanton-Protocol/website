@@ -94,7 +94,7 @@ contract DepositHandler {
             require(!module.isBlocked(depositor), "DepositHandler: blocked address");
         }
         
-        // Calculate and process fee (ERC20 depositFor from relayer may pass msg.value=0; direct deposit still requires BNB fee)
+        // Relayed ERC20 deposits must attach BNB (`msg.value`) for the $2-class deposit fee (E-paper); see pool `_finalizeDepositLogic`.
         uint256 depositFeeBNB = _calculateDepositFeeDirect(token, amount, value, relayer);
         _processAndDistributeFee(depositFeeBNB);
         
@@ -124,8 +124,11 @@ contract DepositHandler {
             // Allow fee == 0 so depositForBNB (amount == msg.value) and direct deposit() both work
             return fee;
         }
-        // ERC20: ShieldedPool.depositFor passes value=0; relayer is non-zero. MVP allows zero BNB fee on that path.
-        if (relayer != address(0) && value == 0) return 0;
+        // ERC20: relayer must send BNB fee with the tx (`depositFor` is payable) so the pool can enforce E-paper deposit economics.
+        if (relayer != address(0)) {
+            require(value > 0, "DepositHandler: relayed ERC20 requires BNB deposit fee");
+            return value;
+        }
         require(value > 0, "DepositHandler: deposit fee required");
         return value;
     }

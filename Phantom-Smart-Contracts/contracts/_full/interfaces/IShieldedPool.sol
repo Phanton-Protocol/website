@@ -38,7 +38,7 @@ interface IShieldedPool {
         uint256 amount,
         bytes32 commitment,
         uint256 assetID
-    ) external;
+    ) external payable;
 
     function depositForBNB(
         address depositor,
