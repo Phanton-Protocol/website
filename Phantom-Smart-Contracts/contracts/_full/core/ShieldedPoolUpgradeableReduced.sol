@@ -22,6 +22,12 @@ import "../libraries/IncrementalMerkleTree.sol";
  * @notice Reduced-size version with core functionality only
  * @dev Removed: TransactionHistory, TimelockController, ComplianceModule, FHE, ThresholdEncryption, MEV protection
  * CRITICAL FIX: Uses tree.insert() for deposits (MiMC7) - matches swaps/withdraws
+ *
+ * **Merkle spend policy (MVP, E-paper aligned):** every root observed after a successful `tree.insert`
+ * (including genesis) is stored in `validMerkleRoots`. Join-split / withdraw / legacy swap spends accept
+ * `publicInputs.merkleRoot` iff `validMerkleRoots[root]` is true **and** `MerkleTree.verifyProof` succeeds for
+ * that root + path. Thus notes may be spent against a **historical** root + frozen proof while the pool’s
+ * `merkleRoot()` has advanced — no change to the 9 Groth16 public signals (`merkleRoot` remains `bytes32`).
  */
 contract ShieldedPoolUpgradeableReduced is IShieldedPool, UUPSUpgradeable, OwnableUpgradeable, ReentrancyGuardUpgradeable {
     using IncrementalMerkleTree for IncrementalMerkleTree.Tree;
@@ -43,6 +49,8 @@ contract ShieldedPoolUpgradeableReduced is IShieldedPool, UUPSUpgradeable, Ownab
     // Merkle Tree State
     IncrementalMerkleTree.Tree private tree;
     bytes32 public merkleRoot;
+    /// @notice Roots ever produced by `tree.insert` (and genesis). Spends may use any checkpointed root for which a valid proof exists.
+    mapping(bytes32 => bool) public validMerkleRoots;
     uint256 public commitmentCount;
     mapping(uint256 => bytes32) public commitments;
     
@@ -123,6 +131,9 @@ contract ShieldedPoolUpgradeableReduced is IShieldedPool, UUPSUpgradeable, Ownab
     event CommitmentAdded(bytes32 indexed commitment, uint256 index);
     event NullifierMarked(bytes32 indexed nullifier);
     event GasRefunded(address indexed relayer, uint256 amount);
+    /// @notice Emitted when a new Merkle root becomes spendable (including genesis and after each insert).
+    /// @param treeNextIndex Value of `tree.nextIndex` after the root was recorded (0 at genesis).
+    event MerkleRootCheckpointed(bytes32 indexed root, uint256 treeNextIndex);
 
     // ============ Modifiers ============
     modifier onlyRelayer() {
@@ -159,13 +170,27 @@ contract ShieldedPoolUpgradeableReduced is IShieldedPool, UUPSUpgradeable, Ownab
         poolOwner = msg.sender;
 
         tree.init(10); // Standard depth
-        merkleRoot = tree.getRoot();
+        commitmentCount = 0;
+        _setMerkleRoot(tree.getRoot());
         nextAssetID = 1;
         gasReserve = 0;
     }
 
     // ============ UUPS Authorization ============
     function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
+
+    /// @dev Records `newRoot` as spendable and updates `merkleRoot` (canonical head).
+    function _setMerkleRoot(bytes32 newRoot) internal {
+        merkleRoot = newRoot;
+        if (!validMerkleRoots[newRoot]) {
+            validMerkleRoots[newRoot] = true;
+            emit MerkleRootCheckpointed(newRoot, tree.nextIndex);
+        }
+    }
+
+    function _requireSpendableMerkleRoot(bytes32 root) internal view {
+        require(validMerkleRoots[root], "ShieldedPool: merkle root not spendable");
+    }
 
     // ============ Setters ============
     function setDepositHandler(address _depositHandler) external onlyOwner {
@@ -181,6 +206,14 @@ contract ShieldedPoolUpgradeableReduced is IShieldedPool, UUPSUpgradeable, Ownab
     function setWithdrawHandler(address _withdrawHandler) external onlyOwner {
         require(_withdrawHandler != address(0), "ShieldedPool: zero handler");
         withdrawHandler = _withdrawHandler;
+    }
+
+    /**
+     * @notice Register asset for swap/withdraw (owner only).
+     * @dev AssetID 0 is reserved for native BNB (`address(0)`).
+     */
+    function registerAsset(uint256 assetID, address token) external onlyOwner {
+        _registerAsset(assetID, token);
     }
 
     function setComplianceModule(address _complianceModule) external onlyOwner {
@@ -323,8 +356,8 @@ contract ShieldedPoolUpgradeableReduced is IShieldedPool, UUPSUpgradeable, Ownab
         // CRITICAL: Use tree.insert() (MiMC7) - same as swaps/withdraws
         (uint256 index, bytes32 newRoot) = tree.insert(commitment);
         commitments[index] = commitment;
-        merkleRoot = newRoot;
         commitmentCount = tree.nextIndex;
+        _setMerkleRoot(newRoot);
 
         // Split deposit fee: $2 min, 0.5¢ to relayer, 80% to stakers, rest to gasReserve
         address feeToken = token == address(0) ? address(0) : token;
@@ -375,7 +408,7 @@ contract ShieldedPoolUpgradeableReduced is IShieldedPool, UUPSUpgradeable, Ownab
         PublicInputs memory inputs = swapData.publicInputs;
 
         require(!nullifiers[inputs.nullifier], "ShieldedPool: nullifier already used");
-        require(inputs.merkleRoot == merkleRoot, "ShieldedPool: merkle root mismatch");
+        _requireSpendableMerkleRoot(inputs.merkleRoot);
         
         require(
             MerkleTree.verifyProof(
@@ -401,8 +434,8 @@ contract ShieldedPoolUpgradeableReduced is IShieldedPool, UUPSUpgradeable, Ownab
 
         (uint256 newIndex, bytes32 newRoot) = tree.insert(inputs.outputCommitment);
         commitments[newIndex] = inputs.outputCommitment;
-        merkleRoot = newRoot;
         commitmentCount = tree.nextIndex;
+        _setMerkleRoot(newRoot);
 
         nullifiers[inputs.nullifier] = true;
         
@@ -431,7 +464,7 @@ contract ShieldedPoolUpgradeableReduced is IShieldedPool, UUPSUpgradeable, Ownab
         JoinSplitPublicInputs memory inputs = swapData.publicInputs;
 
         require(!nullifiers[inputs.nullifier], "ShieldedPool: nullifier already used");
-        require(inputs.merkleRoot == merkleRoot, "ShieldedPool: merkle root mismatch");
+        _requireSpendableMerkleRoot(inputs.merkleRoot);
         
         require(
             MerkleTree.verifyProof(
@@ -468,12 +501,13 @@ contract ShieldedPoolUpgradeableReduced is IShieldedPool, UUPSUpgradeable, Ownab
 
         (uint256 swapIndex, bytes32 swapRoot) = tree.insert(inputs.outputCommitmentSwap);
         commitments[swapIndex] = inputs.outputCommitmentSwap;
-        merkleRoot = swapRoot;
+        commitmentCount = tree.nextIndex;
+        _setMerkleRoot(swapRoot);
 
         (uint256 changeIndex, bytes32 changeRoot) = tree.insert(inputs.outputCommitmentChange);
         commitments[changeIndex] = inputs.outputCommitmentChange;
-        merkleRoot = changeRoot;
         commitmentCount = tree.nextIndex;
+        _setMerkleRoot(changeRoot);
 
         nullifiers[inputs.nullifier] = true;
 
@@ -510,7 +544,7 @@ contract ShieldedPoolUpgradeableReduced is IShieldedPool, UUPSUpgradeable, Ownab
         JoinSplitPublicInputs memory inputs = withdrawData.publicInputs;
 
         require(!nullifiers[inputs.nullifier], "ShieldedPool: nullifier already used");
-        require(inputs.merkleRoot == merkleRoot, "ShieldedPool: merkle root mismatch");
+        _requireSpendableMerkleRoot(inputs.merkleRoot);
         
         require(
             MerkleTree.verifyProof(
@@ -548,8 +582,8 @@ contract ShieldedPoolUpgradeableReduced is IShieldedPool, UUPSUpgradeable, Ownab
         // Insert change commitment (withdrawal creates change note)
         (uint256 newIndex, bytes32 newRoot) = tree.insert(inputs.outputCommitmentChange);
         commitments[newIndex] = inputs.outputCommitmentChange;
-        merkleRoot = newRoot;
         commitmentCount = tree.nextIndex;
+        _setMerkleRoot(newRoot);
 
         nullifiers[inputs.nullifier] = true;
 
@@ -604,7 +638,7 @@ contract ShieldedPoolUpgradeableReduced is IShieldedPool, UUPSUpgradeable, Ownab
         
         JoinSplitPublicInputs memory inputs = withdrawData.publicInputs;
         require(!nullifiers[inputs.nullifier], "ShieldedPool: nullifier already used");
-        require(inputs.merkleRoot == merkleRoot, "ShieldedPool: merkle root mismatch");
+        _requireSpendableMerkleRoot(inputs.merkleRoot);
         
         require(
             MerkleTree.verifyProof(
@@ -642,8 +676,8 @@ contract ShieldedPoolUpgradeableReduced is IShieldedPool, UUPSUpgradeable, Ownab
         // Insert change commitment
         (uint256 newIndex, bytes32 newRoot) = tree.insert(inputs.outputCommitmentChange);
         commitments[newIndex] = inputs.outputCommitmentChange;
-        merkleRoot = newRoot;
         commitmentCount = tree.nextIndex;
+        _setMerkleRoot(newRoot);
 
         nullifiers[inputs.nullifier] = true;
 

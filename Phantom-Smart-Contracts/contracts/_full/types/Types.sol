@@ -98,7 +98,7 @@ struct JoinSplitPublicInputs {
     bytes32 inputCommitment;        // Commitment of the note being spent
     bytes32 outputCommitmentSwap;    // Commitment of the swap output note (e.g., USDT)
     bytes32 outputCommitmentChange; // Commitment of the change note (e.g., remaining BNB)
-    bytes32 merkleRoot;             // Current Merkle root of the state tree
+    bytes32 merkleRoot;             // Merkle root the proof is bound to (must be checkpointed on `ShieldedPoolUpgradeableReduced`; may be historical, not only `merkleRoot()`)
     uint256 inputAssetID;           // Asset ID of the input note
     uint256 outputAssetIDSwap;      // Asset ID of the swap output note
     uint256 outputAssetIDChange;    // Asset ID of the change note (usually same as input)
