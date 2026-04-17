@@ -8,6 +8,7 @@ import "../interfaces/IFeeOracle.sol";
 import "../interfaces/IFeeDistributor.sol";
 import "../interfaces/IRelayerRegistry.sol";
 import "../types/Types.sol";
+import "../libraries/DexSwapFee.sol";
 
 /**
  * @title SwapHandler
@@ -23,8 +24,9 @@ contract SwapHandler {
     IFeeOracle public immutable feeOracle;
     IRelayerRegistry public immutable relayerRegistry;
     
-    uint256 public constant SWAP_FEE_NUMERATOR = 5;
-    uint256 public constant SWAP_FEE_DENOMINATOR = 100000;
+    /// @notice DEX-route protocol swap fee = 10 bps (0.10%); see `DexSwapFee`.
+    uint256 public constant DEX_SWAP_FEE_BPS = 10;
+    uint256 public constant BPS_DENOMINATOR = 10000;
 
     uint256 internal constant SNARK_SCALAR_FIELD =
         21888242871839275222246405745257275088548364400416034343698204186575808495617;
@@ -79,7 +81,7 @@ contract SwapHandler {
         feeOracle.requireFreshPrice(inputToken);
         
         uint256 protocolFee = feeOracle.calculateFee(inputToken, inputs.inputAmount);
-        uint256 swapFee = (inputs.inputAmount * SWAP_FEE_NUMERATOR) / SWAP_FEE_DENOMINATOR;
+        uint256 swapFee = DexSwapFee.swapFee(inputs.inputAmount);
         totalProtocolFee = protocolFee + swapFee;
         
         require(inputs.protocolFee == totalProtocolFee, "SwapHandler: fee mismatch");
@@ -154,7 +156,7 @@ contract SwapHandler {
         feeOracle.requireFreshPrice(inputToken);
         
         uint256 protocolFee = feeOracle.calculateFee(inputToken, inputs.inputAmount);
-        uint256 swapFee = (inputs.inputAmount * SWAP_FEE_NUMERATOR) / SWAP_FEE_DENOMINATOR;
+        uint256 swapFee = DexSwapFee.swapFee(inputs.inputAmount);
         totalProtocolFee = protocolFee + swapFee;
         
         require(inputs.protocolFee == totalProtocolFee, "SwapHandler: fee mismatch");

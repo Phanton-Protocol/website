@@ -11,6 +11,7 @@ import "../interfaces/IDepositHandler.sol";
 import "../types/Types.sol";
 import "../libraries/MerkleTree.sol";
 import "../libraries/IncrementalMerkleTree.sol";
+import "../libraries/DexSwapFee.sol";
 import "./ComplianceModule.sol";
 import "./TransactionHistory.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
@@ -72,8 +73,9 @@ contract ShieldedPool is IShieldedPool, ReentrancyGuard {
     mapping(uint256 => address) public assetRegistry; // assetID => token address
     mapping(address => uint256) public assetIDMap; // token address => assetID
     uint256 public nextAssetID;
-    uint256 public constant SWAP_FEE_NUMERATOR = 5; // 0.005%
-    uint256 public constant SWAP_FEE_DENOMINATOR = 100000;
+    /// @notice DEX protocol swap fee = 10 bps (0.10%); see `DexSwapFee` / E-paper §1.8.
+    uint256 public constant DEX_SWAP_FEE_BPS = 10;
+    uint256 public constant BPS_DENOMINATOR = 10000;
     
     // ============ Portfolio Note System ============
     /// @notice One portfolio note per user (address => commitment + nonce)
@@ -320,10 +322,10 @@ contract ShieldedPool is IShieldedPool, ReentrancyGuard {
         uint256 amount,
         bytes32 commitment,
         uint256 assetID
-    ) external override {
+    ) external payable override {
         if (depositor == address(0)) revert PoolErr(1);
         if (token == address(0)) revert PoolErr(8);
-        _depositInternal(depositor, token, amount, commitment, assetID, 0, msg.sender);
+        _depositInternal(depositor, token, amount, commitment, assetID, msg.value, msg.sender);
         // Transaction logging handled off-chain to reduce stack depth
     }
 
@@ -1224,7 +1226,7 @@ contract ShieldedPool is IShieldedPool, ReentrancyGuard {
     }
 
     function _calculateSwapFee(uint256 amount) internal pure returns (uint256) {
-        return (amount * SWAP_FEE_NUMERATOR) / SWAP_FEE_DENOMINATOR;
+        return DexSwapFee.swapFee(amount);
     }
     
     // ============ Gas Refund Functions ============

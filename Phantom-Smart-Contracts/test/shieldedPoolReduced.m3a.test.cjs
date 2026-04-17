@@ -1,6 +1,6 @@
 const { expect } = require("chai");
 const { ethers } = require("hardhat");
-const { merkleProofForFirstLeaf } = require("./helpers/poolFixtures.cjs");
+const { merkleProofForFirstLeaf, totalJoinSplitFeeBnb } = require("./helpers/poolFixtures.cjs");
 
 const MOCK_ERC20_FQN = "contracts/_full/mocks/MockERC20.sol:MockERC20";
 const MOCK_SWAP_SUB1_FQN = "contracts/_full/mocks/MockSwapAdaptorSubtractWei.sol:MockSwapAdaptorSubtractWei";
@@ -44,7 +44,7 @@ async function deployReducedForM3a(useSubtractWeiAdaptor) {
     )
   ).wait();
 
-  return { deployer, pool, swapAdaptor };
+  return { deployer, pool, feeOracle, swapAdaptor };
 }
 
 function joinSplitTx(poolSigner, publicInputs, outTokenAddr) {
@@ -112,7 +112,7 @@ describe("ShieldedPoolUpgradeableReduced — M3a join-split conservation + DEX b
   });
 
   it("reverts shieldedSwapJoinSplit when DEX output != outputAmountSwap (strict binding)", async function () {
-    const { deployer, pool } = await deployReducedForM3a(true);
+    const { deployer, pool, feeOracle } = await deployReducedForM3a(true);
 
     const MockERC20 = await ethers.getContractFactory(MOCK_ERC20_FQN);
     const outTok = await MockERC20.deploy("Out2", "O2", 18);
@@ -121,10 +121,13 @@ describe("ShieldedPoolUpgradeableReduced — M3a join-split conservation + DEX b
     await pool.connect(deployer).registerAsset(1n, outAddr);
 
     const c1 = ethers.keccak256(ethers.toUtf8Bytes("m3a-binding-leaf"));
+    const inputAmount = ethers.parseEther("100");
     const swapAmt = ethers.parseEther("2");
-    const changeAmt = ethers.parseEther("1");
-    await pool.connect(deployer).deposit(ethers.ZeroAddress, swapAmt + changeAmt, c1, 0n, {
-      value: swapAmt + changeAmt,
+    const totalPf = await totalJoinSplitFeeBnb(feeOracle, inputAmount);
+    const changeAmt = inputAmount - swapAmt - totalPf;
+
+    await pool.connect(deployer).deposit(ethers.ZeroAddress, inputAmount, c1, 0n, {
+      value: inputAmount,
     });
     const root = await pool.merkleRoot();
     const { path, indices } = await merkleProofForFirstLeaf(c1);
@@ -138,13 +141,13 @@ describe("ShieldedPoolUpgradeableReduced — M3a join-split conservation + DEX b
       inputAssetID: 0n,
       outputAssetIDSwap: 1n,
       outputAssetIDChange: 0n,
-      inputAmount: swapAmt + changeAmt,
+      inputAmount,
       swapAmount: swapAmt,
       changeAmount: changeAmt,
       outputAmountSwap: swapAmt,
       minOutputAmountSwap: 0n,
       gasRefund: 0n,
-      protocolFee: 0n,
+      protocolFee: totalPf,
       merklePath: path,
       merklePathIndices: indices,
     };

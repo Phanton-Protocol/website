@@ -97,7 +97,7 @@ async function deployPoolFixture() {
  */
 async function totalJoinSplitFeeBnb(feeOracle, inputAmount) {
   const protocolPart = await feeOracle.calculateFee.staticCall(ethers.ZeroAddress, inputAmount);
-  const swapFee = (inputAmount * 5n) / 100000n;
+  const swapFee = (inputAmount * 10n) / 10000n; // 10 bps — matches `DexSwapFee` / SwapHandler
   return protocolPart + swapFee;
 }
 

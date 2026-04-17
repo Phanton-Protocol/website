@@ -17,6 +17,7 @@ import "../interfaces/IMatchingHandler.sol";
 import "../types/Types.sol";
 import "../libraries/MerkleTree.sol";
 import "../libraries/IncrementalMerkleTree.sol";
+import "../libraries/DexSwapFee.sol";
 import "./ComplianceModule.sol";
 import "./TransactionHistory.sol";
 import "../governance/TimelockController.sol";
@@ -76,8 +77,8 @@ contract ShieldedPoolUpgradeable is IShieldedPool, UUPSUpgradeable, OwnableUpgra
     mapping(uint256 => address) public assetRegistry; // assetID => token address
     mapping(address => uint256) public assetIDMap; // token address => assetID
     uint256 public nextAssetID;
-    uint256 public constant SWAP_FEE_NUMERATOR = 5; // 0.005%
-    uint256 public constant SWAP_FEE_DENOMINATOR = 100000;
+    uint256 public constant DEX_SWAP_FEE_BPS = 10;
+    uint256 public constant BPS_DENOMINATOR = 10000;
     
     // ============ Single Note System ============
     /// @notice One note per user (address => commitment)
@@ -361,10 +362,10 @@ contract ShieldedPoolUpgradeable is IShieldedPool, UUPSUpgradeable, OwnableUpgra
         uint256 amount,
         bytes32 commitment,
         uint256 assetID
-    ) external override {
+    ) external payable override {
         require(depositor != address(0), "ShieldedPool: zero depositor");
         require(token != address(0), "ShieldedPool: relayed deposit ERC20 only");
-        _depositInternal(depositor, token, amount, commitment, assetID, 0, msg.sender);
+        _depositInternal(depositor, token, amount, commitment, assetID, msg.value, msg.sender);
         // Transaction logging handled off-chain to reduce stack depth
     }
 
@@ -1173,7 +1174,7 @@ contract ShieldedPoolUpgradeable is IShieldedPool, UUPSUpgradeable, OwnableUpgra
     }
 
     function _calculateSwapFee(uint256 amount) internal pure returns (uint256) {
-        return (amount * SWAP_FEE_NUMERATOR) / SWAP_FEE_DENOMINATOR;
+        return DexSwapFee.swapFee(amount);
     }
     
     // ============ Gas Refund Functions ============

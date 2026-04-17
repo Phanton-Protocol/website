@@ -3,10 +3,9 @@ const { ethers } = require("hardhat");
 const MOCK_ERC20_FQN = "contracts/_full/mocks/MockERC20.sol:MockERC20";
 
 /**
- * Module 4 acceptance: relayer calls depositFor for ERC20 with msg.value=0 (fee path).
- * DepositHandler must allow zero BNB fee when relayer is non-zero.
+ * Relayer calls `depositFor` for ERC20 with BNB `msg.value` for the $2-class deposit fee (E-paper / M3b).
  */
-describe("depositFor ERC20 (relayer, zero msg.value fee)", function () {
+describe("depositFor ERC20 (relayer + BNB fee for $2 policy)", function () {
   it("depositFor succeeds when user approved pool and relayer is registered", async function () {
     const [deployer, user] = await ethers.getSigners();
 
@@ -62,6 +61,13 @@ describe("depositFor ERC20 (relayer, zero msg.value fee)", function () {
     await (await pool.setDepositHandler(depositHandlerAddr)).wait();
     await (await pool.setTransactionHistory(txHistoryAddr)).wait();
 
+    const MockAgg = await ethers.getContractFactory(
+      "contracts/_full/mocks/MockChainlinkAggregator.sol:MockChainlinkAggregator"
+    );
+    const feed = await MockAgg.deploy(300 * 10 ** 8);
+    await feed.waitForDeployment();
+    await (await feeOracle.connect(deployer).setPriceFeed(ethers.ZeroAddress, await feed.getAddress())).wait();
+
     const MockERC20 = await ethers.getContractFactory(MOCK_ERC20_FQN);
     const token = await MockERC20.deploy("T", "T", 18);
     await token.waitForDeployment();
@@ -76,10 +82,13 @@ describe("depositFor ERC20 (relayer, zero msg.value fee)", function () {
     await (await token.mint(user.address, amount)).wait();
     await (await token.connect(user).approve(shieldedPoolAddr, amount)).wait();
 
-    await expect(pool.connect(deployer).depositFor(user.address, tokenAddr, amount, commitment, assetId)).to.emit(
-      pool,
-      "Deposit"
-    );
+    const depositFeeBnb = ethers.parseEther("0.02");
+
+    await expect(
+      pool.connect(deployer).depositFor(user.address, tokenAddr, amount, commitment, assetId, {
+        value: depositFeeBnb,
+      })
+    ).to.emit(pool, "Deposit");
 
     expect(await pool.commitmentCount()).to.equal(1n);
   });

@@ -2170,7 +2170,7 @@ async function attachQuoteExecutionHints(payload, slippageBps) {
       }
     }
   } catch (_) {}
-  const dexBps = RUNTIME_PARAMS.fees.dexSwapFeeBps;
+    const dexBps = RUNTIME_PARAMS.fees.dexSwapFeeBps;
   const src = payload.quoteSource;
   let routeDescription;
   if (src === "swap_adaptor") {
@@ -2915,9 +2915,8 @@ app.get("/portfolio/swap-fee", async (req, res) => {
     } catch (e) {
       console.warn("FeeOracle.calculateFee failed, using 0:", e.message);
     }
-    const SWAP_FEE_NUMERATOR = 5n;
-    const SWAP_FEE_DENOMINATOR = 100000n;
-    const swapFee = (amountBigInt * SWAP_FEE_NUMERATOR) / SWAP_FEE_DENOMINATOR;
+    const dexBps = BigInt(RUNTIME_PARAMS.fees.dexSwapFeeBps);
+    const swapFee = (amountBigInt * dexBps) / 10000n;
     const totalProtocolFee = protocolFeeFromOracle + swapFee;
 
     res.json({

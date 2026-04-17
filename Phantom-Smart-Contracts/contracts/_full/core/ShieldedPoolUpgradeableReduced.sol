@@ -17,6 +17,7 @@ import "../types/Types.sol";
 import "../libraries/MerkleTree.sol";
 import "../libraries/IncrementalMerkleTree.sol";
 import "../libraries/JoinSplitPublicInputValidation.sol";
+import "../libraries/DexSwapFee.sol";
 
 /**
  * @title ShieldedPoolUpgradeableReduced
@@ -77,13 +78,12 @@ contract ShieldedPoolUpgradeableReduced is IShieldedPool, UUPSUpgradeable, Ownab
     address internal complianceModuleAddress;
     address internal poolOwner;
     
-    uint256 public constant SWAP_FEE_NUMERATOR = 5;
-    uint256 public constant SWAP_FEE_DENOMINATOR = 100000;
+    /// @notice DEX protocol swap fee = 10 bps (0.10%); see `DexSwapFee` / E-paper §1.8.
+    uint256 public constant DEX_SWAP_FEE_BPS = 10;
+    uint256 public constant BPS_DENOMINATOR = 10000;
 
-    // Deposit fee model: $2 fee, 0.5¢ to relayer, 80% to stakers
-    uint256 public constant DEPOSIT_FEE_USD = 2 * 1e8;       // $2 (8 decimals)
-    uint256 public constant RELAYER_CUT_USD = 5 * 1e5;       // $0.005 = 0.5 cents
-    uint256 public constant STAKER_SHARE_BPS = 8000;         // 80%
+    /// @notice Minimum deposit fee (USD, 8 decimals). E-paper §1.8: **$2** total.
+    uint256 public constant DEPOSIT_FEE_USD = 2 * 1e8;
 
     // ============ Events ============
     event Deposit(
@@ -279,10 +279,10 @@ contract ShieldedPoolUpgradeableReduced is IShieldedPool, UUPSUpgradeable, Ownab
         uint256 amount,
         bytes32 commitment,
         uint256 assetID
-    ) external override {
+    ) external payable override {
         require(depositor != address(0), "SP: zero depositor");
         require(token != address(0), "SP: relayed deposit ERC20 only");
-        _depositInternal(depositor, token, amount, commitment, assetID, 0, msg.sender);
+        _depositInternal(depositor, token, amount, commitment, assetID, msg.value, msg.sender);
     }
 
     function depositForBNB(
@@ -341,7 +341,7 @@ contract ShieldedPoolUpgradeableReduced is IShieldedPool, UUPSUpgradeable, Ownab
     }
 
     // ============ CRITICAL FIX: Use tree.insert() for deposits ============
-    // Fee model: $2 deposit fee. 0.5¢ to relayer, 80% to stakers, rest to gasReserve (relayer gas coverage)
+    // Fee model (E-paper §1.8): **$2** deposit fee — **$0.50** to executing relayer, **$1.50** to relayer reward pool (75%/25% of fee proceeds).
     function _finalizeDepositLogic(
         address depositor,
         address token,
@@ -360,41 +360,28 @@ contract ShieldedPoolUpgradeableReduced is IShieldedPool, UUPSUpgradeable, Ownab
         commitmentCount = tree.nextIndex;
         _setMerkleRoot(newRoot);
 
-        // Split deposit fee: $2 min, 0.5¢ to relayer, 80% to stakers, rest to gasReserve
-        address feeToken = token == address(0) ? address(0) : token;
+        // Deposit fee is always the BNB attached beyond the deposit principal (native) or `msg.value` on ERC20 relay (BNB).
         uint256 feeAmount = depositFeeBNB;
         if (feeAmount > 0 && address(feeOracle) != address(0) && address(relayerRegistry) != address(0)) {
-            uint256 feeUsd = feeOracle.getUSDValue(feeToken, feeAmount);
+            uint256 feeUsd = feeOracle.getUSDValue(address(0), feeAmount);
             require(feeUsd >= DEPOSIT_FEE_USD, "SP: deposit fee below $2");
-            uint256 relayerCut = feeOracle.getTokenAmountForUSD(feeToken, RELAYER_CUT_USD);
-            if (relayerCut > feeAmount) relayerCut = feeAmount;
-            uint256 stakerAmount = (feeAmount * STAKER_SHARE_BPS) / 10000;
-            if (stakerAmount > feeAmount - relayerCut) stakerAmount = feeAmount - relayerCut;
-            uint256 gasReserveAmount = feeAmount - relayerCut - stakerAmount;
+            uint256 executingRelayerShare = feeAmount / 4;
+            uint256 rewardPoolShare = feeAmount - executingRelayerShare;
 
-            if (relayerCut > 0) {
+            if (executingRelayerShare > 0) {
                 if (relayer != address(0)) {
-                    if (feeToken == address(0)) {
-                        (bool ok,) = payable(relayer).call{value: relayerCut}("");
-                        require(ok, "SP: relayer transfer failed");
-                    } else {
-                        (bool ok,) = feeToken.call(abi.encodeWithSignature("transfer(address,uint256)", relayer, relayerCut));
-                        require(ok, "SP: relayer transfer failed");
-                    }
+                    (bool ok,) = payable(relayer).call{value: executingRelayerShare}("");
+                    require(ok, "SP: relayer transfer failed");
                 } else {
-                    gasReserve += relayerCut; // Self-deposit: relayer cut goes to gas reserve
+                    gasReserve += executingRelayerShare;
                 }
             }
-            if (stakerAmount > 0) {
-                if (feeToken == address(0)) {
-                    IFeeDistributor(address(relayerRegistry)).distributeFee{value: stakerAmount}(address(0), stakerAmount);
-                } else {
-                    (bool ok,) = feeToken.call(abi.encodeWithSignature("approve(address,uint256)", address(relayerRegistry), stakerAmount));
-                    require(ok, "SP: approve failed");
-                    IFeeDistributor(address(relayerRegistry)).distributeFee(feeToken, stakerAmount);
-                }
+            if (rewardPoolShare > 0) {
+                IFeeDistributor(address(relayerRegistry)).distributeFee{value: rewardPoolShare}(
+                    address(0),
+                    rewardPoolShare
+                );
             }
-            gasReserve += gasReserveAmount;
         } else {
             gasReserve += feeAmount;
         }
@@ -486,12 +473,21 @@ contract ShieldedPoolUpgradeableReduced is IShieldedPool, UUPSUpgradeable, Ownab
         );
         require(verifier.verifyProof(swapData.proof, JoinSplitPublicInputValidation.joinSplitInputsToArray(inputs)), "SP: invalid proof");
 
-        address inputToken = assetRegistry[inputs.inputAssetID];
+        address inputToken = inputs.inputAssetID == 0 ? address(0) : assetRegistry[inputs.inputAssetID];
+        require(inputToken != address(0) || inputs.inputAssetID == 0, "SP: unknown asset");
+
+        feeOracle.requireFreshPrice(inputToken);
+        uint256 protocolFeePart = feeOracle.calculateFee(inputToken, inputs.inputAmount);
+        uint256 swapFeePart = DexSwapFee.swapFee(inputs.inputAmount);
+        uint256 totalProtocolFee = protocolFeePart + swapFeePart;
+        require(inputs.protocolFee == totalProtocolFee, "SP: fee");
+        require(inputs.gasRefund <= inputs.inputAmount, "SP: gRf");
+
         // Ensure output asset IDs are registered for later withdrawals
         _registerAsset(inputs.outputAssetIDSwap, swapData.swapParams.tokenOut);
         _registerAsset(inputs.outputAssetIDChange, inputToken);
         uint256 swapAmount = inputs.swapAmount;
-        
+
         if (inputToken != address(0)) {
             IERC20(inputToken).approve(address(swapAdaptor), swapAmount);
         }
@@ -502,6 +498,15 @@ contract ShieldedPoolUpgradeableReduced is IShieldedPool, UUPSUpgradeable, Ownab
 
         require(dexOut >= inputs.minOutputAmountSwap, "SP:slp");
         require(dexOut == inputs.outputAmountSwap, "SP:out");
+
+        if (totalProtocolFee > 0) {
+            if (inputToken == address(0)) {
+                IFeeDistributor(address(relayerRegistry)).distributeFee{value: totalProtocolFee}(address(0), totalProtocolFee);
+            } else {
+                IERC20(inputToken).approve(address(relayerRegistry), totalProtocolFee);
+                IFeeDistributor(address(relayerRegistry)).distributeFee(inputToken, totalProtocolFee);
+            }
+        }
 
         (uint256 swapIndex, bytes32 swapRoot) = tree.insert(inputs.outputCommitmentSwap);
         commitments[swapIndex] = inputs.outputCommitmentSwap;
