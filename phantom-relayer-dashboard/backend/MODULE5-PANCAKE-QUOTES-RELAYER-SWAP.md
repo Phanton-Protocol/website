@@ -35,6 +35,12 @@ Fallback order if V3 quoter read fails:
 
 No direct user wallet tx to Pancake router is used for swap execution in this flow.
 
+## Merkle root in join-split proofs (`ShieldedPoolUpgradeableReduced`)
+
+- The pool maintains `merkleRoot()` as the **canonical head** after the latest insert, and a `validMerkleRoots` set of every root ever produced (genesis + each post-insert root).
+- A spend succeeds if `publicInputs.merkleRoot` is **checkpointed** (`validMerkleRoots[root] == true`) **and** `MerkleTree.verifyProof` passes for that root + path — so proofs may use a **historical** root while the head has moved (e.g. user proves against the root at note inclusion time).
+- Relayer / prover must supply `merkleRoot` + siblings consistent with the note being spent; `/merkle/:commitment` (or equivalent) should return a root that is still spendable (typically the root right after that leaf was appended, unless the client refreshes proofs after later deposits).
+
 ## EIP-712 intent fields
 
 `SwapIntent` (bound fields):
