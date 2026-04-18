@@ -29,6 +29,7 @@ import PrivacyVisibilityPage from './components/PrivacyVisibilityPage';
 import { blogPosts } from './data/blogPosts';
 import logoUrl from './assets/logo.svg';
 import { SOCIAL_LINKS, RUNBOOK_URL } from './config';
+import { HOME_SCROLL_SECTION_IDS } from './seo/homeScrollSections';
 import GhostChainVisualizer from './components/GhostChainVisualizer';
 import DataInterceptionBackground from './components/DataInterceptionBackground';
 
@@ -230,7 +231,14 @@ function RelayerStakerPage() {
 
 function EnterprisePage() {
   return (
-    <EnterpriseShell>
+    <EnterpriseShell
+      seo={{
+        title: 'Phantom Enterprise Suite | Payroll, Compliance, Governance',
+        description:
+          'Enterprise-facing flows for private payroll, compliance-ready reporting, and governance operations in Phantom Protocol.',
+        path: '/enterprise',
+      }}
+    >
       <Suspense fallback={<RouteLoader />}>
         <EnterpriseLayout><EnterpriseHomePage /></EnterpriseLayout>
       </Suspense>
@@ -238,20 +246,57 @@ function EnterprisePage() {
   );
 }
 
-function EnterpriseShell({ children }) {
+function EnterpriseShell({ children, seo }) {
   return (
     <div style={{ minHeight: '100vh' }}>
-      <SeoHead
-        title="Phantom Enterprise Suite | Payroll, Compliance, Governance"
-        description="Enterprise-facing flows for private payroll, compliance-ready reporting, and governance operations in Phantom Protocol."
-        path="/enterprise"
-      />
+      <SeoHead title={seo.title} description={seo.description} path={seo.path} />
       <Navbar />
       <section className="section" style={{ paddingTop: '7rem' }}>
         <div className="container">{children}</div>
       </section>
     </div>
   );
+}
+
+function NotFoundPage() {
+  return (
+    <div style={{ minHeight: '100vh' }}>
+      <SeoHead
+        robots="noindex, follow"
+        title="Page not found | Phantom Protocol"
+        description="This URL is not a published page on phantomproto.com."
+        path="/404"
+      />
+      <Navbar />
+      <section className="section" style={{ paddingTop: '7rem' }}>
+        <div className="container" style={{ maxWidth: 640 }}>
+          <h1 className="display-lg" style={{ marginBottom: '0.75rem' }}>
+            Page not found
+          </h1>
+          <p style={{ color: 'rgba(255,255,255,0.78)', lineHeight: 1.65, marginBottom: '1.5rem' }}>
+            If you followed an old link, try the homepage or the product console.
+          </p>
+          <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+            <Link to="/" className="btn-outline btn-outline-cyan">
+              Home
+            </Link>
+            <Link to="/trade" className="btn-outline">
+              Trade
+            </Link>
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function UnknownRoutePage() {
+  const { pathname } = useLocation();
+  const slug = String(pathname || '').replace(/^\/+|\/+$/g, '');
+  if (slug && HOME_SCROLL_SECTION_IDS.has(slug)) {
+    return <LandingPage />;
+  }
+  return <NotFoundPage />;
 }
 
 function LandingPage() {
@@ -388,10 +433,74 @@ function App() {
       ))}
       <Route path="/relayer" element={<RelayerStakerPage />} />
       <Route path="/enterprise" element={<EnterprisePage />} />
-      <Route path="/enterprise/payroll" element={<EnterpriseShell><Suspense fallback={<RouteLoader />}><EnterpriseLayout><PayrollPage /></EnterpriseLayout></Suspense></EnterpriseShell>} />
-      <Route path="/enterprise/compliance" element={<EnterpriseShell><Suspense fallback={<RouteLoader />}><EnterpriseLayout><CompliancePage /></EnterpriseLayout></Suspense></EnterpriseShell>} />
-      <Route path="/enterprise/governance" element={<EnterpriseShell><Suspense fallback={<RouteLoader />}><EnterpriseLayout><GovernancePage /></EnterpriseLayout></Suspense></EnterpriseShell>} />
-      <Route path="/enterprise/audit" element={<EnterpriseShell><Suspense fallback={<RouteLoader />}><EnterpriseLayout><AuditPage /></EnterpriseLayout></Suspense></EnterpriseShell>} />
+      <Route
+        path="/enterprise/payroll"
+        element={(
+          <EnterpriseShell
+            seo={{
+              title: 'Phantom Enterprise Payroll | Batch payouts and approvals',
+              description:
+                'Create, approve, and execute payroll runs against the Phantom enterprise API with idempotency and audit-friendly workflows.',
+              path: '/enterprise/payroll',
+            }}
+          >
+            <Suspense fallback={<RouteLoader />}>
+              <EnterpriseLayout><PayrollPage /></EnterpriseLayout>
+            </Suspense>
+          </EnterpriseShell>
+        )}
+      />
+      <Route
+        path="/enterprise/compliance"
+        element={(
+          <EnterpriseShell
+            seo={{
+              title: 'Phantom Enterprise Compliance | Screening and reporting keys',
+              description:
+                'Compliance demos: wallet screening decisions, tax reporting keys, and structured audit exports for enterprise operators.',
+              path: '/enterprise/compliance',
+            }}
+          >
+            <Suspense fallback={<RouteLoader />}>
+              <EnterpriseLayout><CompliancePage /></EnterpriseLayout>
+            </Suspense>
+          </EnterpriseShell>
+        )}
+      />
+      <Route
+        path="/enterprise/governance"
+        element={(
+          <EnterpriseShell
+            seo={{
+              title: 'Phantom Enterprise Governance | Proposals and votes',
+              description:
+                'Governance workspace for proposals, votes, and protocol parameter discussions in the Phantom enterprise suite.',
+              path: '/enterprise/governance',
+            }}
+          >
+            <Suspense fallback={<RouteLoader />}>
+              <EnterpriseLayout><GovernancePage /></EnterpriseLayout>
+            </Suspense>
+          </EnterpriseShell>
+        )}
+      />
+      <Route
+        path="/enterprise/audit"
+        element={(
+          <EnterpriseShell
+            seo={{
+              title: 'Phantom Enterprise Audit | Event stream and controls',
+              description:
+                'Review enterprise audit events and operational controls surfaced by the Phantom relayer dashboard.',
+              path: '/enterprise/audit',
+            }}
+          >
+            <Suspense fallback={<RouteLoader />}>
+              <EnterpriseLayout><AuditPage /></EnterpriseLayout>
+            </Suspense>
+          </EnterpriseShell>
+        )}
+      />
       <Route
         path="/phantom-protocol"
         element={
@@ -446,7 +555,7 @@ function App() {
           />
         }
       />
-      <Route path="*" element={<LandingPage />} />
+      <Route path="*" element={<UnknownRoutePage />} />
     </Routes>
   );
 }

@@ -34,9 +34,9 @@ const GhostChainVisualizer = () => {
         const PARTICLE_COUNT = 12;
         const HEX = '0123456789ABCDEF';
 
-        const C_CYAN = '76, 159, 255';
+        const C_CYAN = '0, 243, 255';
         const C_WHITE = '255, 255, 255';
-        const C_GHOST = '120, 200, 255';
+        const C_GHOST = '0, 243, 255';
 
         const nodes = [];
 
@@ -276,7 +276,7 @@ const GhostChainVisualizer = () => {
                 height: '100%',
                 pointerEvents: 'none',
                 zIndex: 1,
-                opacity: 0.6,
+                opacity: 0.78,
             }}
         />
     );

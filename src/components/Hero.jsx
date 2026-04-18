@@ -42,14 +42,14 @@ const Hero = () => {
               className="display-xl"
               style={{ marginBottom: 'clamp(1.5rem, 4vw, 2.5rem)', maxWidth: 'min(820px, 100%)' }}
             >
-              For Traders, Teams, Treasuries, Institutions and Stakers
+              The Privacy Layer: <span style={{ color: 'var(--cyan)', fontWeight: 700 }}>FHE + ZK-SNARKs</span>
             </motion.h1>
 
             <motion.p
               {...fade(0.4)}
               style={{
                 maxWidth: 'min(520px, 100%)',
-                color: 'rgba(223, 238, 255, 0.94)',
+                color: 'var(--color-text-secondary)',
                 fontSize: 'var(--body-size)',
                 fontWeight: 500,
                 lineHeight: 'var(--body-line)',
@@ -70,16 +70,16 @@ const Hero = () => {
                   fontSize: 'var(--btn-text-size)',
                   letterSpacing: '0.08em',
                   textTransform: 'uppercase',
-                  background: 'var(--cyan)',
-                  color: '#051124',
+                  background: 'var(--color-accent-primary)',
+                  color: 'var(--color-bg-primary)',
                   padding: '0.85rem 1.75rem',
                   textDecoration: 'none',
                   fontWeight: 600,
                   transition: 'opacity 0.3s, box-shadow 0.3s, transform 0.3s',
-                  border: '1px solid rgba(145, 205, 255, 0.58)',
+                  border: '1px solid var(--color-accent-primary)',
                 }}
                 className="btn-cyan"
-                onMouseEnter={e => { e.target.style.opacity = '0.93'; e.target.style.boxShadow = '0 10px 28px rgba(86, 158, 224, 0.32)'; e.target.style.transform = 'translateY(-1px)'; }}
+                onMouseEnter={e => { e.target.style.opacity = '0.93'; e.target.style.boxShadow = '0 10px 28px var(--color-accent-glow)'; e.target.style.transform = 'translateY(-1px)'; }}
                 onMouseLeave={e => { e.target.style.opacity = '1'; e.target.style.boxShadow = 'none'; e.target.style.transform = 'none'; }}
               >
                 InternalMatching
@@ -137,7 +137,7 @@ const Hero = () => {
         left: 0,
         right: 0,
         height: '120px',
-        background: 'linear-gradient(to bottom, transparent, rgba(5, 14, 28, 0.82))',
+        background: 'linear-gradient(to bottom, transparent, rgba(8, 13, 20, 0.82))',
         pointerEvents: 'none',
       }} />
 

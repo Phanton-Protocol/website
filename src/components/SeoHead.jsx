@@ -46,13 +46,21 @@ function upsertCanonical(href) {
 
 const DEFAULT_OG_IMAGE = 'https://phantomproto.com/favicon.jpg';
 
-const SeoHead = ({ title, description, path = '/' }) => {
+const SeoHead = ({ title, description, path = '/', robots }) => {
   useEffect(() => {
     const baseUrl = 'https://phantomproto.com';
-    const canonical = `${baseUrl}${path}`;
+    const canonical =
+      path === '/' || !path
+        ? `${baseUrl}/`
+        : `${baseUrl}${String(path).replace(/\/$/, '')}`;
 
     document.title = title;
     upsertCanonical(canonical);
+    if (robots) {
+      upsertMetaByName('robots', robots);
+    } else {
+      upsertMetaByName('robots', 'index, follow, max-image-preview:large');
+    }
     upsertMetaByName('description', description);
     upsertMetaByProperty('og:type', 'website');
     upsertMetaByProperty('og:locale', 'en_US');
@@ -74,7 +82,7 @@ const SeoHead = ({ title, description, path = '/' }) => {
     const bingToken = import.meta.env.VITE_BING_SITE_VERIFICATION;
     if (googleToken) upsertMetaByName('google-site-verification', googleToken);
     if (bingToken) upsertMetaByName('msvalidate.01', bingToken);
-  }, [title, description, path]);
+  }, [title, description, path, robots]);
 
   return null;
 };

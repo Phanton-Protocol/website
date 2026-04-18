@@ -7,8 +7,10 @@
     "Phantom-Smart-Contracts"
   ],
   "scripts": {
+    "predev": "node scripts/generate-seo-html-entries.mjs",
     "dev": "vite",
     "dev:site": "vite --host 0.0.0.0 --port 5173",
+    "prebuild": "node scripts/generate-seo-html-entries.mjs",
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",

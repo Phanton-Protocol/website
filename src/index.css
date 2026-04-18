@@ -1,23 +1,49 @@
 @import url('https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
 
 :root {
-  --bg: #070f1b;
-  --bg-card: #0d182a;
-  --bg-card-hover: #122036;
-  --border: rgba(157, 203, 255, 0.18);
-  --border-accent: rgba(110, 179, 255, 0.35);
+  --bg: #0a0b0d;
+  --bg-card: rgba(13, 14, 16, 0.96);
+  --bg-card-hover: rgba(15, 16, 18, 0.98);
+  --border: rgba(0, 243, 255, 0.12);
+  --border-accent: rgba(0, 243, 255, 0.3);
 
-  --text-primary: #e7f1ff;
-  --text-secondary: rgba(218, 233, 252, 0.86);
-  --text-tertiary: rgba(184, 207, 236, 0.74);
+  --text-primary: #f8fbff;
+  --text-secondary: rgba(210, 225, 245, 0.82);
+  --text-tertiary: rgba(160, 180, 210, 0.65);
 
-  --cyan: #79bbff;
-  --cyan-dim: rgba(121, 187, 255, 0.18);
+  --cyan: #00f3ff;
+  --cyan-dim: rgba(0, 243, 255, 0.15);
+  --violet: #8d74ff;
 
-  --font-display: 'Newsreader', Georgia, serif;
+  /* Backgrounds */
+  --color-bg-primary: #0a0b0d;
+  --color-bg-secondary: #0d0e10;
+  --color-bg-card: #111214;
+  --color-bg-overlay: #0b0c0e;
+
+  /* Accent / Brand */
+  --color-accent-primary: #00f3ff;
+  --color-accent-secondary: #00d4ff;
+  --color-accent-glow: rgba(0, 243, 255, 0.12);
+
+  /* Text */
+  --color-text-primary: #ffffff;
+  --color-text-secondary: #a8bdd0;
+  --color-text-muted: #5a7a94;
+
+  /* Borders & Lines */
+  --color-border: rgba(0, 243, 255, 0.18);
+  --color-border-card: rgba(255,255,255,0.06);
+
+  /* Gradients */
+  --gradient-hero: linear-gradient(135deg, #0a0b0d 0%, #0d121a 50%, #090a0c 100%);
+  --gradient-card: linear-gradient(145deg, #111214 0%, #151618 100%);
+  --gradient-accent: linear-gradient(90deg, #00f3ff, #0088ff);
+
+  --font-display: 'Public Sans', sans-serif;
   --font-body: 'Public Sans', sans-serif;
-  --font-mono: 'Public Sans', sans-serif;
-  --font-editorial: var(--font-display);
+  --font-mono: 'IBM Plex Mono', monospace;
+  --font-editorial: var(--font-body);
   --font-system: var(--font-body);
 
   --container: 100%;
@@ -102,8 +128,17 @@ html {
 }
 
 body {
-  background-color: var(--bg);
-  color: var(--text-primary);
+  background-color: var(--color-bg-primary);
+  background-image:
+    linear-gradient(rgba(0, 243, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 243, 255, 0.03) 1px, transparent 1px),
+    radial-gradient(circle at 18% 18%, rgba(0, 243, 255, 0.08), transparent 25%),
+    radial-gradient(circle at 82% 14%, rgba(132, 92, 255, 0.06), transparent 20%),
+    radial-gradient(circle at 50% 80%, rgba(0, 243, 255, 0.06), transparent 40%);
+  background-size: 80px 80px, 80px 80px, 100% 100%, 100% 100%, 100% 100%;
+  background-repeat: repeat, repeat, no-repeat, no-repeat, no-repeat;
+  background-attachment: fixed;
+  color: var(--color-text-primary);
   font-family: var(--font-body);
   font-size: var(--body-size);
   font-weight: var(--body-weight);
@@ -123,6 +158,27 @@ body {
   overflow-x: clip;
 }
 
+#hero {
+  position: relative;
+  overflow: hidden;
+}
+
+#hero::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 18% 22%, rgba(42, 194, 255, 0.22), transparent 20%),
+              radial-gradient(circle at 82% 18%, rgba(143, 98, 255, 0.16), transparent 18%),
+              radial-gradient(circle at 50% 72%, rgba(91, 194, 255, 0.12), transparent 26%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+#hero > .container {
+  position: relative;
+  z-index: 1;
+}
+
 /* ── CONTAINER ─────────────────────────────────────────────────── */
 .container {
   max-width: none;
@@ -135,21 +191,35 @@ body {
 .section-label {
   display: flex;
   align-items: center;
-  gap: 1rem;
-  font-family: var(--font-body);
+  gap: 1.25rem;
+  font-family: var(--font-mono);
   font-size: var(--label-size);
   font-weight: 600;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.18em;
   text-transform: uppercase;
   color: var(--cyan);
   margin-bottom: clamp(1.25rem, 2.5vw, 2.5rem);
 }
 
+.section-label::before {
+  content: '';
+  width: 12px;
+  height: 12px;
+  background: var(--cyan);
+  clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%);
+  animation: pulse-glow 2s infinite ease-in-out;
+}
+
+@keyframes pulse-glow {
+  0%, 100% { opacity: 0.5; filter: blur(0px); }
+  50% { opacity: 1; filter: blur(2px); }
+}
+
 .section-label::after {
   content: '';
-  flex: 0 0 40px;
+  flex: 0 0 60px;
   height: 1px;
-  background: var(--cyan);
+  background: linear-gradient(90deg, var(--cyan), transparent);
 }
 
 /* ── TYPOGRAPHY ────────────────────────────────────────────────── */
@@ -196,35 +266,53 @@ body {
 .btn-outline {
   display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
-  font-family: var(--font-body);
+  gap: 0.75rem;
+  font-family: var(--font-mono);
   font-size: var(--btn-text-size);
-  letter-spacing: 0.08em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--text-primary);
-  background: rgba(116, 181, 255, 0.06);
-  border: 1px solid rgba(138, 196, 255, 0.28);
-  padding: clamp(0.55rem, 1vw, 0.75rem) clamp(1rem, 2.2vw, 1.5rem);
+  color: #fff;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 0.85rem 1.6rem;
   cursor: pointer;
   text-decoration: none;
-  transition: border-color 0.3s ease, color 0.3s ease, background 0.3s ease;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
   position: relative;
   overflow: hidden;
 }
 
 .btn-outline:hover {
-  border-color: rgba(166, 215, 255, 0.52);
-  background: rgba(127, 190, 255, 0.14);
+  border-color: var(--cyan);
+  background: rgba(0, 243, 255, 0.08);
+  color: var(--cyan);
+  box-shadow: 0 0 15px rgba(0, 243, 255, 0.15);
+}
+
+.btn-outline::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.05), transparent);
+  transition: left 0.5s ease;
+}
+
+.btn-outline:hover::before {
+  left: 100%;
 }
 
 .btn-outline-cyan {
   border-color: var(--cyan);
   color: var(--cyan);
+  background: rgba(0, 243, 255, 0.04);
 }
 
 .btn-outline-cyan:hover {
-  background: rgba(121, 187, 255, 0.16);
-  border-color: var(--cyan);
+  background: rgba(0, 243, 255, 0.12);
+  box-shadow: 0 0 20px rgba(0, 243, 255, 0.25);
 }
 
 /* ── CARD ──────────────────────────────────────────────────────── */
@@ -232,14 +320,31 @@ body {
   background: var(--bg-card);
   border: 1px solid var(--border);
   padding: 2.5rem;
-  transition: border-color 0.4s ease, background 0.4s ease, transform 0.4s ease;
+  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
   position: relative;
+  overflow: hidden;
+  backdrop-filter: blur(8px);
+}
+
+.card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at var(--mouse-x, 50%) var(--mouse-y, 50%), rgba(0, 243, 255, 0.06), transparent 50%);
+  opacity: 0;
+  transition: opacity 0.4s;
+  pointer-events: none;
 }
 
 .card:hover {
-  border-color: rgba(157, 203, 255, 0.42);
+  border-color: rgba(0, 243, 255, 0.35);
   background: var(--bg-card-hover);
   transform: translateY(-2px);
+  box-shadow: 0 0 20px rgba(0, 243, 255, 0.08);
+}
+
+.card:hover::before {
+  opacity: 1;
 }
 
 /* ── DIVIDER ───────────────────────────────────────────────────── */
@@ -390,7 +495,8 @@ body {
   font-family: var(--font-display);
   font-size: clamp(1.625rem, 2.8vw + 0.75rem, 4.25rem);
   line-height: 1;
-  color: var(--text-primary);
+  color: var(--color-text-primary);
+  text-shadow: 0 0 10px var(--color-accent-glow);
 }
 
 .stat-label {
@@ -514,7 +620,7 @@ body {
   flex-wrap: wrap;
   gap: 1rem 1.75rem;
   padding-top: 2rem;
-  border-top: 1px solid var(--border);
+  border-top: 1px solid var(--color-border);
   font-size: var(--label-size);
   letter-spacing: 0.12em;
 }

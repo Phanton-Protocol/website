@@ -118,10 +118,10 @@ const Navbar = () => {
                 right: 0,
                 zIndex: 200,
                 padding: scrolled ? '1rem 0' : '1.75rem 0',
-                background: scrolled ? 'rgba(6, 14, 27, 0.97)' : 'rgba(7, 16, 30, 0.9)',
+                background: scrolled ? 'var(--color-bg-primary)' : 'rgba(8, 13, 20, 0.9)',
                 backdropFilter: scrolled ? 'blur(16px)' : 'blur(12px)',
                 WebkitBackdropFilter: scrolled ? 'blur(16px)' : 'blur(12px)',
-                borderBottom: scrolled ? '1px solid var(--border)' : '1px solid transparent',
+                borderBottom: scrolled ? '1px solid var(--color-border)' : '1px solid transparent',
                 transition: 'all 0.4s ease',
             }}
         >
@@ -198,7 +198,7 @@ const Navbar = () => {
                                     fontSize: 'var(--nav-link-size)',
                                     letterSpacing: link.oneWordLabel ? '0.02em' : '0.06em',
                                     textTransform: link.oneWordLabel ? 'none' : 'uppercase',
-                                    color: activeSection === link.sectionId ? 'var(--cyan)' : '#ffffff',
+                                    color: activeSection === link.sectionId ? 'var(--color-accent-primary)' : 'var(--color-text-primary)',
                                     fontWeight: activeSection === link.sectionId ? 600 : 500,
                                     textDecoration: 'none',
                                     transition: 'color 0.25s ease, text-shadow 0.25s ease',
@@ -208,10 +208,10 @@ const Navbar = () => {
                                 }}
                                 onClick={(e) => handleSectionNav(e, link.sectionId)}
                                 onMouseEnter={(e) => {
-                                    e.currentTarget.style.color = 'var(--cyan)';
+                                    e.currentTarget.style.color = 'var(--color-accent-primary)';
                                 }}
                                 onMouseLeave={(e) => {
-                                    e.currentTarget.style.color = activeSection === link.sectionId ? 'var(--cyan)' : '#ffffff';
+                                    e.currentTarget.style.color = activeSection === link.sectionId ? 'var(--color-accent-primary)' : 'var(--color-text-primary)';
                                 }}
                             >
                                 {link.name}
@@ -230,9 +230,9 @@ const Navbar = () => {
                             display: 'inline-flex',
                             alignItems: 'center',
                             gap: '0.45rem',
-                            background: 'rgba(121, 187, 255, 0.12)',
-                            border: '1px solid rgba(151, 210, 255, 0.36)',
-                            color: 'rgba(233, 244, 255, 0.96)',
+                            background: 'var(--color-accent-glow)',
+                            border: '1px solid var(--color-accent-primary)',
+                            color: 'var(--color-text-primary)',
                             fontFamily: 'var(--font-body)',
                             fontSize: 'var(--btn-text-size)',
                             letterSpacing: '0.06em',
@@ -251,7 +251,7 @@ const Navbar = () => {
                     <a
                         href={EPAPER_PUBLIC_URL}
                         className="btn-outline nav-desktop-only"
-                        style={{ fontSize: 'var(--btn-text-size)', padding: 'clamp(0.5rem, 1.2vw, 0.6rem) clamp(0.9rem, 2vw, 1.2rem)', color: '#fff', borderColor: 'rgba(255,255,255,0.5)' }}
+                        style={{ fontSize: 'var(--btn-text-size)', padding: 'clamp(0.5rem, 1.2vw, 0.6rem) clamp(0.9rem, 2vw, 1.2rem)', color: 'var(--color-text-primary)', borderColor: 'var(--color-border)' }}
                     >
                         Read E-Paper
                     </a>
@@ -269,9 +269,9 @@ const Navbar = () => {
                         onClick={() => setOpen(!open)}
                     >
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-                            <span style={{ display: 'block', width: 22, height: 1, background: '#fff', transition: 'transform 0.3s', transform: open ? 'translateY(6px) rotate(45deg)' : 'none' }} />
-                            <span style={{ display: 'block', width: 22, height: 1, background: '#fff', opacity: open ? 0 : 1, transition: 'opacity 0.3s' }} />
-                            <span style={{ display: 'block', width: 22, height: 1, background: '#fff', transition: 'transform 0.3s', transform: open ? 'translateY(-6px) rotate(-45deg)' : 'none' }} />
+                            <span style={{ display: 'block', width: 22, height: 1, background: 'var(--color-text-primary)', transition: 'transform 0.3s', transform: open ? 'translateY(6px) rotate(45deg)' : 'none' }} />
+                            <span style={{ display: 'block', width: 22, height: 1, background: 'var(--color-text-primary)', opacity: open ? 0 : 1, transition: 'opacity 0.3s' }} />
+                            <span style={{ display: 'block', width: 22, height: 1, background: 'var(--color-text-primary)', transition: 'transform 0.3s', transform: open ? 'translateY(-6px) rotate(-45deg)' : 'none' }} />
                         </div>
                     </button>
                 </div>
@@ -286,8 +286,8 @@ const Navbar = () => {
                         exit={{ opacity: 0, height: 0 }}
                         transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
                         style={{
-                            background: 'rgba(6, 14, 27, 0.97)',
-                            borderTop: '1px solid var(--border)',
+                            background: 'var(--color-bg-primary)',
+                            borderTop: '1px solid var(--color-border)',
                             overflow: 'hidden',
                         }}
                     >
@@ -315,7 +315,7 @@ const Navbar = () => {
                                             fontSize: 'var(--nav-drawer-size)',
                                             letterSpacing: link.oneWordLabel ? '0.03em' : '0.07em',
                                             textTransform: link.oneWordLabel ? 'none' : 'uppercase',
-                                            color: location.pathname === '/' && activeSection === link.sectionId ? 'var(--cyan)' : 'rgba(255, 255, 255, 0.95)',
+                                            color: location.pathname === '/' && activeSection === link.sectionId ? 'var(--color-accent-primary)' : 'var(--color-text-secondary)',
                                             fontWeight: location.pathname === '/' && activeSection === link.sectionId ? 600 : 500,
                                             textDecoration: 'none',
                                             lineHeight: 1.35,
@@ -325,7 +325,7 @@ const Navbar = () => {
                                     </a>
                                 ))}
                             </div>
-                            <div style={{ height: 1, background: 'rgba(151, 210, 255, 0.22)', margin: '0.15rem 0' }} />
+                            <div style={{ height: 1, background: 'var(--color-border)', margin: '0.15rem 0' }} />
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                                 {moreLinks.map((link) => (
                                     link.to ? (
@@ -375,7 +375,7 @@ const Navbar = () => {
                                     fontSize: 'var(--nav-drawer-size)',
                                     letterSpacing: '0.07em',
                                     textTransform: 'uppercase',
-                                    color: 'var(--cyan)',
+                                    color: 'var(--color-accent-primary)',
                                     fontWeight: 600,
                                     textDecoration: 'none',
                                     lineHeight: 1.35,
