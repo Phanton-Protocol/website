@@ -8,43 +8,11 @@
  * - staging | production: Groth16Verifier + Groth16VerifierAdapter + PancakeSwapAdaptor(PANCAKE_ROUTER, WBNB_ADDRESS)
  *   Optional: JOIN_SPLIT_GROTH16_ADDRESS to reuse an existing verifier.
  */
-import * as fs from "fs";
-import * as path from "path";
 import hre from "hardhat";
 import { deployVerifiersAndSwapAdaptor } from "./deployInfrastructure";
+import { deploymentTxHash, saveDeployment } from "./deploymentRecord";
 
 const { ethers, network } = hre;
-
-type DeploymentRecord = {
-  network: string;
-  chainId: string;
-  deployer: string;
-  deployedAt: string;
-  primary: string;
-  contracts: Record<string, string>;
-};
-
-function saveDeployment(
-  networkName: string,
-  chainId: bigint,
-  deployer: string,
-  primary: string,
-  contracts: Record<string, string>
-): string {
-  const deploymentsDir = path.join(process.cwd(), "deployments");
-  fs.mkdirSync(deploymentsDir, { recursive: true });
-  const payload: DeploymentRecord = {
-    network: networkName,
-    chainId: chainId.toString(),
-    deployer,
-    deployedAt: new Date().toISOString(),
-    primary,
-    contracts,
-  };
-  const filePath = path.join(deploymentsDir, `${networkName}.json`);
-  fs.writeFileSync(filePath, JSON.stringify(payload, null, 2));
-  return filePath;
-}
 
 async function main() {
   const [deployer] = await ethers.getSigners();
@@ -101,6 +69,12 @@ async function main() {
     relayerRegistry: relayerRegistryAddr,
     shieldedPool: shieldedPoolAddr,
   };
+  const deploymentTxs: Record<string, string> = {
+    ...infra.deploymentTxs,
+    feeOracle: deploymentTxHash(feeOracle),
+    relayerRegistry: deploymentTxHash(relayerRegistry),
+    shieldedPool: deploymentTxHash(shieldedPool),
+  };
   if (infra.groth16Verifier) {
     contracts.groth16Verifier = infra.groth16Verifier;
   }
@@ -108,6 +82,9 @@ async function main() {
     contracts.mockVerifierJoinSplit = infra.mockJoinSplit;
     contracts.mockVerifierThreshold = infra.mockThreshold!;
     contracts.mockSwapAdaptor = infra.mockSwapAdaptor!;
+    deploymentTxs.mockVerifierJoinSplit = deploymentTxs.joinSplitVerifier;
+    deploymentTxs.mockVerifierThreshold = deploymentTxs.thresholdVerifier;
+    deploymentTxs.mockSwapAdaptor = deploymentTxs.swapAdaptor;
   }
 
   const out = saveDeployment(
@@ -115,7 +92,8 @@ async function main() {
     chainId,
     deployer.address,
     "ShieldedPool",
-    contracts
+    contracts,
+    deploymentTxs
   );
   console.log("Wrote", out);
   console.log("shieldedPool:", shieldedPoolAddr);

@@ -13,19 +13,10 @@
  *
  * If env vars are missing, the script skips those steps (no-op safe).
  */
-import * as fs from "fs";
-import * as path from "path";
 import hre from "hardhat";
+import { loadDeployment } from "./deploymentRecord";
 
 const { ethers, network } = hre;
-
-type DeploymentRecord = { contracts: Record<string, string> };
-
-function loadDeployment(networkName: string): DeploymentRecord {
-  const filePath = path.join(process.cwd(), "deployments", `${networkName}.json`);
-  const raw = fs.readFileSync(filePath, "utf8");
-  return JSON.parse(raw) as DeploymentRecord;
-}
 
 async function main() {
   const [deployer] = await ethers.getSigners();

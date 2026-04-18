@@ -96,6 +96,11 @@ const SHADOW_SWEEP_GAS_BUFFER_WEI = (() => {
 const CHAINALYSIS_ENABLED = process.env.CHAINALYSIS_ENABLED === "true";
 const CHAINALYSIS_API_KEY = String(process.env.CHAINALYSIS_API_KEY || "").trim();
 const CHAINALYSIS_API_URL = String(process.env.CHAINALYSIS_API_URL || "").trim();
+/** Free sanctions API: GET https://public.chainalysis.com/api/v1/address/{addr} + header X-API-Key */
+const CHAINALYSIS_USE_PUBLIC_SANCTIONS_API =
+  process.env.CHAINALYSIS_USE_PUBLIC_API === "true" ||
+  CHAINALYSIS_API_URL.includes("public.chainalysis.com") ||
+  (CHAINALYSIS_API_KEY && !CHAINALYSIS_API_URL);
 const rlBuckets = new Map();
 function rateLimit(req, res, next) {
   const key = req.ip || req.headers["x-forwarded-for"] || "unknown";
@@ -1435,76 +1440,66 @@ async function persistSwapOutputNotes({ txHash, ownerAddress, noteHints, publicI
   };
 }
 
-async function screenWithdrawRecipient(addr) {
+async function chainalysisScreenAddress(addr, opts = {}) {
+  const { notAllowedMessage = "chainalysis_address_not_allowed", label = "module6" } = opts;
   if (!CHAINALYSIS_ENABLED) return { ok: true, skipped: true };
-  if (!CHAINALYSIS_API_URL || !CHAINALYSIS_API_KEY) {
-    console.warn("[module6] CHAINALYSIS_ENABLED but API URL/KEY missing; skipping recipient screen");
+  if (!CHAINALYSIS_API_KEY) {
+    console.warn(`[${label}] CHAINALYSIS_ENABLED but CHAINALYSIS_API_KEY missing; skipping screen`);
     return { ok: true, skipped: true };
   }
+  if (!CHAINALYSIS_USE_PUBLIC_SANCTIONS_API && !CHAINALYSIS_API_URL) {
+    console.warn(`[${label}] CHAINALYSIS_ENABLED but CHAINALYSIS_API_URL missing; skipping screen`);
+    return { ok: true, skipped: true };
+  }
+  const checksum = ethers.getAddress(addr);
   try {
-    const r = await axios.post(
-      CHAINALYSIS_API_URL,
-      { address: ethers.getAddress(addr) },
-      {
+    let r;
+    if (CHAINALYSIS_USE_PUBLIC_SANCTIONS_API) {
+      const url = `https://public.chainalysis.com/api/v1/address/${checksum}`;
+      r = await axios.get(url, {
         timeout: 12_000,
         validateStatus: () => true,
-        headers: {
-          Authorization: `Bearer ${CHAINALYSIS_API_KEY}`,
-        },
-      }
-    );
+        headers: { "X-API-Key": CHAINALYSIS_API_KEY },
+      });
+    } else {
+      r = await axios.post(
+        CHAINALYSIS_API_URL,
+        { address: checksum },
+        {
+          timeout: 12_000,
+          validateStatus: () => true,
+          headers: { Authorization: `Bearer ${CHAINALYSIS_API_KEY}` },
+        }
+      );
+    }
     if (r.status >= 400) {
       const e = new Error(`chainalysis_http_${r.status}`);
       e.status = 403;
       throw e;
     }
-    if (r.data?.blocked === true || String(r.data?.risk || "").toLowerCase() === "severe") {
-      const e = new Error("chainalysis_recipient_not_allowed");
+    const idents = r.data?.identifications;
+    const sanctionsHit =
+      Array.isArray(idents) &&
+      idents.some((x) => String(x?.category || "").toLowerCase() === "sanctions");
+    if (sanctionsHit || r.data?.blocked === true || String(r.data?.risk || "").toLowerCase() === "severe") {
+      const e = new Error(notAllowedMessage);
       e.status = 403;
       throw e;
     }
     return { ok: true };
   } catch (e) {
     if (e.status) throw e;
-    console.warn("[module6] Chainalysis request failed (non-fatal):", e.message || e);
+    console.warn(`[${label}] Chainalysis request failed (non-fatal):`, e.message || e);
     return { ok: true, warn: String(e.message || e) };
   }
 }
 
+async function screenWithdrawRecipient(addr) {
+  return chainalysisScreenAddress(addr, { notAllowedMessage: "chainalysis_recipient_not_allowed", label: "module6" });
+}
+
 async function screenDepositDepositor(addr, source = "deposit") {
-  if (!CHAINALYSIS_ENABLED) return { ok: true, skipped: true };
-  if (!CHAINALYSIS_API_URL || !CHAINALYSIS_API_KEY) {
-    console.warn(`[${source}] CHAINALYSIS_ENABLED but API URL/KEY missing; skipping depositor screen`);
-    return { ok: true, skipped: true };
-  }
-  try {
-    const r = await axios.post(
-      CHAINALYSIS_API_URL,
-      { address: ethers.getAddress(addr) },
-      {
-        timeout: 12_000,
-        validateStatus: () => true,
-        headers: {
-          Authorization: `Bearer ${CHAINALYSIS_API_KEY}`,
-        },
-      }
-    );
-    if (r.status >= 400) {
-      const e = new Error(`chainalysis_http_${r.status}`);
-      e.status = 403;
-      throw e;
-    }
-    if (r.data?.blocked === true || String(r.data?.risk || "").toLowerCase() === "severe") {
-      const e = new Error("chainalysis_depositor_not_allowed");
-      e.status = 403;
-      throw e;
-    }
-    return { ok: true };
-  } catch (e) {
-    if (e.status) throw e;
-    console.warn(`[${source}] Chainalysis request failed (non-fatal):`, e.message || e);
-    return { ok: true, warn: String(e.message || e) };
-  }
+  return chainalysisScreenAddress(addr, { notAllowedMessage: "chainalysis_depositor_not_allowed", label: source });
 }
 
 async function persistWithdrawChangeNote({ txHash, ownerAddress, noteHints, publicInputs }) {

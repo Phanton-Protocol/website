@@ -2,17 +2,34 @@
   "network": "hardhat",
   "chainId": "31337",
   "deployer": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
-  "deployedAt": "2026-04-11T14:25:50.649Z",
+  "deployedAt": "2026-04-18T13:10:43.670Z",
   "primary": "ShieldedPool",
   "contracts": {
-    "mockVerifierJoinSplit": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
-    "mockVerifierPortfolio": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
-    "mockVerifierThreshold": "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512",
-    "mockSwapAdaptor": "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0",
+    "joinSplitVerifier": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+    "portfolioVerifier": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+    "thresholdVerifier": "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512",
+    "swapAdaptor": "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0",
     "feeOracle": "0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9",
     "relayerRegistry": "0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9",
     "shieldedPool": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
     "depositHandler": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
-    "transactionHistory": "0x2279B7A0a67DB372996a5FaB50D91eAA73d2eBe6"
+    "transactionHistory": "0x2279B7A0a67DB372996a5FaB50D91eAA73d2eBe6",
+    "mockVerifierJoinSplit": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+    "mockVerifierThreshold": "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512",
+    "mockSwapAdaptor": "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0"
+  },
+  "deploymentTxs": {
+    "joinSplitVerifier": "0xa18d6eddc6d40000cc78f182bb8312a970e213083705cd98a928c831cc693e00",
+    "portfolioVerifier": "0xa18d6eddc6d40000cc78f182bb8312a970e213083705cd98a928c831cc693e00",
+    "thresholdVerifier": "0x20ee78392f16ed1b87b9fd7571bf5fe8d8885c07c6b6f3792718e50708fd35d3",
+    "swapAdaptor": "0xa51480a2b02bb49e9af9dd467196d6a580521a3ee6889c58c1168d1f009279eb",
+    "feeOracle": "0xfc6a82f4a53165d45c3d27254511b9cfd63d718a193fc82d58928a50195a18b9",
+    "relayerRegistry": "0xa1333b900a7c3acd076b3d6e5def6e6e089bd7c89afa38226d380d011bc23996",
+    "shieldedPool": "0x270cf9478f84668d0eec699dc9131453b5a4bef46759bca9c89cacf80a335221",
+    "depositHandler": "0xd9e4b8a4a0b2dcc68c6ec581c55453461d10860cf164ccee2fac27e510a02d81",
+    "transactionHistory": "0x68e941aebc3020b3fcdea046d95e48372dd8f1b7df7e95a4d84c320da29e9c59",
+    "mockVerifierJoinSplit": "0xa18d6eddc6d40000cc78f182bb8312a970e213083705cd98a928c831cc693e00",
+    "mockVerifierThreshold": "0x20ee78392f16ed1b87b9fd7571bf5fe8d8885c07c6b6f3792718e50708fd35d3",
+    "mockSwapAdaptor": "0xa51480a2b02bb49e9af9dd467196d6a580521a3ee6889c58c1168d1f009279eb"
   }
 }

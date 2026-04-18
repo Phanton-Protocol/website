@@ -2,6 +2,7 @@
  * Shared deploy helpers for verifiers + swap adaptor (Module 1 profiles).
  */
 import { ethers } from "hardhat";
+import { deploymentTxHash } from "./deploymentRecord";
 
 export type DeployProfileName = "dev" | "staging" | "production";
 
@@ -43,6 +44,8 @@ export type InfraAddresses = {
   mockJoinSplit?: string;
   mockThreshold?: string;
   mockSwapAdaptor?: string;
+  /** Contract-creation tx hashes (keys align with deployments.json contract names). */
+  deploymentTxs: Record<string, string>;
 };
 
 export async function deployVerifiersAndSwapAdaptor(): Promise<InfraAddresses> {
@@ -52,15 +55,25 @@ export async function deployVerifiersAndSwapAdaptor(): Promise<InfraAddresses> {
     const joinSplitVerifier = await MockVerifier.deploy();
     await joinSplitVerifier.waitForDeployment();
     const joinSplitAddr = await joinSplitVerifier.getAddress();
+    const joinSplitTx = deploymentTxHash(joinSplitVerifier);
 
     const thresholdVerifier = await MockVerifier.deploy();
     await thresholdVerifier.waitForDeployment();
     const thresholdAddr = await thresholdVerifier.getAddress();
+    const thresholdTx = deploymentTxHash(thresholdVerifier);
 
     const MockSwapAdaptor = await ethers.getContractFactory("MockSwapAdaptor");
     const swapAdaptor = await MockSwapAdaptor.deploy();
     await swapAdaptor.waitForDeployment();
     const swapAdaptorAddr = await swapAdaptor.getAddress();
+    const swapAdaptorTx = deploymentTxHash(swapAdaptor);
+
+    const deploymentTxs: Record<string, string> = {
+      joinSplitVerifier: joinSplitTx,
+      portfolioVerifier: joinSplitTx,
+      thresholdVerifier: thresholdTx,
+      swapAdaptor: swapAdaptorTx,
+    };
 
     return {
       joinSplit: joinSplitAddr,
@@ -70,11 +83,14 @@ export async function deployVerifiersAndSwapAdaptor(): Promise<InfraAddresses> {
       mockJoinSplit: joinSplitAddr,
       mockThreshold: thresholdAddr,
       mockSwapAdaptor: swapAdaptorAddr,
+      deploymentTxs,
     };
   }
 
   const profile = getDeployProfile();
   console.log("Deploy profile:", profile, "(real Groth16 + PancakeSwapAdaptor)");
+
+  const deploymentTxs: Record<string, string> = {};
 
   let groth16Addr = process.env.JOIN_SPLIT_GROTH16_ADDRESS?.trim();
   if (!groth16Addr) {
@@ -84,6 +100,7 @@ export async function deployVerifiersAndSwapAdaptor(): Promise<InfraAddresses> {
     const groth16 = await Groth16.deploy();
     await groth16.waitForDeployment();
     groth16Addr = await groth16.getAddress();
+    deploymentTxs.groth16Verifier = deploymentTxHash(groth16);
     console.log("Deployed Groth16Verifier at", groth16Addr);
   } else {
     console.log("Using existing Groth16Verifier at", groth16Addr);
@@ -93,6 +110,10 @@ export async function deployVerifiersAndSwapAdaptor(): Promise<InfraAddresses> {
   const adapter = await Adapter.deploy(groth16Addr);
   await adapter.waitForDeployment();
   const adapterAddr = await adapter.getAddress();
+  const adapterTx = deploymentTxHash(adapter);
+  deploymentTxs.joinSplitVerifier = adapterTx;
+  deploymentTxs.portfolioVerifier = adapterTx;
+  deploymentTxs.thresholdVerifier = adapterTx;
   console.log("Deployed Groth16VerifierAdapter at", adapterAddr);
 
   const router = requireEnv("PANCAKE_ROUTER");
@@ -101,6 +122,7 @@ export async function deployVerifiersAndSwapAdaptor(): Promise<InfraAddresses> {
   const swapAdaptor = await Pancake.deploy(router, wbnb);
   await swapAdaptor.waitForDeployment();
   const swapAdaptorAddr = await swapAdaptor.getAddress();
+  deploymentTxs.swapAdaptor = deploymentTxHash(swapAdaptor);
   console.log("Deployed PancakeSwapAdaptor at", swapAdaptorAddr);
 
   return {
@@ -109,5 +131,6 @@ export async function deployVerifiersAndSwapAdaptor(): Promise<InfraAddresses> {
     threshold: adapterAddr,
     swapAdaptor: swapAdaptorAddr,
     groth16Verifier: groth16Addr,
+    deploymentTxs,
   };
 }
