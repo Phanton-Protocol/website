@@ -8,6 +8,7 @@
     "compile:full": "HH_FULL=1 hardhat compile",
     "test": "HH_FULL=1 hardhat test",
     "test:contracts": "HH_FULL=1 hardhat test",
+    "test:m6": "HH_FULL=1 hardhat test test/m6-e2e-local-gate.test.cjs",
     "deploy:testnet": "HH_FULL=1 hardhat run scripts/deploy/deploy-core.ts --network bscTestnet",
     "deploy:handlers": "HH_FULL=1 hardhat run scripts/deploy/deploy-handlers.ts --network bscTestnet",
     "deploy:core:local": "HH_FULL=1 hardhat run scripts/deploy/deploy-core.ts --network hardhat",
