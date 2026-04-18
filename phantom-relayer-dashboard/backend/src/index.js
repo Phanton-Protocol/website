@@ -2105,6 +2105,7 @@ app.get("/config", (req, res) => {
       sessionTtlMs: MODULE4_SESSION_TTL_MS,
       publicSubmit: MODULE4_PUBLIC_SUBMIT,
       maxBnbWei: MODULE4_MAX_BNB_WEI.toString(),
+      shadowSweepGasBufferWei: SHADOW_SWEEP_GAS_BUFFER_WEI.toString(),
       endpoints: ["/relayer/deposit/session", "/relayer/deposit/submit", "/relayer/deposit/status"],
     },
     module5QuoteConfig: {

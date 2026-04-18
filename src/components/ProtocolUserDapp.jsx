@@ -6,6 +6,7 @@ import { relayerFetchJson, setRuntimeRelayerBases } from "../lib/relayerHttp";
 import { canUseClientProver, generateSwapProofClient } from "../lib/clientProver";
 import { encryptForRelayer } from "../lib/relayEnvelope";
 import { CLIENT_PROVER_WASM_URL, CLIENT_PROVER_ZKEY_URL } from "../config";
+import { nullifierToBytes32Hex, SHADOW_SWEEP_GAS_BUFFER_WEI_DEFAULT } from "../lib/relayerDefaults.js";
 import {
   addressToOwnerPublicKey,
   commitmentToBytes32,
@@ -123,18 +124,29 @@ const TOKEN_OPTIONS = [
   { label: "USDT (test)", value: "0x7EF95A0Fe8A5F4f9C1824fBf6656e2f95fA6Bf13" },
   { label: "Custom address", value: "__custom__" },
 ];
-const SHADOW_SWEEP_GAS_BUFFER_WEI = ethers.parseEther("0.001");
 
-function getAssetIdForToken(tokenAddress) {
+/** Resolve asset ID from relayer `/config` `assets` (on-chain registry via deploy config). Never guess (no silent BUSD). */
+function getAssetIdForToken(tokenAddress, relayerConfig) {
   const normalized = String(tokenAddress || "").toLowerCase();
   if (normalized === ethers.ZeroAddress.toLowerCase()) return 0;
-  if (normalized === "0x78867bbeeef44f2326bf8ddd1941a4439382ef2a7") return 1;
-  if (normalized === "0x7ef95a0fe8a5f4f9c1824fbf6656e2f95fa6bf13") return 2;
-  return 1;
+  const assets = Array.isArray(relayerConfig?.assets) ? relayerConfig.assets : [];
+  if (assets.length === 0) {
+    throw new Error(
+      "Relayer /config has no assets[] — cannot map token to asset ID. Ensure the relayer loads chain config (e.g. config/bscTestnet.json)."
+    );
+  }
+  const hit = assets.find((a) => a?.address && String(a.address).toLowerCase() === normalized);
+  if (hit != null && hit.assetId != null && !Number.isNaN(Number(hit.assetId))) {
+    return Number(hit.assetId);
+  }
+  throw new Error(
+    `Unknown token for asset ID (not listed in relayer /config assets): ${tokenAddress}. Use a configured asset or add this token to the pool config.`
+  );
 }
 
-function spendableNoteEntries(vaultData, inputToken) {
-  const aid = getAssetIdForToken(inputToken);
+function spendableNoteEntries(vaultData, inputToken, relayerConfig) {
+  if (!relayerConfig?.assets?.length) return [];
+  const aid = getAssetIdForToken(inputToken, relayerConfig);
   const notes = vaultData?.notes || [];
   const out = [];
   notes.forEach((n, vaultIdx) => {
@@ -163,7 +175,7 @@ function mergeSwapData(base, overlay) {
   return out;
 }
 
-function buildDefaultSwapData(intentForm, chainId) {
+function buildDefaultSwapData(intentForm, chainId, relayerConfig) {
   const zb = ethers.ZeroHash;
   const wbnb = canonicalWbnb(chainId);
   const tokenIn =
@@ -198,8 +210,8 @@ function buildDefaultSwapData(intentForm, chainId) {
       outputCommitmentSwap: zb,
       outputCommitmentChange: zb,
       merkleRoot: zb,
-      inputAssetID: getAssetIdForToken(intentForm.inputToken),
-      outputAssetIDSwap: getAssetIdForToken(intentForm.outputToken),
+      inputAssetID: getAssetIdForToken(intentForm.inputToken, relayerConfig),
+      outputAssetIDSwap: getAssetIdForToken(intentForm.outputToken, relayerConfig),
       outputAssetIDChange: 0,
       inputAmount: amountInWei,
       swapAmount: amountInWei,
@@ -282,8 +294,8 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
   const [spendPick, setSpendPick] = useState(0);
 
   const spendable = useMemo(
-    () => spendableNoteEntries(vault.data, intentForm.inputToken),
-    [vault.data, intentForm.inputToken]
+    () => spendableNoteEntries(vault.data, intentForm.inputToken, cfg),
+    [vault.data, intentForm.inputToken, cfg]
   );
   useEffect(() => {
     setSpendPick(0);
@@ -379,8 +391,14 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
   }, [withdrawForm.token]);
 
   useEffect(() => {
-    setDepositForm((prev) => ({ ...prev, assetID: getAssetIdForToken(prev.token) }));
-  }, [depositForm.token]);
+    if (!cfg?.assets?.length) return;
+    try {
+      const id = getAssetIdForToken(depositForm.token, cfg);
+      setDepositForm((prev) => (prev.assetID === id ? prev : { ...prev, assetID: id }));
+    } catch {
+      /* unknown token vs /config assets — submitDeposit will error with a clear message */
+    }
+  }, [depositForm.token, cfg]);
 
   useEffect(() => {
     if (!wallet?.address) return;
@@ -393,12 +411,13 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
       return;
     }
     if (amountWei <= 0n) return;
-    const assetID = getAssetIdForToken(depositForm.token);
+    if (!cfg?.assets?.length) return;
+    const assetID = getAssetIdForToken(depositForm.token, cfg);
     const ownerPk = addressToOwnerPublicKey(wallet.address);
     const c = noteCommitment(assetID, amountWei.toString(), depositBlinding, ownerPk);
     const hex = commitmentToBytes32(c);
     setDepositForm((prev) => (prev.commitment === hex ? prev : { ...prev, commitment: hex }));
-  }, [wallet?.address, depositForm.token, depositForm.amount, depositBlinding]);
+  }, [wallet?.address, depositForm.token, depositForm.amount, depositBlinding, cfg]);
 
   useEffect(() => {
     let cancelled = false;
@@ -630,7 +649,7 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
       }
 
       const amountWei = ethers.parseUnits(String(depositForm.amount || "0"), 18);
-      const assetID = Number(getAssetIdForToken(depositForm.token));
+      const assetID = Number(getAssetIdForToken(depositForm.token, cfg));
       const deadline = Math.floor(Date.now() / 1000) + Number(depositForm.deadlineSec || 900);
       const domain = {
         name: "ShadowDeFiRelayer",
@@ -654,7 +673,10 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
           body: JSON.stringify({ ...message, signature }),
         });
         const feeWei = BigInt(shadow?.feeWei || "0");
-        const totalFunding = amountWei + feeWei + SHADOW_SWEEP_GAS_BUFFER_WEI;
+        const shadowSweepBufferWei = BigInt(
+          cfg?.module4RelayerDeposit?.shadowSweepGasBufferWei ?? String(SHADOW_SWEEP_GAS_BUFFER_WEI_DEFAULT)
+        );
+        const totalFunding = amountWei + feeWei + shadowSweepBufferWei;
         const fundTx = await wallet.signer.sendTransaction({
           to: shadow.shadowAddress,
           value: totalFunding,
@@ -708,7 +730,7 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
           shadowAddress: shadow.shadowAddress,
           fundingTxHash: fundTx.hash,
           fundingWei: totalFunding.toString(),
-          gasBufferWei: SHADOW_SWEEP_GAS_BUFFER_WEI.toString(),
+          gasBufferWei: shadowSweepBufferWei.toString(),
           feeWei: feeWei.toString(),
           serverNote,
           ...sweep,
@@ -765,21 +787,11 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
       }
 
       const deadline = Math.floor(Date.now() / 1000) + Number(intentForm.deadlineSec || 900);
-      const nullifier = ethers.hexlify(ethers.randomBytes(32));
       const noteNonce = Number(intentForm.nonce || Date.now());
-      const intentReq = {
-        userAddress: wallet.address,
-        inputAssetID: 0,
-        outputAssetID: 0,
-        amountIn: "0",
-        minAmountOut: String(intentForm.minOutputAmount || "0"),
-        nonce: String(noteNonce),
-        nullifier,
-        deadline,
-      };
+
       let minOutBI = 0n;
       try {
-        minOutBI = BigInt(intentReq.minAmountOut || "0");
+        minOutBI = BigInt(String(intentForm.minOutputAmount || "0"));
       } catch {
         minOutBI = 0n;
       }
@@ -799,37 +811,13 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
         }
       }
 
-      intentReq.inputAssetID = Number(swapData?.publicInputs?.inputAssetID ?? getAssetIdForToken(intentForm.inputToken));
-      intentReq.outputAssetID = Number(swapData?.publicInputs?.outputAssetIDSwap ?? getAssetIdForToken(intentForm.outputToken));
-      intentReq.amountIn = String(swapData?.publicInputs?.swapAmount ?? "0");
-      intentReq.minAmountOut = String(swapData?.publicInputs?.minOutputAmountSwap ?? intentReq.minAmountOut);
-
-      const intentRes = await fetchJson(`${base}/intent`, {
-        method: "POST",
-        body: JSON.stringify(intentReq),
-      });
-
-      const { intentId, intent, domain, types } = intentRes;
-      const typed = types || INTENT_TYPES;
-      const signPayload = {
-        user: intent.userAddress,
-        inputAssetID: intent.inputAssetID,
-        outputAssetID: intent.outputAssetID,
-        amountIn: intent.amountIn,
-        minAmountOut: intent.minAmountOut,
-        deadline: intent.deadline,
-        nonce: intent.nonce,
-        nullifier: intent.nullifier,
-      };
-      const intentSig = await wallet.signer.signTypedData(domain, typed, signPayload);
-
       let swapData;
       const customRaw = String(intentForm.swapDataJson || "").trim();
       if (customRaw) {
         try {
           const custom = JSON.parse(customRaw);
           if (custom && typeof custom === "object") {
-            swapData = mergeSwapData(buildDefaultSwapData(intentForm, cfg.chainId), custom);
+            swapData = mergeSwapData(buildDefaultSwapData(intentForm, cfg.chainId, cfg), custom);
           } else {
             throw new Error("Invalid swap JSON");
           }
@@ -876,7 +864,7 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
             commitment: note.commitmentDecimal,
           },
           outputNoteSwap: {
-            assetID: getAssetIdForToken(intentForm.outputToken),
+            assetID: getAssetIdForToken(intentForm.outputToken, cfg),
             amount: outAmt,
             blindingFactor: randomFieldElementString(),
             commitment: "0",
@@ -929,7 +917,7 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
           },
           noteHints: {
             swap: {
-              assetId: getAssetIdForToken(intentForm.outputToken),
+              assetId: getAssetIdForToken(intentForm.outputToken, cfg),
               amount: outAmt,
               blindingFactor: proofBody.outputNoteSwap.blindingFactor,
               ownerPublicKey: note.ownerPublicKey,
@@ -944,6 +932,43 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
           encryptedPayload: "0x",
         };
       }
+
+      if (!swapData?.publicInputs?.nullifier) {
+        throw new Error(
+          "swapData.publicInputs.nullifier is required — build the proof first or include it in Advanced JSON."
+        );
+      }
+      const nullifierHex = nullifierToBytes32Hex(swapData.publicInputs.nullifier);
+
+      const intentReq = {
+        userAddress: wallet.address,
+        inputAssetID: Number(swapData.publicInputs.inputAssetID),
+        outputAssetID: Number(swapData.publicInputs.outputAssetIDSwap),
+        amountIn: String(swapData.publicInputs.swapAmount ?? "0"),
+        minAmountOut: String(swapData.publicInputs.minOutputAmountSwap ?? intentForm.minOutputAmount ?? "0"),
+        nonce: String(noteNonce),
+        nullifier: nullifierHex,
+        deadline,
+      };
+
+      const intentRes = await fetchJson(`${base}/intent`, {
+        method: "POST",
+        body: JSON.stringify(intentReq),
+      });
+
+      const { intentId, intent, domain, types } = intentRes;
+      const typed = types || INTENT_TYPES;
+      const signPayload = {
+        user: intent.userAddress,
+        inputAssetID: intent.inputAssetID,
+        outputAssetID: intent.outputAssetID,
+        amountIn: intent.amountIn,
+        minAmountOut: intent.minAmountOut,
+        deadline: intent.deadline,
+        nonce: intent.nonce,
+        nullifier: intent.nullifier,
+      };
+      const intentSig = await wallet.signer.signTypedData(domain, typed, signPayload);
 
       const keyInfo = await fetchJson(`${base}/relayer/encryption-key`);
       const envelope = await encryptForRelayer(
@@ -987,7 +1012,7 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
           throw new Error("Withdraw JSON must include proof, publicInputs, and recipient or finalRecipient.");
         }
       } else {
-        const spend = spendableNoteEntries(vault.data, withdrawForm.token);
+        const spend = spendableNoteEntries(vault.data, withdrawForm.token, cfg);
         if (!spend.length) {
           throw new Error("No spendable note for this token. Unlock the vault, deposit first, or paste full withdraw JSON under Advanced.");
         }
