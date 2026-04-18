@@ -50,6 +50,7 @@ const {
   sendDepositForBnb,
   logModule4
 } = require("./module4Deposit");
+const { assertIntentNullifierMatchesSwapPublicInputs } = require("./swapIntentBinding");
 
 const app = express();
 app.use(express.json({ limit: "2mb" }));
@@ -203,6 +204,8 @@ const CHAIN_ID = process.env.CHAIN_ID ? Number(process.env.CHAIN_ID) : 97;
 const RELAYER_DRY_RUN = process.env.RELAYER_DRY_RUN === "true";
 const DEV_BYPASS_VALIDATORS = process.env.DEV_BYPASS_VALIDATORS === "true";
 const DEV_BYPASS_PROOFS = process.env.DEV_BYPASS_PROOFS === "true";
+const PHANTOM_DEPLOYMENT_TIER_RAW = String(process.env.PHANTOM_DEPLOYMENT_TIER || "").toLowerCase().trim();
+const PHANTOM_EMERGENCY_BYPASS_DEV_FLAGS = process.env.PHANTOM_EMERGENCY_BYPASS_DEV_FLAGS === "true";
 const SWAP_ADAPTOR_ADDRESS = process.env.SWAP_ADAPTOR_ADDRESS;
 const RELAYER_STAKING_ADDRESS = process.env.RELAYER_STAKING_ADDRESS;
 const VALIDATOR_COORDINATOR_WS_URL = process.env.VALIDATOR_COORDINATOR_WS_URL;
@@ -272,6 +275,21 @@ try {
   }
 }
 
+function assertStagingProductionBypassPolicy() {
+  if (PHANTOM_DEPLOYMENT_TIER_RAW !== "staging" && PHANTOM_DEPLOYMENT_TIER_RAW !== "production") return;
+  if (PHANTOM_EMERGENCY_BYPASS_DEV_FLAGS) {
+    console.warn(
+      "[PHANTOM] PHANTOM_EMERGENCY_BYPASS_DEV_FLAGS=true — DEV_BYPASS_VALIDATORS/DEV_BYPASS_PROOFS allowed on staging|production (documented emergency only; rotate off ASAP)"
+    );
+    return;
+  }
+  if (DEV_BYPASS_VALIDATORS || DEV_BYPASS_PROOFS) {
+    throw new Error(
+      "PHANTOM_DEPLOYMENT_TIER=staging|production forbids DEV_BYPASS_VALIDATORS and DEV_BYPASS_PROOFS (set PHANTOM_EMERGENCY_BYPASS_DEV_FLAGS=true only for documented emergency recovery)"
+    );
+  }
+}
+
 function assertProductionReadiness() {
   if (NODE_ENV !== "production") return;
   if (DEV_BYPASS_VALIDATORS || DEV_BYPASS_PROOFS) {
@@ -293,6 +311,7 @@ function assertProductionReadiness() {
     throw new Error("Production startup blocked: SEE_SHARED_SECRET is required when SEE_MODE is enabled.");
   }
 }
+assertStagingProductionBypassPolicy();
 assertProductionReadiness();
 assertRuntimeParameterConsistency();
 
@@ -2467,6 +2486,17 @@ async function processSwapRequestBody(body) {
     throw err;
   }
   const pi = swapData?.publicInputs || {};
+  assertIntentNullifierMatchesSwapPublicInputs(intent, swapData?.publicInputs);
+  try {
+    await screenDepositDepositor(ethers.getAddress(intent.userAddress), "swap");
+  } catch (e) {
+    if (e?.status) {
+      const err = new Error(e.message || "chainalysis_depositor_not_allowed");
+      err.status = e.status;
+      throw err;
+    }
+    throw e;
+  }
   if (String(pi.outputAssetIDSwap) !== String(intent.outputAssetID) || String(pi.inputAssetID) !== String(intent.inputAssetID)) {
     const err = new Error("Intent asset IDs do not match swap public inputs");
     err.status = 400;
@@ -2915,6 +2945,7 @@ app.get("/portfolio/swap-fee", async (req, res) => {
     } catch (e) {
       console.warn("FeeOracle.calculateFee failed, using 0:", e.message);
     }
+    // DEX swap fee bps must stay aligned with M3 on-chain fee (default PHANTOM_DEX_SWAP_FEE_BPS=10).
     const dexBps = BigInt(RUNTIME_PARAMS.fees.dexSwapFeeBps);
     const swapFee = (amountBigInt * dexBps) / 10000n;
     const totalProtocolFee = protocolFeeFromOracle + swapFee;
@@ -3453,7 +3484,7 @@ if (!process.env.VERCEL) {
   })();
 }
 
-module.exports = { app };
+module.exports = { app, processSwapRequestBody };
 
 async function getDexPriceUsd(tokenAddress, chainSlug) {
   const { data } = await axios.get(`${dexApiToken}${tokenAddress}`);
