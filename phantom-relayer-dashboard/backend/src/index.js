@@ -4177,8 +4177,14 @@ function decodeSwapError(err) {
       const codes = {
         5: "PoolErr(5): Protocol fee mismatch — backend fee ≠ contract. Check /portfolio/swap-fee and FeeOracle.",
         6: "PoolErr(6): Invalid proof — verify proof inputs and circuit match.",
+        7: "PoolErr(7): gasRefund exceeds input amount.",
         11: "PoolErr(11): Invalid asset — assetRegistry not set for this assetId.",
         15: "PoolErr(15): Slippage exceeded — swap output < minOutputAmount. Increase slippage or retry.",
+        19: "PoolErr(19): Change note is zero. Lower swap amount or gasRefund so a positive change remains.",
+        40: "PoolErr(40): Threshold verifier rejected the proof bundle.",
+        41: "PoolErr(41): Merkle root mismatch. Refresh Merkle data and regenerate proof.",
+        42: "PoolErr(42): Merkle path invalid for the selected note commitment.",
+        43: "PoolErr(43): Conservation mismatch. inputAmount must equal swap + change + protocolFee + gasRefund.",
         24: "PoolErr(24): Portfolio state mismatch — commitment/nonce changed. Refresh and rebuild proof.",
         25: "PoolErr(25): Invalid nonce — newNonce must equal oldNonce + 1."
       };
