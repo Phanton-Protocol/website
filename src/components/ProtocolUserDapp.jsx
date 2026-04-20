@@ -33,9 +33,120 @@ function stringifyErr(x) {
   return String(x);
 }
 
+/** Build a v1 vault note payload from swap hints + on-chain commitment (decimal string or bytes32 hex). */
+function buildVaultNoteFromSwapHint({ assetId, amountStr, blindingFactor, ownerPublicKey, commitmentStr }) {
+  const raw = String(commitmentStr || "").trim();
+  if (!raw) throw new Error("Missing commitment for vault note");
+  let cDec;
+  if (/^0x[0-9a-fA-F]{64}$/.test(raw)) {
+    cDec = ethers.toBigInt(raw).toString();
+  } else {
+    cDec = raw;
+  }
+  const commitmentHex = commitmentToBytes32(cDec);
+  const recomputed = noteCommitment(assetId, amountStr, blindingFactor, ownerPublicKey).toString();
+  if (recomputed !== cDec) {
+    throw new Error("Vault note commitment mismatch — swap hints do not match on-chain commitment");
+  }
+  return {
+    version: 1,
+    assetID: assetId,
+    amount: String(amountStr),
+    blindingFactor: String(blindingFactor),
+    ownerPublicKey: String(ownerPublicKey),
+    commitmentDecimal: cDec,
+    commitmentHex,
+  };
+}
+
+function isNonZeroCommitmentStr(c) {
+  const s = String(c ?? "").trim();
+  if (!s) return false;
+  if (/^0x[0-9a-fA-F]{64}$/i.test(s)) {
+    try {
+      return ethers.toBigInt(s) !== 0n;
+    } catch {
+      return false;
+    }
+  }
+  try {
+    return BigInt(s) !== 0n;
+  } catch {
+    return false;
+  }
+}
+
+/** Prefer API `out.commitments`, else fall back to proof public inputs (decimal or bytes32). */
+function resolveSwapOutputCommitments(out, publicInputs) {
+  const fromApiSwap = out?.commitments?.swap;
+  const fromApiChange = out?.commitments?.change;
+  const piSwap = publicInputs?.outputCommitmentSwap;
+  const piChange = publicInputs?.outputCommitmentChange;
+  const swap = isNonZeroCommitmentStr(fromApiSwap) ? fromApiSwap : piSwap;
+  const change = isNonZeroCommitmentStr(fromApiChange) ? fromApiChange : piChange;
+  return { swap, change };
+}
+
+/** Normalize circuit public-input commitment (decimal string or 0x hex) to vault `commitmentHex` form. */
+function publicInputCommitmentToVaultHex(c) {
+  const raw = String(c ?? "").trim();
+  if (!raw) return "";
+  try {
+    if (/^0x[0-9a-fA-F]{64}$/i.test(raw)) {
+      return String(ethers.zeroPadValue(raw, 32)).toLowerCase();
+    }
+    return String(commitmentToBytes32(raw)).toLowerCase();
+  } catch {
+    return "";
+  }
+}
+
+/** Convert relayer `/notes` canonical `note.v1` into the local vault payload shape used by Swap/Withdraw. */
+function relayerCanonicalNoteToVaultPayload(note) {
+  if (!note || typeof note !== "object") return null;
+  if (Number(note.version) === 1 && note.commitmentHex && note.commitmentDecimal) {
+    return note;
+  }
+  const schema = String(note.schema || "");
+  const commitmentHexRaw = String(note.commitment || "").trim();
+  if (!/^0x[0-9a-fA-F]{64}$/.test(commitmentHexRaw)) return null;
+  if (schema && schema !== "note.v1") return null;
+
+  const assetIDRaw = note.assetID ?? note.assetId;
+  if (assetIDRaw == null) return null;
+  const assetID = Number(assetIDRaw);
+  if (!Number.isFinite(assetID)) return null;
+
+  const amount = String(note.amount ?? "");
+  const blindingFactor = String(note.blindingFactor ?? "");
+  const ownerPublicKey = String(note.ownerPublicKey ?? "");
+  if (!amount || !blindingFactor || !ownerPublicKey) return null;
+
+  const commitmentHex = commitmentToBytes32(ethers.toBigInt(commitmentHexRaw).toString());
+  const commitmentDecimal = ethers.toBigInt(commitmentHexRaw).toString();
+  const recomputed = noteCommitment(assetID, amount, blindingFactor, ownerPublicKey).toString();
+  if (recomputed !== commitmentDecimal) return null;
+
+  return {
+    version: 1,
+    assetID,
+    amount,
+    blindingFactor,
+    ownerPublicKey,
+    commitmentDecimal,
+    commitmentHex,
+  };
+}
+
 async function fetchJson(url, opts) {
-  const headers = { "content-type": "application/json", ...(opts?.headers || {}) };
-  const fetchOpts = { ...opts, headers };
+  const ownerAddress = opts?.ownerAddress;
+  const { ownerAddress: _dropOwner, ...restOpts } = opts || {};
+  const headers = {
+    "content-type": "application/json",
+    ...(restOpts?.headers || {}),
+    ...(ownerAddress ? { "x-owner-address": String(ownerAddress).trim().toLowerCase() } : {}),
+  };
+  const fetchOpts = { ...restOpts, headers };
   let path = String(url || "");
   try {
     if (/^https?:\/\//i.test(path)) {
@@ -271,6 +382,8 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
   useEffect(() => {
     vaultRef.current = vault;
   }, [vault]);
+  /** When true, do not overwrite withdraw "Amount" from computed max (user typed a custom payout). */
+  const withdrawAmountUserEditedRef = useRef(false);
   const [vaultError, setVaultError] = useState(null);
   const [noteDraft, setNoteDraft] = useState("");
 
@@ -328,6 +441,47 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
     gasRefund: ethers.parseEther("0.002").toString(),
     withdrawDataJson: "",
   });
+  const withdrawSpendable = useMemo(
+    () => spendableNoteEntries(vault.data, withdrawForm.token, cfg),
+    [vault.data, withdrawForm.token, cfg]
+  );
+  const withdrawAdvancedJson = useMemo(
+    () => String(withdrawForm.withdrawDataJson || "").trim(),
+    [withdrawForm.withdrawDataJson]
+  );
+  /** Largest payout `amountWei` such that change = note − payout − fee − gas > 0 (same 1-wei floor as swap). */
+  const withdrawMaxPayoutWei = useMemo(() => {
+    if (!withdrawSpendable.length) return null;
+    try {
+      const note = withdrawSpendable[0].note;
+      const inputWei = BigInt(note.amount);
+      let protocolFee = 0n;
+      let gasRefund = 0n;
+      try {
+        protocolFee = BigInt(String(withdrawForm.protocolFee || "0"));
+      } catch {
+        protocolFee = 0n;
+      }
+      try {
+        gasRefund = BigInt(String(withdrawForm.gasRefund || "0"));
+      } catch {
+        gasRefund = 0n;
+      }
+      const max = inputWei - protocolFee - gasRefund - MIN_SWAP_CHANGE_WEI;
+      return max > 0n ? max : 0n;
+    } catch {
+      return null;
+    }
+  }, [withdrawSpendable, withdrawForm.protocolFee, withdrawForm.gasRefund]);
+
+  useEffect(() => {
+    if (withdrawAdvancedJson) return;
+    if (withdrawMaxPayoutWei == null || withdrawMaxPayoutWei <= 0n) return;
+    if (withdrawAmountUserEditedRef.current) return;
+    const nextAmt = ethers.formatUnits(withdrawMaxPayoutWei, 18);
+    setWithdrawForm((f) => (f.amount === nextAmt ? f : { ...f, amount: nextAmt }));
+  }, [withdrawMaxPayoutWei, withdrawAdvancedJson]);
+
   const [depositTokenChoice, setDepositTokenChoice] = useState(ethers.ZeroAddress);
   const [swapInputTokenChoice, setSwapInputTokenChoice] = useState(ethers.ZeroAddress);
   const [swapOutputTokenChoice, setSwapOutputTokenChoice] = useState("0x78867BbEeF44f2326bF8DDd1941a4439382EF2A7");
@@ -673,6 +827,38 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
     }
   }
 
+  async function mergeRelayerBackedNotesIntoVault({ key, data, ownerAddress }) {
+    if (!key || !data || !ownerAddress || !base) return { key, data, imported: 0 };
+    let list = [];
+    try {
+      const res = await fetchJson(`${base}/notes?limit=200`, { ownerAddress });
+      list = Array.isArray(res?.notes) ? res.notes : [];
+    } catch {
+      return { key, data, imported: 0 };
+    }
+    let notes = Array.isArray(data?.notes) ? [...data.notes] : [];
+    const haveHex = new Set(
+      notes
+        .map((e) => String(e?.payload?.commitmentHex || "").toLowerCase())
+        .filter(Boolean)
+    );
+    let imported = 0;
+    for (const row of list) {
+      const payload = relayerCanonicalNoteToVaultPayload(row?.note);
+      if (!payload) continue;
+      const hx = String(payload.commitmentHex || "").toLowerCase();
+      if (!hx || haveHex.has(hx)) continue;
+      notes.unshift({ t: Date.now(), payload });
+      haveHex.add(hx);
+      imported += 1;
+    }
+    if (!imported) return { key, data, imported: 0 };
+    notes = notes.slice(0, 200);
+    const nextData = { ...data, notes, updatedAt: new Date().toISOString() };
+    await saveVault({ key, data: nextData });
+    return { key, data: nextData, imported };
+  }
+
   async function unlockVault() {
     setVaultError(null);
     if (!wallet.signer) {
@@ -694,11 +880,21 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
       const loaded = await loadVault({ signature });
       const flushed = await flushPendingVaultNoteAfterLoad(loaded);
       const merged = flushed ?? { key: loaded.key, data: loaded.data };
-      setVault({ unlocked: true, key: merged.key, data: merged.data });
+      const remote = await mergeRelayerBackedNotesIntoVault({
+        key: merged.key,
+        data: merged.data,
+        ownerAddress: wallet.address,
+      });
+      const finalMerged = remote.imported > 0 ? { key: remote.key, data: remote.data } : merged;
+      setVault({ unlocked: true, key: finalMerged.key, data: finalMerged.data });
       if (flushed) {
         setActionSuccess("Restored a pending deposit note into your vault.");
+      } else if (remote.imported > 0) {
+        setActionSuccess(
+          `Imported ${remote.imported} note(s) from the relayer backup (deposits / swap outputs). You can withdraw if the asset matches.`
+        );
       }
-      return merged;
+      return finalMerged;
     } catch (e) {
       setVaultError(e.message || String(e));
       return null;
@@ -988,6 +1184,8 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
       }
 
       let swapData;
+      /** Set only in the auto-generated swap path (vault spend note). Advanced JSON has no `note` binding. */
+      let swapInputVaultNote = null;
       const customRaw = String(intentForm.swapDataJson || "").trim();
       if (customRaw) {
         try {
@@ -1009,6 +1207,7 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
           );
         }
         const note = entry.note;
+        swapInputVaultNote = note;
         let outAmtStr = String(swapLastQuote?.amountOut || "0");
         if (!outAmtStr || BigInt(outAmtStr) <= 0n) {
           throw new Error("Refresh the quote so expected output amount is available before proving.");
@@ -1188,6 +1387,78 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
         method: "POST",
         body: JSON.stringify({ envelope }),
       });
+      /** Persist new output notes locally so Withdraw/Swap can spend them (on-chain commitments already exist). */
+      try {
+        const hints = swapData?.noteHints;
+        const pi = swapData?.publicInputs;
+        const { swap: swapC, change: changeC } = resolveSwapOutputCommitments(out, pi);
+        if (hints?.swap && hints?.change && pi && isNonZeroCommitmentStr(swapC) && isNonZeroCommitmentStr(changeC)) {
+          const swapNotePayload = buildVaultNoteFromSwapHint({
+            assetId: Number(hints.swap.assetId),
+            amountStr: String(pi.outputAmountSwap ?? hints.swap.amount),
+            blindingFactor: hints.swap.blindingFactor,
+            ownerPublicKey: hints.swap.ownerPublicKey,
+            commitmentStr: String(swapC),
+          });
+          const changeNotePayload = buildVaultNoteFromSwapHint({
+            assetId: Number(hints.change.assetId),
+            amountStr: String(pi.changeAmount ?? hints.change.amount),
+            blindingFactor: hints.change.blindingFactor,
+            ownerPublicKey: hints.change.ownerPublicKey,
+            commitmentStr: String(changeC),
+          });
+
+          let merged = { key: vaultRef.current.key, data: vaultRef.current.data };
+          if (!vaultRef.current.unlocked || !vaultRef.current.key) {
+            const u = await unlockVault();
+            if (!u?.key) {
+              setActionSuccess(
+                "Swap succeeded on-chain, but the note vault is locked — unlock Advanced → Note vault, then refresh and use “Add deposit note…” flow if needed. Swap outputs: BUSD + change."
+              );
+              setLastResult(out);
+              return;
+            }
+            merged = u;
+          } else {
+            const flushed = await flushPendingVaultNoteAfterLoad({ key: vaultRef.current.key, data: vaultRef.current.data });
+            if (flushed) merged = flushed;
+          }
+
+          const spentHex = String(
+            swapInputVaultNote?.commitmentHex ||
+              publicInputCommitmentToVaultHex(pi?.inputCommitment) ||
+              ""
+          ).toLowerCase();
+          let notes = Array.isArray(merged.data?.notes) ? [...merged.data.notes] : [];
+          if (spentHex) {
+            notes = notes.filter((entry) => {
+              const p = entry?.payload;
+              const ph = String(p?.commitmentHex || "").toLowerCase();
+              return !ph || ph !== spentHex;
+            });
+          }
+          const pushUnique = (payload) => {
+            const hx = String(payload.commitmentHex || "").toLowerCase();
+            if (!hx) return;
+            if (notes.some((e) => String(e?.payload?.commitmentHex || "").toLowerCase() === hx)) return;
+            notes.unshift({ t: Date.now(), payload });
+          };
+          pushUnique(swapNotePayload);
+          pushUnique(changeNotePayload);
+          const nextData = { ...merged.data, notes: notes.slice(0, 200), updatedAt: new Date().toISOString() };
+          await saveVault({ key: merged.key, data: nextData });
+          setVault({ unlocked: true, key: merged.key, data: nextData });
+          setActionSuccess("Saved swap output notes to your vault (output token + change). You can withdraw now.");
+        }
+      } catch (vaultSwapErr) {
+        console.warn("[swap] vault note save failed", vaultSwapErr);
+        setActionSuccess(null);
+        setActionError(
+          `Swap succeeded on-chain, but saving output notes to the local vault failed: ${stringifyErr(
+            vaultSwapErr?.message ?? vaultSwapErr
+          )}. Unlock the vault and retry, or import notes manually from the JSON.`
+        );
+      }
       setLastResult(out);
     } catch (e) {
       setActionError(stringifyErr(e?.message ?? e));
@@ -2017,6 +2288,7 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
               value={withdrawTokenChoice}
               onChange={(e) => {
                 const next = e.target.value;
+                withdrawAmountUserEditedRef.current = false;
                 setWithdrawTokenChoice(next);
                 if (next !== "__custom__") setWithdrawForm({ ...withdrawForm, token: next });
               }}
@@ -2035,12 +2307,61 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
             )}
           </div>
           <div style={{ marginTop: 10 }}>
-            <div style={{ fontSize: 12, color: "rgba(255,255,255,0.65)" }}>Amount</div>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+              <div style={{ fontSize: 12, color: "rgba(255,255,255,0.65)" }}>Amount (payout to recipient)</div>
+              <button
+                type="button"
+                disabled={
+                  !!withdrawAdvancedJson ||
+                  withdrawMaxPayoutWei == null ||
+                  withdrawMaxPayoutWei <= 0n ||
+                  !wallet?.signer
+                }
+                onClick={() => {
+                  if (withdrawMaxPayoutWei == null || withdrawMaxPayoutWei <= 0n) return;
+                  withdrawAmountUserEditedRef.current = false;
+                  setWithdrawForm((f) => ({ ...f, amount: ethers.formatUnits(withdrawMaxPayoutWei, 18) }));
+                }}
+                style={{
+                  borderRadius: 8,
+                  background: withdrawMaxPayoutWei != null && withdrawMaxPayoutWei > 0n && !withdrawAdvancedJson ? "rgba(24,185,128,0.25)" : "rgba(255,255,255,0.06)",
+                  color: "#fff",
+                  padding: "6px 10px",
+                  fontSize: 11,
+                  fontWeight: 700,
+                  border: "1px solid rgba(255,255,255,0.14)",
+                  cursor:
+                    withdrawMaxPayoutWei != null && withdrawMaxPayoutWei > 0n && !withdrawAdvancedJson ? "pointer" : "not-allowed",
+                }}
+              >
+                Use max payout
+              </button>
+            </div>
             <input
               value={withdrawForm.amount}
-              onChange={(e) => setWithdrawForm({ ...withdrawForm, amount: e.target.value })}
+              onChange={(e) => {
+                withdrawAmountUserEditedRef.current = true;
+                setWithdrawForm({ ...withdrawForm, amount: e.target.value });
+              }}
               style={{ marginTop: 4, width: "100%", borderRadius: 10, border: "1px solid rgba(255,255,255,0.16)", background: "#151a23", color: "#fff", padding: "10px 12px", fontSize: 14 }}
             />
+            {!withdrawAdvancedJson && withdrawSpendable.length > 0 && (
+              <div style={{ marginTop: 6, fontSize: 11, color: "rgba(255,255,255,0.55)", lineHeight: 1.45 }}>
+                First spendable note:{" "}
+                <span style={{ color: PC.text }}>{ethers.formatEther(withdrawSpendable[0].note.amount)}</span> (18
+                decimals) · Max payout after fee &amp; gas (leaves 1 wei change in pool):{" "}
+                <span style={{ color: PC.text }}>
+                  {withdrawMaxPayoutWei != null && withdrawMaxPayoutWei > 0n
+                    ? ethers.formatUnits(withdrawMaxPayoutWei, 18)
+                    : "— (raise note balance or lower gas / fee)"}
+                </span>
+              </div>
+            )}
+            {!withdrawAdvancedJson && !withdrawSpendable.length && cfg?.assets?.length > 0 && (
+              <div style={{ marginTop: 6, fontSize: 11, color: "rgba(255,255,255,0.45)" }}>
+                No vault note for this token — deposit or swap here first, or paste withdraw JSON under Advanced.
+              </div>
+            )}
           </div>
           <div style={{ marginTop: 10 }}>
             <div style={{ fontSize: 12, color: "rgba(255,255,255,0.65)" }}>Recipient (optional)</div>
@@ -2145,7 +2466,12 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
           <div style={{ marginTop: 10, fontSize: 12, color: "rgba(255,255,255,0.65)" }}>Swap JSON</div>
           <textarea value={intentForm.swapDataJson} onChange={(e) => setIntentForm({ ...intentForm, swapDataJson: e.target.value })} style={{ marginTop: 4, height: 112, width: "100%", borderRadius: 10, border: "1px solid rgba(255,255,255,0.16)", background: "#151a23", color: "#fff", padding: "10px 12px", fontSize: 12, fontFamily: "monospace" }} placeholder='{"proof":{...},"publicInputs":{...},"swapParams":{...}}' />
           <div style={{ marginTop: 10, fontSize: 12, color: "rgba(255,255,255,0.65)" }}>Withdraw JSON</div>
-          <textarea value={withdrawForm.withdrawDataJson} onChange={(e) => setWithdrawForm({ withdrawDataJson: e.target.value })} style={{ marginTop: 4, height: 96, width: "100%", borderRadius: 10, border: "1px solid rgba(255,255,255,0.16)", background: "#151a23", color: "#fff", padding: "10px 12px", fontSize: 12, fontFamily: "monospace" }} placeholder='{"proof":{...},"publicInputs":{...},"recipient":"0x..."}' />
+          <textarea
+            value={withdrawForm.withdrawDataJson}
+            onChange={(e) => setWithdrawForm({ ...withdrawForm, withdrawDataJson: e.target.value })}
+            style={{ marginTop: 4, height: 96, width: "100%", borderRadius: 10, border: "1px solid rgba(255,255,255,0.16)", background: "#151a23", color: "#fff", padding: "10px 12px", fontSize: 12, fontFamily: "monospace" }}
+            placeholder='{"proof":{...},"publicInputs":{...},"recipient":"0x..."}'
+          />
         </div>
       )}
 

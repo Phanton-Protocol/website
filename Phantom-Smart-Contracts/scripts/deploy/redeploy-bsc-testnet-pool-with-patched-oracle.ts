@@ -10,7 +10,7 @@ async function main() {
 
   const joinSplit = prev.contracts.joinSplitVerifier;
   const threshold = prev.contracts.thresholdVerifier;
-  const swapAdaptor = prev.contracts.swapAdaptor;
+  let swapAdaptor = prev.contracts.swapAdaptor;
   const relayerRegistry = prev.contracts.relayerRegistry;
   if (!joinSplit || !threshold || !swapAdaptor || !relayerRegistry) {
     throw new Error("deployments entry missing one of joinSplitVerifier/thresholdVerifier/swapAdaptor/relayerRegistry");
@@ -36,6 +36,22 @@ async function main() {
   if (bnbUsdFeed) {
     await (await feeOracle.setPriceFeed(ethers.ZeroAddress, bnbUsdFeed)).wait();
     console.log("[redeploy] FeeOracle BNB/USD feed set:", bnbUsdFeed);
+  }
+
+  const deployRealSwapAdaptor = String(process.env.DEPLOY_REAL_SWAP_ADAPTOR || "").trim().toLowerCase() === "true";
+  if (deployRealSwapAdaptor) {
+    const router = String(process.env.PANCAKE_ROUTER || "").trim();
+    const wbnb = String(process.env.WBNB_ADDRESS || "").trim();
+    if (!router || !wbnb) {
+      throw new Error("DEPLOY_REAL_SWAP_ADAPTOR=true requires PANCAKE_ROUTER and WBNB_ADDRESS");
+    }
+    const PancakeSwapAdaptor = await ethers.getContractFactory("PancakeSwapAdaptor");
+    const realAdaptor = await PancakeSwapAdaptor.deploy(router, wbnb);
+    await realAdaptor.waitForDeployment();
+    swapAdaptor = await realAdaptor.getAddress();
+    console.log("[redeploy] new real PancakeSwapAdaptor:", swapAdaptor);
+  } else {
+    console.log("[redeploy] reusing existing swapAdaptor:", swapAdaptor);
   }
 
   const ShieldedPool = await ethers.getContractFactory("ShieldedPool");
@@ -76,11 +92,15 @@ async function main() {
   const contracts: Record<string, string> = {
     ...prev.contracts,
     portfolioVerifier: joinSplit,
+    swapAdaptor,
     feeOracle: feeOracleAddr,
     shieldedPool: poolAddr,
     depositHandler: depositHandlerAddr,
     transactionHistory: txHistoryAddr,
   };
+  delete contracts.mockSwapAdaptor;
+  delete contracts.mockVerifierJoinSplit;
+  delete contracts.mockVerifierThreshold;
   const deploymentTxs: Record<string, string> = {
     ...(prev.deploymentTxs || {}),
     feeOracle: deploymentTxHash(feeOracle),

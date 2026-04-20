@@ -29,7 +29,7 @@ const {
   saveDepositTxReceipt
 } = require("./db");
 const { mimc7 } = require("./mimc7");
-const { canonicalizeNote, noteIdFromCanonical } = require("./noteModel");
+const { canonicalizeNote, noteIdFromCanonical, normalizeHex32 } = require("./noteModel");
 const { encryptJsonAtRest, decryptJsonAtRest, getNotesEncryptionKey } = require("./noteCipher");
 const { buildMerklePath: buildMerklePath10, verifyMerklePath: verifyMerklePath10 } = require("./merkle10");
 const { toBigInt, toBigIntString } = require("./utils/bigint");
@@ -1422,8 +1422,8 @@ async function persistSwapOutputNotes({ txHash, ownerAddress, noteHints, publicI
 
   const swapCanonical = canonicalizeNote(noteHints.swap);
   const changeCanonical = canonicalizeNote(noteHints.change);
-  const expectedSwap = String(publicInputs?.outputCommitmentSwap || "").toLowerCase();
-  const expectedChange = String(publicInputs?.outputCommitmentChange || "").toLowerCase();
+  const expectedSwap = normalizeHex32(publicInputs?.outputCommitmentSwap ?? 0).toLowerCase();
+  const expectedChange = normalizeHex32(publicInputs?.outputCommitmentChange ?? 0).toLowerCase();
   if (swapCanonical.commitment.toLowerCase() !== expectedSwap) {
     throw new Error("Swap note hint commitment mismatch with proof public input");
   }
@@ -1543,7 +1543,7 @@ async function persistWithdrawChangeNote({ txHash, ownerAddress, noteHints, publ
     } catch (_) {}
   }
   const changeCanonical = canonicalizeNote(noteHints.change);
-  const expectedChange = String(publicInputs?.outputCommitmentChange || "").toLowerCase();
+  const expectedChange = normalizeHex32(publicInputs?.outputCommitmentChange ?? 0).toLowerCase();
   if (changeCanonical.commitment.toLowerCase() !== expectedChange) {
     throw new Error("Withdraw change note hint commitment mismatch with proof public input");
   }
