@@ -90,9 +90,10 @@
               "pm.test('swap-fee is 200', function () { pm.response.to.have.status(200); });",
               "var j = pm.response.json();",
               "pm.collectionVariables.set('feeTotalProtocolWei', String(j.totalProtocolFee || '0'));",
-              "var note = BigInt(pm.collectionVariables.get('fullNoteWei'));",
-              "var fee = BigInt(pm.collectionVariables.get('feeTotalProtocolWei'));",
-              "pm.test('fee less than note for viable swap', function () { pm.expect(fee < note, 'Fee >= full note; swap impossible').to.eql(true); });"
+              "function decLt(a, b) { a = String(a).replace(/^0+/, '') || '0'; b = String(b).replace(/^0+/, '') || '0'; if (a.length !== b.length) return a.length < b.length; return a < b; }",
+              "var note = pm.collectionVariables.get('fullNoteWei');",
+              "var fee = pm.collectionVariables.get('feeTotalProtocolWei');",
+              "pm.test('fee less than note for viable swap', function () { pm.expect(decLt(fee, note), 'Fee >= full note; swap impossible').to.eql(true); });"
             ]
           }
         }
@@ -120,7 +121,7 @@
               "pm.collectionVariables.set('quoteAmountOut', String(j.amountOut || '0'));",
               "pm.collectionVariables.set('quoteMinAmountOut', String(j.minAmountOut || '0'));",
               "pm.collectionVariables.set('quoteGasRefundWei', String(j.suggestedGasRefundWei || '0'));",
-              "pm.test('quote has output', function () { pm.expect(BigInt(j.amountOut || '0') > 0n).to.eql(true); });"
+              "pm.test('quote has output', function () { pm.expect(String(j.amountOut || '0')).to.not.eql('0'); });"
             ]
           }
         }
