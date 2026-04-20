@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { ethers } from "ethers";
 import { loadVault, saveVault } from "../lib/noteVault";
@@ -77,7 +77,11 @@ const WBNB_BSC_TESTNET = "0xae13d989dac2f0debff460ac112a837c89baa7cd";
 const WBNB_BSC_MAINNET = "0xbb4CdB9Cbd36B01bD1cBaEBF2De08d9173bc095c";
 const DEFAULT_SWAP_SLIPPAGE_BPS = 100;
 const FALLBACK_GAS_REFUND_WEI = ethers.parseEther("0.002").toString();
+/** ShieldedPool requires changeAmount != 0 (PoolErr 19): note = swap + change + protocolFee + gasRefund */
+const MIN_SWAP_CHANGE_WEI = 1n;
 const SLIPPAGE_PRESETS_BPS = [50, 100, 250, 500];
+/** Pending deposit note when auto-save failed (vault locked or save error). Cleared after successful vault write. */
+const PENDING_VAULT_NOTE_KEY = "phantom_pending_vault_note";
 const PC = {
   bg: "#14141c",
   card: "#18181f",
@@ -105,10 +109,13 @@ const DEPOSIT_TYPES = {
   ],
 };
 
+/** Must match `ethers.getAddress` / pool config (EIP-55). Wrong checksum breaks quotes in the relayer. */
+const USDT_BSC_TESTNET = "0x7eF95A0FE8A5f4f9C1824fbF6656e2f95fa6Bf13";
+
 const DEFAULT_TOKEN_LIST = [
   { symbol: "tBNB", address: ethers.ZeroAddress },
   { symbol: "BUSD", address: "0x78867BbEeF44f2326bF8DDd1941a4439382EF2A7" },
-  { symbol: "USDT", address: "0x7EF95A0Fe8A5F4f9C1824fBf6656e2f95fA6Bf13" },
+  { symbol: "USDT", address: USDT_BSC_TESTNET },
 ];
 
 const TESTNET_MOCK_TOKENS = [
@@ -121,7 +128,7 @@ const TESTNET_MOCK_TOKENS = [
 const TOKEN_OPTIONS = [
   { label: "tBNB (native placeholder)", value: ethers.ZeroAddress },
   { label: "BUSD (test)", value: "0x78867BbEeF44f2326bF8DDd1941a4439382EF2A7" },
-  { label: "USDT (test)", value: "0x7EF95A0Fe8A5F4f9C1824fBf6656e2f95fA6Bf13" },
+  { label: "USDT (test)", value: USDT_BSC_TESTNET },
   { label: "Custom address", value: "__custom__" },
 ];
 
@@ -146,12 +153,18 @@ function getAssetIdForToken(tokenAddress, relayerConfig) {
 
 function spendableNoteEntries(vaultData, inputToken, relayerConfig) {
   if (!relayerConfig?.assets?.length) return [];
-  const aid = getAssetIdForToken(inputToken, relayerConfig);
+  let aid;
+  try {
+    aid = getAssetIdForToken(inputToken, relayerConfig);
+  } catch {
+    return [];
+  }
   const notes = vaultData?.notes || [];
   const out = [];
   notes.forEach((n, vaultIdx) => {
     const raw = n.payload ?? n;
-    if (raw?.version === 1 && Number(raw.assetID) === aid) out.push({ vaultIdx, note: raw });
+    const verOk = Number(raw?.version) === 1;
+    if (verOk && Number(raw.assetID) === aid) out.push({ vaultIdx, note: raw });
   });
   return out;
 }
@@ -254,12 +267,17 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
   const [connectError, setConnectError] = useState(null);
 
   const [vault, setVault] = useState({ unlocked: false, key: null, data: { notes: [], updatedAt: null } });
-  const [, setVaultError] = useState(null);
+  const vaultRef = useRef(vault);
+  useEffect(() => {
+    vaultRef.current = vault;
+  }, [vault]);
+  const [vaultError, setVaultError] = useState(null);
   const [noteDraft, setNoteDraft] = useState("");
 
   const [tab, setTab] = useState("swap");
   const [lastResult, setLastResult] = useState(null);
   const [actionError, setActionError] = useState(null);
+  const [actionSuccess, setActionSuccess] = useState(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
 
   const [depositBlinding, setDepositBlinding] = useState(() => randomFieldElementString());
@@ -284,6 +302,7 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
   });
   const [swapQuoteLoading, setSwapQuoteLoading] = useState(false);
   const [swapQuoteErr, setSwapQuoteErr] = useState(null);
+  const [swapClampHint, setSwapClampHint] = useState("");
   const [swapExpectedLabel, setSwapExpectedLabel] = useState("");
   const [swapMinLabel, setSwapMinLabel] = useState("");
   const [swapSlippageBps, setSwapSlippageBps] = useState(DEFAULT_SWAP_SLIPPAGE_BPS);
@@ -454,7 +473,15 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
       if (cfg?.mode === "live" && !customJson && spendable.length > 0) {
         const i = Math.min(spendPick, spendable.length - 1);
         try {
-          amt = ethers.formatUnits(spendable[i].note.amount, 18);
+          const noteWei = BigInt(spendable[i].note.amount);
+          if (!amt || Number(amt) <= 0) {
+            amt = ethers.formatUnits(noteWei, 18);
+          } else {
+            const want = ethers.parseUnits(amt, 18);
+            if (want > noteWei) {
+              amt = ethers.formatUnits(noteWei, 18);
+            }
+          }
         } catch {
           /* keep */
         }
@@ -472,6 +499,13 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
       const tokenOut = intentForm.outputToken && intentForm.outputToken.toLowerCase() !== ethers.ZeroAddress.toLowerCase()
         ? intentForm.outputToken
         : wbnbQ;
+      if (tokenIn.toLowerCase() === tokenOut.toLowerCase()) {
+        setSwapLastQuote(null);
+        setSwapQuoteErr(null);
+        setSwapExpectedLabel("");
+        setSwapMinLabel("");
+        return;
+      }
       const chainSlug = Number(cfg.chainId) === 97 ? "bsc-testnet" : "bsc";
       setSwapQuoteLoading(true);
       try {
@@ -497,11 +531,61 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
         } catch {
           refund = cfg?.mode === "live" ? FALLBACK_GAS_REFUND_WEI : "0";
         }
+        let protocolFeeStr = String(q.fees?.totalFee ?? "0");
+        if (cfg?.mode === "live" && spendable.length > 0 && cfg?.assets?.length) {
+          try {
+            const i = Math.min(spendPick, spendable.length - 1);
+            const noteWei = spendable[i].note.amount;
+            const aid = getAssetIdForToken(intentForm.inputToken, cfg);
+            const feeRes = await fetchJson(`${base}/portfolio/swap-fee?inputAssetId=${aid}&amount=${noteWei}`);
+            protocolFeeStr = String(feeRes.totalProtocolFee ?? protocolFeeStr);
+          } catch {
+            /* quote fees often 0; proof path still resolves fee on-chain */
+          }
+        }
+        if (cfg?.mode === "live" && spendable.length > 0) {
+          try {
+            const i = Math.min(spendPick, spendable.length - 1);
+            const noteWei = BigInt(spendable[i].note.amount);
+            const feeBn = BigInt(protocolFeeStr);
+            const gasBn = BigInt(refund);
+            const maxSwapWei = noteWei - feeBn - gasBn - MIN_SWAP_CHANGE_WEI;
+            if (maxSwapWei <= 0n) {
+              setSwapLastQuote(null);
+              setSwapQuoteErr(
+                "This note is too small after protocol fee and gas refund — the pool always keeps a leftover change note. Deposit more or lower Gas refund (Advanced)."
+              );
+              return;
+            }
+            let wantWei;
+            try {
+              wantWei = ethers.parseUnits(amt, 18);
+            } catch {
+              wantWei = 0n;
+            }
+            if (wantWei > maxSwapWei) {
+              setSwapClampHint(
+                "Swap amount was limited so part of the note stays as change (required by the pool)."
+              );
+              setIntentForm((p) => ({
+                ...p,
+                inputAmount: ethers.formatUnits(maxSwapWei, 18),
+                minOutputAmount: "",
+                protocolFee: protocolFeeStr,
+                gasRefund: refund,
+              }));
+              return;
+            }
+          } catch {
+            /* ignore clamp if BigInt/parse fails */
+          }
+        }
+        setSwapClampHint("");
         setSwapLastQuote(q);
         setIntentForm((p) => ({
           ...p,
           minOutputAmount: String(q.minAmountOut || "0"),
-          protocolFee: String(q.fees?.totalFee ?? "0"),
+          protocolFee: protocolFeeStr,
           gasRefund: refund,
         }));
         setSwapExpectedLabel(`${ethers.formatUnits(q.amountOut || "0", 18)}`);
@@ -517,11 +601,13 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [base, cfg?.chainId, cfg?.mode, intentForm.inputToken, intentForm.outputToken, intentForm.inputAmount, intentForm.swapDataJson, swapSlippageBps, spendable, spendPick]);
+  }, [base, cfg?.chainId, cfg?.mode, cfg?.assets?.length, intentForm.inputToken, intentForm.outputToken, intentForm.inputAmount, intentForm.swapDataJson, swapSlippageBps, spendable, spendPick]);
 
   async function connect() {
     setConnectError(null);
     setActionError(null);
+    setActionSuccess(null);
+    setVaultError(null);
     try {
       if (!window.ethereum) throw new Error("No injected wallet found (MetaMask).");
       const provider = new ethers.BrowserProvider(window.ethereum);
@@ -539,24 +625,83 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
   function disconnect() {
     setConnectError(null);
     setActionError(null);
+    setActionSuccess(null);
+    setVaultError(null);
     setWallet({ address: null, provider: null, signer: null });
     setWalletChainId(null);
     setVault({ unlocked: false, key: null, data: { notes: [], updatedAt: null } });
+  }
+
+  async function flushPendingVaultNoteAfterLoad(loaded) {
+    try {
+      const raw = sessionStorage.getItem(PENDING_VAULT_NOTE_KEY);
+      if (!raw) return null;
+      let parsed;
+      try {
+        parsed = JSON.parse(raw);
+      } catch {
+        sessionStorage.removeItem(PENDING_VAULT_NOTE_KEY);
+        return null;
+      }
+      const sn = parsed.payload;
+      if (!sn || typeof sn !== "object" || !sn.commitmentHex) {
+        sessionStorage.removeItem(PENDING_VAULT_NOTE_KEY);
+        return null;
+      }
+      const hex = String(sn.commitmentHex).toLowerCase();
+      const dup = (loaded.data?.notes || []).some((entry) => {
+        const p = entry?.payload;
+        if (!p || typeof p !== "object") return false;
+        const ph = String(p.commitmentHex || "").toLowerCase();
+        if (hex && ph && ph === hex) return true;
+        return String(p.blindingFactor) === String(sn.blindingFactor) && String(p.amount) === String(sn.amount);
+      });
+      if (dup) {
+        sessionStorage.removeItem(PENDING_VAULT_NOTE_KEY);
+        return null;
+      }
+      const next = {
+        notes: [{ t: Date.now(), payload: sn }, ...(loaded.data?.notes || [])].slice(0, 200),
+        updatedAt: Date.now(),
+      };
+      await saveVault({ key: loaded.key, data: next });
+      sessionStorage.removeItem(PENDING_VAULT_NOTE_KEY);
+      return { key: loaded.key, data: next };
+    } catch (e) {
+      console.warn("[vault] flush pending note failed", e);
+      return null;
+    }
   }
 
   async function unlockVault() {
     setVaultError(null);
     if (!wallet.signer) {
       setVaultError("Connect wallet first.");
-      return;
+      return null;
     }
     try {
-      const msg = `Unlock Phantom Note Vault\n\nDomain: ${window.location.host}\nTime: ${new Date().toISOString()}`;
+      // Must be stable for the same wallet + site + chain: key is SHA256(signature). A changing
+      // timestamp made every signature different, so decrypt always failed after the first save.
+      let chainLine = "";
+      try {
+        const hex = await wallet.provider.send("eth_chainId", []);
+        chainLine = `\nChain ID: ${Number.parseInt(hex, 16)}`;
+      } catch {
+        /* ignore */
+      }
+      const msg = `Unlock Phantom Note Vault\n\nDomain: ${window.location.host}${chainLine}`;
       const signature = await wallet.signer.signMessage(msg);
       const loaded = await loadVault({ signature });
-      setVault({ unlocked: true, key: loaded.key, data: loaded.data });
+      const flushed = await flushPendingVaultNoteAfterLoad(loaded);
+      const merged = flushed ?? { key: loaded.key, data: loaded.data };
+      setVault({ unlocked: true, key: merged.key, data: merged.data });
+      if (flushed) {
+        setActionSuccess("Restored a pending deposit note into your vault.");
+      }
+      return merged;
     } catch (e) {
       setVaultError(e.message || String(e));
+      return null;
     }
   }
 
@@ -638,6 +783,7 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
 
   async function submitDeposit() {
     setActionError(null);
+    setActionSuccess(null);
     setLastResult(null);
     try {
       if (!wallet.signer) throw new Error("Connect wallet first.");
@@ -648,8 +794,20 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
         throw new Error(`Wallet is on chain ${activeChain}, but backend expects ${cfg.chainId}.`);
       }
 
+      let depositTxHash = null;
       const amountWei = ethers.parseUnits(String(depositForm.amount || "0"), 18);
       const assetID = Number(getAssetIdForToken(depositForm.token, cfg));
+      const ownerPk = addressToOwnerPublicKey(wallet.address);
+      const c = noteCommitment(assetID, amountWei.toString(), depositBlinding, ownerPk);
+      const suggestedVaultNote = {
+        version: 1,
+        assetID,
+        amount: amountWei.toString(),
+        blindingFactor: depositBlinding,
+        ownerPublicKey: ownerPk,
+        commitmentDecimal: c.toString(),
+        commitmentHex: depositForm.commitment,
+      };
       const deadline = Math.floor(Date.now() / 1000) + Number(depositForm.deadlineSec || 900);
       const domain = {
         name: "ShadowDeFiRelayer",
@@ -725,6 +883,7 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
             console.warn("[shadow-flow] notes/from-deposit failed (local vault still has note)", noteErr);
           }
         }
+        depositTxHash = sweep?.txHash || null;
         setLastResult({
           via: "shadow-flow",
           shadowAddress: shadow.shadowAddress,
@@ -733,6 +892,8 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
           gasBufferWei: shadowSweepBufferWei.toString(),
           feeWei: feeWei.toString(),
           serverNote,
+          suggestedVaultNote,
+          vaultSaved: false,
           ...sweep,
         });
       } else {
@@ -745,28 +906,42 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
           method: "POST",
           body: JSON.stringify({ envelope }),
         });
-        setLastResult({ via: "relayer-submit", ...out });
+        depositTxHash = out?.txHash || null;
+        setLastResult({ via: "relayer-submit", suggestedVaultNote, vaultSaved: false, ...out });
       }
 
-      if (vault.unlocked && vault.key && wallet.address) {
-        const ownerPk = addressToOwnerPublicKey(wallet.address);
-        const c = noteCommitment(assetID, amountWei.toString(), depositBlinding, ownerPk);
-        const notePayload = {
-          version: 1,
-          assetID,
-          amount: amountWei.toString(),
-          blindingFactor: depositBlinding,
-          ownerPublicKey: ownerPk,
-          commitmentDecimal: c.toString(),
-          commitmentHex: depositForm.commitment,
-        };
-        const next = {
-          notes: [{ t: Date.now(), payload: notePayload }, ...(vault.data?.notes || [])].slice(0, 200),
-          updatedAt: Date.now(),
-        };
-        await saveVault({ key: vault.key, data: next });
-        setVault((v) => ({ ...v, data: next }));
+      const v = vaultRef.current;
+      let savedOk = false;
+      if (v.unlocked && v.key && wallet.address) {
+        try {
+          const notePayload = suggestedVaultNote;
+          const next = {
+            notes: [{ t: Date.now(), payload: notePayload }, ...(v.data?.notes || [])].slice(0, 200),
+            updatedAt: Date.now(),
+          };
+          await saveVault({ key: v.key, data: next });
+          setVault((prev) => ({ ...prev, unlocked: true, key: v.key, data: next }));
+          savedOk = true;
+          try {
+            sessionStorage.removeItem(PENDING_VAULT_NOTE_KEY);
+          } catch {
+            /* ignore */
+          }
+        } catch (saveErr) {
+          console.warn("[deposit] vault save failed", saveErr);
+        }
       }
+      if (!savedOk) {
+        try {
+          sessionStorage.setItem(
+            PENDING_VAULT_NOTE_KEY,
+            JSON.stringify({ payload: suggestedVaultNote, txHash: depositTxHash, ts: Date.now() })
+          );
+        } catch {
+          /* ignore */
+        }
+      }
+      setLastResult((prev) => (prev && prev.suggestedVaultNote ? { ...prev, vaultSaved: savedOk } : prev));
       setDepositBlinding(randomFieldElementString());
     } catch (e) {
       setActionError(stringifyErr(e?.message ?? e));
@@ -775,6 +950,7 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
 
   async function submitSwap() {
     setActionError(null);
+    setActionSuccess(null);
     setLastResult(null);
     try {
       if (!wallet.signer) throw new Error("Connect wallet first.");
@@ -833,16 +1009,41 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
           );
         }
         const note = entry.note;
-        const outAmt = String(swapLastQuote?.amountOut || "0");
-        if (!outAmt || BigInt(outAmt) <= 0n) {
+        let outAmtStr = String(swapLastQuote?.amountOut || "0");
+        if (!outAmtStr || BigInt(outAmtStr) <= 0n) {
           throw new Error("Refresh the quote so expected output amount is available before proving.");
         }
         const feeBn = BigInt(String(intentForm.protocolFee || "0"));
         const gasBn = BigInt(String(intentForm.gasRefund || "0"));
         const inputAmountBn = BigInt(note.amount);
-        const swapAmountBn = inputAmountBn - feeBn - gasBn;
+        let swapAmountBn;
+        try {
+          swapAmountBn = ethers.parseUnits(String(intentForm.inputAmount || "0"), 18);
+        } catch {
+          throw new Error("Enter a valid swap amount.");
+        }
         if (swapAmountBn <= 0n) {
-          throw new Error("Note balance must be greater than protocol fee plus gas refund.");
+          throw new Error("Swap amount must be greater than zero.");
+        }
+        const maxSwapWei = inputAmountBn - feeBn - gasBn - MIN_SWAP_CHANGE_WEI;
+        if (maxSwapWei <= 0n) {
+          throw new Error(
+            "This note is too small after protocol fee and gas refund — the pool always keeps a leftover change note. Deposit more or lower Gas refund (Advanced)."
+          );
+        }
+        if (swapAmountBn > maxSwapWei) {
+          const oldSwap = swapAmountBn;
+          swapAmountBn = maxSwapWei;
+          const outBn = BigInt(outAmtStr);
+          outAmtStr = ((outBn * maxSwapWei) / oldSwap).toString();
+          minOutBI = (minOutBI * maxSwapWei) / oldSwap;
+          if (minOutBI === 0n || BigInt(outAmtStr) === 0n) {
+            throw new Error("Scaled quote rounded to zero — refresh the quote after lowering swap amount or gas refund.");
+          }
+        }
+        const changeWei = inputAmountBn - swapAmountBn - feeBn - gasBn;
+        if (changeWei <= 0n) {
+          throw new Error("Could not leave a positive change note — refresh the quote and try again.");
         }
         const merkle = await fetchJson(`${base}/merkle/${encodeURIComponent(note.commitmentHex)}`);
         const wbnb = canonicalWbnb(cfg.chainId);
@@ -865,7 +1066,7 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
           },
           outputNoteSwap: {
             assetID: getAssetIdForToken(intentForm.outputToken, cfg),
-            amount: outAmt,
+            amount: outAmtStr,
             blindingFactor: randomFieldElementString(),
             commitment: "0",
           },
@@ -879,7 +1080,7 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
           merklePath: merkle.merklePath,
           merklePathIndices: merkle.merklePathIndices,
           swapAmount: swapAmountBn.toString(),
-          minOutputAmount: String(intentForm.minOutputAmount || "0"),
+          minOutputAmount: minOutBI.toString(),
           protocolFee: String(intentForm.protocolFee || "0"),
           gasRefund: String(intentForm.gasRefund || "0"),
         };
@@ -887,10 +1088,18 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
         let gen;
         try {
           if (clientProverReady) {
-            gen = await generateSwapProofClient(proofBody, {
-              wasmUrl: CLIENT_PROVER_WASM_URL,
-              zkeyUrl: CLIENT_PROVER_ZKEY_URL,
-            });
+            try {
+              gen = await generateSwapProofClient(proofBody, {
+                wasmUrl: CLIENT_PROVER_WASM_URL,
+                zkeyUrl: CLIENT_PROVER_ZKEY_URL,
+              });
+            } catch (clientErr) {
+              console.warn("[swap] client prover failed, falling back to relayer:", clientErr);
+              gen = await fetchJson(`${base}/swap/generate-proof`, {
+                method: "POST",
+                body: JSON.stringify(proofBody),
+              });
+            }
           } else {
             gen = await fetchJson(`${base}/swap/generate-proof`, {
               method: "POST",
@@ -910,7 +1119,7 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
             tokenIn,
             tokenOut,
             amountIn: swapAmountBn.toString(),
-            minAmountOut: String(intentForm.minOutputAmount || "0"),
+            minAmountOut: minOutBI.toString(),
             fee: Number(swapLastQuote?.routeParams?.feeTier || 2500),
             sqrtPriceLimitX96: String(swapLastQuote?.routeParams?.sqrtPriceLimitX96 || 0),
             path: swapLastQuote?.routeParams?.path || "0x",
@@ -918,7 +1127,7 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
           noteHints: {
             swap: {
               assetId: getAssetIdForToken(intentForm.outputToken, cfg),
-              amount: outAmt,
+              amount: outAmtStr,
               blindingFactor: proofBody.outputNoteSwap.blindingFactor,
               ownerPublicKey: note.ownerPublicKey,
             },
@@ -987,6 +1196,7 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
 
   async function submitWithdraw() {
     setActionError(null);
+    setActionSuccess(null);
     setLastResult(null);
     try {
       if (!wallet.signer) throw new Error("Connect wallet first.");
@@ -1094,6 +1304,62 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
     }
   }
 
+  async function importSuggestedVaultNoteFromLastDeposit() {
+    setActionError(null);
+    setActionSuccess(null);
+    try {
+      const sn = lastResult?.suggestedVaultNote;
+      if (!sn) throw new Error("No suggestedVaultNote on last result — deposit again after pulling latest UI.");
+      if (!wallet.signer) throw new Error("Connect wallet first.");
+
+      let merged = { key: vault.key, data: vault.data };
+      if (!vault.unlocked || !vault.key) {
+        const u = await unlockVault();
+        if (!u?.key) {
+          setActionError(
+            "Could not unlock the note vault. Approve the signature in MetaMask, or read the yellow note-vault message above. If your browser had an old broken vault, unlock once after this update — storage resets automatically."
+          );
+          return;
+        }
+        merged = u;
+      } else {
+        const flushed = await flushPendingVaultNoteAfterLoad({ key: vault.key, data: vault.data });
+        if (flushed) {
+          merged = flushed;
+          setVault({ unlocked: true, key: merged.key, data: merged.data });
+          setActionSuccess("Restored a pending deposit note into your vault.");
+        }
+      }
+
+      const hex = String(sn.commitmentHex || "").toLowerCase();
+      const dup = (merged.data?.notes || []).some((entry) => {
+        const p = entry?.payload;
+        if (!p || typeof p !== "object") return false;
+        const ph = String(p.commitmentHex || "").toLowerCase();
+        if (hex && ph && ph === hex) return true;
+        return String(p.blindingFactor) === String(sn.blindingFactor) && String(p.amount) === String(sn.amount);
+      });
+      if (dup) {
+        setActionSuccess("This note is already in your vault.");
+        return;
+      }
+      const next = {
+        notes: [{ t: Date.now(), payload: sn }, ...(merged.data?.notes || [])].slice(0, 200),
+        updatedAt: Date.now(),
+      };
+      await saveVault({ key: merged.key, data: next });
+      setVault((v) => ({ ...v, unlocked: true, key: merged.key, data: next }));
+      try {
+        sessionStorage.removeItem(PENDING_VAULT_NOTE_KEY);
+      } catch {
+        /* ignore */
+      }
+      setActionSuccess("Saved deposit note to your vault. You can use Swap / Withdraw.");
+    } catch (e) {
+      setActionError(stringifyErr(e?.message ?? e));
+    }
+  }
+
   function importToken() {
     const symbol = importTokenSymbol.trim().toUpperCase();
     const address = importTokenAddress.trim();
@@ -1112,6 +1378,7 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
     setImportTokenSymbol("");
     setImportTokenAddress("");
     setActionError(null);
+    setActionSuccess(null);
   }
 
   function placeInternalOrder() {
@@ -1122,6 +1389,7 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
       return;
     }
     setActionError(null);
+    setActionSuccess(null);
     const next = {
       id: Date.now(),
       side: orderForm.side,
@@ -1240,7 +1508,7 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
           <div style={{ minWidth: 240 }}>
             <div style={{ fontSize: 12, color: "rgba(255,255,255,0.7)", fontWeight: 700 }}>Testnet quick setup</div>
             <div style={{ marginTop: 4, fontSize: 12, color: "rgba(255,255,255,0.65)" }}>
-              Loads the mock tokens that have Pancake liquidity so quotes work immediately.
+              Optional extras: BSC testnet official BUSD/USDT/WBNB are already in the token list. Mock tokens (tBUSD, tCAKE, …) are only for extra Pancake pairs when official pairs have thin liquidity.
             </div>
           </div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -1272,6 +1540,16 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
       {cfgErr && <div style={{ marginTop: 12, borderRadius: 10, border: "1px solid rgba(248,113,113,0.5)", background: "rgba(185,28,28,0.18)", padding: 10, fontSize: 13, color: "#fecaca" }}>{stringifyErr(cfgErr)}</div>}
       {connectError && <div style={{ marginTop: 12, borderRadius: 10, border: "1px solid rgba(248,113,113,0.5)", background: "rgba(185,28,28,0.18)", padding: 10, fontSize: 13, color: "#fecaca" }}>{stringifyErr(connectError)}</div>}
       {actionError && <div style={{ marginTop: 12, borderRadius: 10, border: "1px solid rgba(248,113,113,0.5)", background: "rgba(185,28,28,0.18)", padding: 10, fontSize: 13, color: "#fecaca" }}>{stringifyErr(actionError)}</div>}
+      {actionSuccess && (
+        <div style={{ marginTop: 12, borderRadius: 10, border: "1px solid rgba(52, 211, 153, 0.45)", background: "rgba(6, 78, 59, 0.35)", padding: 10, fontSize: 13, color: "#a7f3d0" }}>
+          {actionSuccess}
+        </div>
+      )}
+      {vaultError && (
+        <div style={{ marginTop: 12, borderRadius: 10, border: "1px solid rgba(251, 191, 36, 0.45)", background: "rgba(120, 53, 15, 0.35)", padding: 10, fontSize: 13, color: "#fde68a" }}>
+          {stringifyErr(vaultError)}
+        </div>
+      )}
 
       <div
         style={{
@@ -1396,7 +1674,13 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
           <button
             key={k}
             type="button"
-            onClick={() => { setTab(k); setActionError(null); setLastResult(null); }}
+            onClick={() => {
+              setTab(k);
+              setActionError(null);
+              setActionSuccess(null);
+              setVaultError(null);
+              setLastResult(null);
+            }}
             style={{
               borderRadius: 10,
               padding: "10px 14px",
@@ -1467,8 +1751,13 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
             <input value={depositForm.commitment} readOnly style={{ width: "100%", borderRadius: 10, border: "1px solid rgba(255,255,255,0.16)", background: "#151a23", color: "#fff", padding: "10px 12px", fontSize: 14 }} />
           </div>
           <div style={{ marginTop: 8, fontSize: 11, color: "rgba(255,255,255,0.55)", lineHeight: 1.45 }}>
-            Unlock the note vault before deposit to save this note automatically for swaps.
+            Unlock the note vault before deposit so the client can save your note for swap/withdraw. If the vault was locked, use “Add deposit note to vault” in the result panel after deposit.
           </div>
+          {!vault?.unlocked ? (
+            <div style={{ marginTop: 10, padding: 10, borderRadius: 10, border: "1px solid rgba(248,180,100,0.45)", background: "rgba(248,180,100,0.08)", fontSize: 12, color: "#fde68a" }}>
+              Vault is locked — swap and withdraw will not see your note until you unlock the vault and deposit again, or import the note from the last deposit result.
+            </div>
+          ) : null}
           <button onClick={submitDeposit} disabled={!canTransact} style={{ marginTop: 12, borderRadius: 10, background: canTransact ? "#18b980" : "#3a4d45", color: "#fff", padding: "10px 14px", fontSize: 14, fontWeight: 700, border: "none", cursor: canTransact ? "pointer" : "not-allowed" }}>
             Deposit
           </button>
@@ -1668,6 +1957,9 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
               </div>
             )}
             {swapQuoteErr && <div style={{ marginTop: 8, fontSize: 12, color: "#ed4b9e" }}>{swapQuoteErr}</div>}
+            {swapClampHint && !swapQuoteErr && (
+              <div style={{ marginTop: 8, fontSize: 12, color: PC.muted }}>{swapClampHint}</div>
+            )}
             {cfg?.mode === "live" && !swapGasRefundOk && !swapQuoteLoading && (intentForm.inputAmount || "").trim() && (
               <div style={{ marginTop: 8, fontSize: 12, color: "#ed4b9e" }}>Waiting for gas cover from quote (gasRefund).</div>
             )}
@@ -1824,12 +2116,16 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                 <div style={{ fontSize: 12, color: "rgba(255,255,255,0.65)" }}>Note vault</div>
                 <button
+                  type="button"
                   onClick={unlockVault}
-                  style={{ borderRadius: 10, background: "rgba(255,255,255,0.08)", color: "#fff", padding: "6px 10px", fontSize: 12, fontWeight: 700, border: "1px solid rgba(255,255,255,0.16)", cursor: "pointer" }}
+                  style={{ borderRadius: 10, background: "rgba(255,255,255,0.08)", color: "#fff", padding: "6px 10px", fontSize: 12, fontWeight: 700, border: "1px solid rgba(255,255,255,0.16)", cursor: wallet.signer ? "pointer" : "not-allowed" }}
                   disabled={!wallet.signer}
                 >
                   {vault.unlocked ? "Unlocked" : "Unlock"}
                 </button>
+              </div>
+              <div style={{ marginTop: 6, fontSize: 11, color: "rgba(255,255,255,0.5)", lineHeight: 1.4 }}>
+                Same message every time (domain + chain) so your signature derives a stable encryption key. If unlock failed before this fix, click Unlock once more after rebuilding.
               </div>
               <textarea
                 value={noteDraft}
@@ -1901,6 +2197,42 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
                   <span style={{ fontSize: 12, color: "#fff" }}>{String(lastResult.blockNumber)}</span>
                 </div>
               )}
+            </div>
+          )}
+          {lastResult?.suggestedVaultNote && (
+            <div style={{ marginTop: 10 }}>
+              {lastResult?.vaultSaved ? (
+                <div style={{ marginBottom: 8, fontSize: 12, color: "rgba(52, 211, 153, 0.95)", lineHeight: 1.5 }}>
+                  <strong>Already saved at deposit time</strong> — your vault was unlocked, so this note was written when the deposit finished. If the button below is grey and does nothing, refresh or reconnect locked the vault in memory: open <strong>Advanced → Unlock</strong> and sign again; then Swap/Withdraw can read your notes.
+                </div>
+              ) : null}
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+                <button
+                  type="button"
+                  onClick={importSuggestedVaultNoteFromLastDeposit}
+                  title={
+                    wallet?.signer
+                      ? "Saves this deposit note locally. Signs vault unlock in MetaMask if the vault is still locked."
+                      : "Connect wallet first"
+                  }
+                  style={{
+                    borderRadius: 10,
+                    background: wallet?.signer ? "#6d4aff" : "rgba(255,255,255,0.1)",
+                    color: "#fff",
+                    padding: "8px 12px",
+                    fontSize: 12,
+                    fontWeight: 700,
+                    border: "none",
+                    cursor: wallet?.signer ? "pointer" : "not-allowed",
+                  }}
+                  disabled={!wallet?.signer}
+                >
+                  Add deposit note to vault
+                </button>
+                <span style={{ fontSize: 11, color: "rgba(255,255,255,0.55)", maxWidth: 420 }}>
+                  Required for Swap / Withdraw tabs to find a spendable note (same blinding as your deposit). If you already saved at deposit time, you only need this after a refresh or another browser.
+                </span>
+              </div>
             </div>
           )}
           <pre style={{ marginTop: 8, overflow: "auto", fontSize: 12, color: "rgba(255,255,255,0.9)" }}>{JSON.stringify(lastResult, null, 2)}</pre>

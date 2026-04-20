@@ -14,7 +14,39 @@ const { spawn } = require("child_process");
 const os = require("os");
 const { mimc7, FIELD } = require("./mimc7");
 const { computeCommitment, computeNullifier } = require("./noteModel");
+const { ethers } = require("ethers");
 const { toBigIntString, toBigInt } = require("./utils/bigint");
+
+/**
+ * ShieldedPool.shieldedSwapJoinSplit checks:
+ *   inputs.protocolFee == feeOracle.calculateFee(token, inputAmount) + DexSwapFee.swapFee(inputAmount)
+ * (DexSwapFee: 10 bps unless PHANTOM_DEX_SWAP_FEE_BPS overrides — must match contract.)
+ */
+async function getJoinSplitTotalProtocolFeeWei(inputAssetID, inputAmountWei) {
+  const rpc = process.env.RPC_URL;
+  const poolAddr = process.env.SHIELDED_POOL_ADDRESS;
+  if (!rpc || !poolAddr) throw new Error("RPC_URL or SHIELDED_POOL_ADDRESS unset");
+  const provider = new ethers.JsonRpcProvider(rpc);
+  const poolAbi = [
+    "function assetRegistry(uint256) view returns (address)",
+    "function feeOracle() view returns (address)",
+  ];
+  const feeOracleAbi = ["function calculateFee(address token, uint256 amount) view returns (uint256)"];
+  const pool = new ethers.Contract(poolAddr, poolAbi, provider);
+  const inputToken = await pool.assetRegistry(inputAssetID);
+  const fo = new ethers.Contract(await pool.feeOracle(), feeOracleAbi, provider);
+  let oraclePart = 0n;
+  try {
+    oraclePart = BigInt((await fo.calculateFee(inputToken, inputAmountWei)).toString());
+  } catch (e) {
+    console.warn("[zk] feeOracle.calculateFee failed:", e.message);
+  }
+  const cap = BigInt(inputAmountWei);
+  if (oraclePart > cap) oraclePart = cap;
+  const dexBps = BigInt(process.env.PHANTOM_DEX_SWAP_FEE_BPS || "10");
+  const swapPart = (cap * dexBps) / 10000n;
+  return oraclePart + swapPart;
+}
 
 /**
  * Repo layout: `phantom-relayer-dashboard/backend/src` → `core/` is three levels up.
@@ -269,6 +301,20 @@ async function generateSwapProof(swapData) {
     return formatted;
   };
 
+  const inputAmountWeiBn = toBigInt(inputNote.amount);
+  let resolvedProtocolFeeStr = String(protocolFee ?? "0");
+  if (process.env.RPC_URL && process.env.SHIELDED_POOL_ADDRESS) {
+    try {
+      const total = await getJoinSplitTotalProtocolFeeWei(Number(inputNote.assetID), inputAmountWeiBn);
+      resolvedProtocolFeeStr = total.toString();
+      console.log(
+        `   ℹ️ Protocol fee aligned with chain (oracle + ${process.env.PHANTOM_DEX_SWAP_FEE_BPS || "10"} bps DEX): ${resolvedProtocolFeeStr}`
+      );
+    } catch (e) {
+      console.warn("[zk] Using request protocolFee (on-chain fee resolve failed):", e.message);
+    }
+  }
+
   const circuitInputs = {
 
     inputAssetID: inputNote.assetID.toString(),
@@ -293,7 +339,7 @@ async function generateSwapProof(swapData) {
     merkleRoot: toBigIntString(merkleRoot),
     outputAmountSwapPublic: toBigIntString(outputNoteSwap.amount),
     minOutputAmountSwap: toBigIntString(minOutputAmount),
-    protocolFee: toBigIntString(protocolFee),
+    protocolFee: toBigIntString(resolvedProtocolFeeStr),
     gasRefund: toBigIntString(gasRefund),
 
     merklePath: formatMerklePath(merklePath),
@@ -346,10 +392,16 @@ async function generateSwapProof(swapData) {
 
   const inputAmountBigInt = toBigInt(inputNote.amount);
   const swapAmountBigInt = toBigInt(swapAmount);
-  const protocolFeeBigInt = toBigInt(protocolFee);
+  const protocolFeeBigInt = toBigInt(resolvedProtocolFeeStr);
   const gasRefundBigInt = toBigInt(gasRefund);
   const changeAmountBigInt = toBigInt(outputNoteChange.amount);
   const expectedChange = inputAmountBigInt - swapAmountBigInt - protocolFeeBigInt - gasRefundBigInt;
+  if (expectedChange <= 0n) {
+    throw new Error(
+      "Swap leaves no change note (ShieldedPool PoolErr(19): changeAmount must be non-zero). " +
+        "Reduce swap amount, protocol fee, or gas refund so input > swap + fees."
+    );
+  }
   if (expectedChange !== changeAmountBigInt) {
     console.log(
       `   ⚠️ Adjusting changeAmount to satisfy conservation: ${changeAmountBigInt} -> ${expectedChange}`

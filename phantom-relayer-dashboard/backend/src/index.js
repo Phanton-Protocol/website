@@ -52,6 +52,18 @@ const {
 } = require("./module4Deposit");
 const { assertIntentNullifierMatchesSwapPublicInputs } = require("./swapIntentBinding");
 
+/** EIP-55 checksum; accepts any casing (fixes mixed-case typos from UIs / APIs). */
+function normalizeEvmAddress(addr) {
+  if (addr == null || addr === "") return addr;
+  const s = String(addr).trim();
+  if (s.toLowerCase() === ethers.ZeroAddress.toLowerCase()) return ethers.ZeroAddress;
+  try {
+    return ethers.getAddress(s);
+  } catch {
+    return ethers.getAddress(s.toLowerCase());
+  }
+}
+
 const app = express();
 app.use(express.json({ limit: "2mb" }));
 const ALLOWED_ORIGINS = (process.env.CORS_ORIGINS || "")
@@ -906,11 +918,12 @@ async function tryQuotePancakeV2Router(provider, tokenIn, tokenOut, amountInBn, 
   let tin;
   let tout;
   try {
-    tin = (tokenIn || "").toLowerCase() === zero ? wbnb : ethers.getAddress(tokenIn);
-    tout = (tokenOut || "").toLowerCase() === zero ? wbnb : ethers.getAddress(tokenOut);
+    tin = (tokenIn || "").toLowerCase() === zero ? wbnb : normalizeEvmAddress(tokenIn);
+    tout = (tokenOut || "").toLowerCase() === zero ? wbnb : normalizeEvmAddress(tokenOut);
   } catch {
     return null;
   }
+  if (tin.toLowerCase() === tout.toLowerCase()) return null;
   let hopPath = [tin, tout];
   if (pathHex && typeof pathHex === "string" && pathHex.length > 2) {
     try {
@@ -931,8 +944,8 @@ async function tryQuotePancakeV2Router(provider, tokenIn, tokenOut, amountInBn, 
 }
 
 function encodeV3Path(tokenIn, tokenOut, feeTier) {
-  const inHex = ethers.getAddress(tokenIn).toLowerCase().slice(2);
-  const outHex = ethers.getAddress(tokenOut).toLowerCase().slice(2);
+  const inHex = normalizeEvmAddress(tokenIn).toLowerCase().slice(2);
+  const outHex = normalizeEvmAddress(tokenOut).toLowerCase().slice(2);
   const feeHex = Number(feeTier).toString(16).padStart(6, "0");
   return `0x${inHex}${feeHex}${outHex}`;
 }
@@ -942,51 +955,62 @@ async function tryQuotePancakeV3Quoter(provider, tokenIn, tokenOut, amountInBn, 
   if (!quoterAddr) return null;
   const wbnb = getWbnbForChain();
   const zero = ethers.ZeroAddress.toLowerCase();
-  const inToken = String(tokenIn || "").toLowerCase() === zero ? wbnb : tokenIn;
-  const outToken = String(tokenOut || "").toLowerCase() === zero ? wbnb : tokenOut;
+  const inToken = String(tokenIn || "").toLowerCase() === zero ? wbnb : normalizeEvmAddress(tokenIn);
+  const outToken = String(tokenOut || "").toLowerCase() === zero ? wbnb : normalizeEvmAddress(tokenOut);
+  if (inToken.toLowerCase() === outToken.toLowerCase()) {
+    return null;
+  }
   const fee = Number(feeTier || 2500);
   const sqrtLimit = toBigInt(sqrtPriceLimitX96 || 0);
 
-  const params = {
-    tokenIn: ethers.getAddress(inToken),
-    tokenOut: ethers.getAddress(outToken),
+  const paramsV1 = {
+    tokenIn: inToken,
+    tokenOut: outToken,
     amountIn: amountInBn,
     fee,
     sqrtPriceLimitX96: sqrtLimit,
   };
-  const quoterAbi = [
-    "function quoteExactInputSingle((address tokenIn,address tokenOut,uint256 amountIn,uint24 fee,uint160 sqrtPriceLimitX96) params) external returns (uint256 amountOut,uint160,uint32,uint256)",
-    "function quoteExactInputSingle((address tokenIn,address tokenOut,uint24 fee,uint256 amountIn,uint160 sqrtPriceLimitX96) params) external returns (uint256 amountOut)",
-  ];
-  const quoter = new ethers.Contract(quoterAddr, quoterAbi, provider);
+  const paramsV2 = {
+    tokenIn: inToken,
+    tokenOut: outToken,
+    fee,
+    amountIn: amountInBn,
+    sqrtPriceLimitX96: sqrtLimit,
+  };
+  const quoterV1 = new ethers.Contract(
+    quoterAddr,
+    [
+      "function quoteExactInputSingle((address tokenIn,address tokenOut,uint256 amountIn,uint24 fee,uint160 sqrtPriceLimitX96) params) external view returns (uint256 amountOut,uint160,uint32,uint256)",
+    ],
+    provider
+  );
+  const quoterV2 = new ethers.Contract(
+    quoterAddr,
+    [
+      "function quoteExactInputSingle((address tokenIn,address tokenOut,uint24 fee,uint256 amountIn,uint160 sqrtPriceLimitX96) params) external view returns (uint256 amountOut)",
+    ],
+    provider
+  );
 
   let outAmount;
   try {
-    const result = await quoter.quoteExactInputSingle(params);
+    const result = await quoterV1.quoteExactInputSingle.staticCall(paramsV1);
     if (Array.isArray(result)) outAmount = toBigInt(result[0]);
     else outAmount = toBigInt(result);
   } catch (errPrimary) {
-    // Fallback tuple ordering (some periphery builds use fee before amountIn)
-    const fallbackParams = {
-      tokenIn: ethers.getAddress(inToken),
-      tokenOut: ethers.getAddress(outToken),
-      fee,
-      amountIn: amountInBn,
-      sqrtPriceLimitX96: sqrtLimit,
-    };
     try {
-      const result = await quoter.quoteExactInputSingle(fallbackParams);
+      const result = await quoterV2.quoteExactInputSingle.staticCall(paramsV2);
       if (Array.isArray(result)) outAmount = toBigInt(result[0]);
       else outAmount = toBigInt(result);
-    } catch (_) {
+    } catch {
       throw errPrimary;
     }
   }
 
   return {
     outAmount,
-    tokenIn: ethers.getAddress(inToken),
-    tokenOut: ethers.getAddress(outToken),
+    tokenIn: normalizeEvmAddress(inToken),
+    tokenOut: normalizeEvmAddress(outToken),
     feeTier: fee,
     sqrtPriceLimitX96: sqrtLimit.toString(),
     path: encodeV3Path(inToken, outToken, fee),
@@ -2220,7 +2244,20 @@ app.post("/quote", async (req, res) => {
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.flatten() });
   }
-  const { tokenIn, tokenOut, amountIn, tokenInDecimals, tokenOutDecimals, slippageBps, chainSlug, feeTier, sqrtPriceLimitX96, deadlineSec } = parsed.data;
+  let { tokenIn, tokenOut, amountIn, tokenInDecimals, tokenOutDecimals, slippageBps, chainSlug, feeTier, sqrtPriceLimitX96, deadlineSec } = parsed.data;
+  try {
+    tokenIn = normalizeEvmAddress(tokenIn);
+    tokenOut = normalizeEvmAddress(tokenOut);
+  } catch (e) {
+    return res.status(400).json({ error: "invalid_token_address", message: e?.message || String(e) });
+  }
+
+  if (tokenIn.toLowerCase() === tokenOut.toLowerCase()) {
+    return res.status(400).json({
+      error: "identical_token_in_out",
+      message: "tokenIn and tokenOut resolve to the same address (e.g. both native/tBNB). Pick two different assets for a swap quote.",
+    });
+  }
 
   if (RPC_URL) {
     try {
@@ -2277,8 +2314,8 @@ app.post("/quote", async (req, res) => {
       const amountInBn = parseAmount(amountIn);
 
       const swapParams = {
-        tokenIn,
-        tokenOut,
+        tokenIn: normalizeEvmAddress(tokenIn),
+        tokenOut: normalizeEvmAddress(tokenOut),
         amountIn: amountInBn,
         minAmountOut: 0,
         fee: 0,
