@@ -76,11 +76,11 @@ const parseTextToBlocks = (text) => {
     return blocks;
 };
 
-const HighTechBlock = ({ block, idx, enableDiagrams }) => {
+const HighTechBlock = ({ block, idx, enableDiagrams, isMobile }) => {
     switch (block.type) {
         case 'h1':
             return (
-                <motion.div initial={{ opacity: 0, y: 30 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.8 }} key={idx} id={block.id} className="whitepaper-title-block" style={{ marginBottom: 'clamp(1.5rem, 5vw, 3rem)', position: 'relative' }}>
+                <motion.div initial={{ opacity: 0, y: 30 }} whileInView={isMobile ? undefined : { opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.8 }} key={idx} id={block.id} className="whitepaper-title-block" style={{ marginBottom: 'clamp(1.5rem, 5vw, 3rem)', position: 'relative', opacity: isMobile ? 1 : undefined, transform: isMobile ? 'none' : undefined }}>
                     <h1 className="whitepaper-h1" style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--whitepaper-h1)', color: '#fff', letterSpacing: '-0.02em', lineHeight: 1.08, textShadow: '0 0 40px rgba(158, 164, 170, 0.4)', scrollMarginTop: 'var(--whitepaper-scroll-margin)', overflowWrap: 'anywhere', maxWidth: '100%' }}>
                         {block.content}
                     </h1>
@@ -90,7 +90,7 @@ const HighTechBlock = ({ block, idx, enableDiagrams }) => {
         case 'h2':
             return (
                 <React.Fragment key={idx}>
-                    <motion.div initial={{ opacity: 0, x: -20 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true, margin: '-10%' }} transition={{ duration: 0.5 }} className="whitepaper-h2-wrap" style={{ marginBottom: 'clamp(1.25rem, 4vw, 2.5rem)', position: 'relative', paddingLeft: 'clamp(0.65rem, 2vw, 1.5rem)' }}>
+                    <motion.div initial={{ opacity: 0, x: -20 }} whileInView={isMobile ? undefined : { opacity: 1, x: 0 }} viewport={{ once: true, margin: '-10%' }} transition={{ duration: 0.5 }} className="whitepaper-h2-wrap" style={{ marginBottom: 'clamp(1.25rem, 4vw, 2.5rem)', position: 'relative', paddingLeft: 'clamp(0.65rem, 2vw, 1.5rem)', opacity: isMobile ? 1 : undefined, transform: isMobile ? 'none' : undefined }}>
                         <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '2px', background: 'var(--cyan)', boxShadow: '0 0 10px var(--cyan)' }} />
                         <h2 id={block.id} className="whitepaper-h2" style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--whitepaper-h2)', color: '#fff', display: 'flex', alignItems: 'center', gap: '1rem', scrollMarginTop: 'var(--whitepaper-scroll-margin)', lineHeight: 1.15, wordBreak: 'break-word', minWidth: 0, maxWidth: '100%', flexWrap: 'wrap' }}>
                             {block.content}
@@ -102,7 +102,7 @@ const HighTechBlock = ({ block, idx, enableDiagrams }) => {
         case 'h3':
             return (
                 <React.Fragment key={idx}>
-                    <motion.h3 initial={{ opacity: 0 }} whileInView={{ opacity: 1 }} viewport={{ once: true }} id={block.id} className="whitepaper-h3" style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--whitepaper-h3)', color: 'rgba(255,255,255,0.95)', marginTop: 'clamp(2rem, 6vw, 4rem)', marginBottom: 'clamp(0.85rem, 2vw, 1.5rem)', display: 'flex', alignItems: 'center', gap: '0.75rem', scrollMarginTop: 'var(--whitepaper-scroll-margin)', lineHeight: 1.2, wordBreak: 'break-word', minWidth: 0, maxWidth: '100%', flexWrap: 'wrap' }}>
+                    <motion.h3 initial={{ opacity: 0 }} whileInView={isMobile ? undefined : { opacity: 1 }} viewport={{ once: true }} id={block.id} className="whitepaper-h3" style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--whitepaper-h3)', color: 'rgba(255,255,255,0.95)', marginTop: 'clamp(2rem, 6vw, 4rem)', marginBottom: 'clamp(0.85rem, 2vw, 1.5rem)', display: 'flex', alignItems: 'center', gap: '0.75rem', scrollMarginTop: 'var(--whitepaper-scroll-margin)', lineHeight: 1.2, wordBreak: 'break-word', minWidth: 0, maxWidth: '100%', flexWrap: 'wrap', opacity: isMobile ? 1 : undefined }}>
                         {block.content}
                     </motion.h3>
                     {enableDiagrams && block.content.includes('Core Model and Architecture') && <MasterPhantomDiagram />}
@@ -120,7 +120,7 @@ const HighTechBlock = ({ block, idx, enableDiagrams }) => {
             return (
                 <motion.p
                     initial={{ opacity: 0, y: 10 }}
-                    whileInView={{ opacity: 1, y: 0 }}
+                    whileInView={isMobile ? undefined : { opacity: 1, y: 0 }}
                     viewport={{ once: true }}
                     key={idx}
                     className="whitepaper-subtitle"
@@ -131,6 +131,8 @@ const HighTechBlock = ({ block, idx, enableDiagrams }) => {
                         marginBottom: 'clamp(1.25rem, 4vw, 2rem)',
                         letterSpacing: '0.01em',
                         lineHeight: 1.55,
+                        opacity: isMobile ? 1 : undefined,
+                        transform: isMobile ? 'none' : undefined,
                     }}
                 >
                     {block.content}
@@ -138,7 +140,7 @@ const HighTechBlock = ({ block, idx, enableDiagrams }) => {
             );
         case 'li':
             return (
-                <motion.div initial={{ opacity: 0, x: 10 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }} key={idx} style={{ marginBottom: 'clamp(0.65rem, 2vw, 1rem)', paddingLeft: 'clamp(0.5rem, 2vw, 1rem)' }}>
+                <motion.div initial={{ opacity: 0, x: 10 }} whileInView={isMobile ? undefined : { opacity: 1, x: 0 }} viewport={{ once: true }} key={idx} style={{ marginBottom: 'clamp(0.65rem, 2vw, 1rem)', paddingLeft: 'clamp(0.5rem, 2vw, 1rem)', opacity: isMobile ? 1 : undefined, transform: isMobile ? 'none' : undefined }}>
                     <li className="whitepaper-li" style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--whitepaper-body)', color: 'rgba(255,255,255,0.75)', lineHeight: 1.65, listStyleType: 'none', wordBreak: 'break-word' }}>{block.content}</li>
                 </motion.div>
             );
@@ -146,13 +148,13 @@ const HighTechBlock = ({ block, idx, enableDiagrams }) => {
         default:
             if (block.content.trim() === 'Add Diagram') {
                 return (
-                    <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} key={idx}>
+                    <motion.div initial={{ opacity: 0, y: 20 }} whileInView={isMobile ? undefined : { opacity: 1, y: 0 }} viewport={{ once: true }} key={idx} style={{ opacity: isMobile ? 1 : undefined, transform: isMobile ? 'none' : undefined }}>
                         {enableDiagrams ? <RelayerSystemDiagram /> : null}
                     </motion.div>
                 );
             }
             return (
-                <motion.p initial={{ opacity: 0, y: 10 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} key={idx} className="tech-paragraph whitepaper-p" style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--whitepaper-body)', color: 'rgba(255,255,255,0.85)', marginBottom: 'clamp(1rem, 3vw, 1.5rem)', lineHeight: 1.72, wordBreak: 'break-word' }}>
+                <motion.p initial={{ opacity: 0, y: 10 }} whileInView={isMobile ? undefined : { opacity: 1, y: 0 }} viewport={{ once: true }} key={idx} className="tech-paragraph whitepaper-p" style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--whitepaper-body)', color: 'rgba(255,255,255,0.85)', marginBottom: 'clamp(1rem, 3vw, 1.5rem)', lineHeight: 1.72, wordBreak: 'break-word', opacity: isMobile ? 1 : undefined, transform: isMobile ? 'none' : undefined }}>
                     {block.content}
                 </motion.p>
             );
@@ -248,7 +250,7 @@ export default function WhitepaperPage() {
                     path="/e-paper"
                 />
 
-                <motion.div style={{ position: 'fixed', top: 0, left: 0, right: 0, height: '3px', background: 'var(--cyan)', transformOrigin: '0%', scaleX: reducedMotion ? 1 : scaleX, zIndex: 199, boxShadow: '0 0 15px var(--cyan)' }} />
+                <motion.div style={{ position: 'fixed', top: 0, left: 0, right: 0, height: '3px', background: 'var(--cyan)', transformOrigin: '0%', scaleX: (reducedMotion || isMobile) ? 1 : scaleX, zIndex: 199, boxShadow: '0 0 15px var(--cyan)' }} />
 
                 <div className="container whitepaper-page-inner">
                     {(isMobile || reducedMotion) && (
@@ -364,6 +366,7 @@ export default function WhitepaperPage() {
                                 block={block}
                                 idx={idx}
                                 enableDiagrams={enableDiagrams && !reducedMotion}
+                                isMobile={isMobile}
                             />
                         ))}
                     </article>
