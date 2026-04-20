@@ -1,8 +1,6 @@
 import React, { useMemo, useEffect, useState, useRef } from 'react';
-import { motion, useScroll, useSpring } from 'framer-motion';
+import { motion, useReducedMotion, useScroll, useSpring } from 'framer-motion';
 import whitepaperContent from '../data/whitepaper.txt?raw';
-import DataInterceptionBackground from './DataInterceptionBackground';
-import GhostChainVisualizer from './GhostChainVisualizer';
 import SeoHead from './SeoHead';
 import Navbar from './Navbar';
 import { useLocation } from 'react-router-dom';
@@ -78,12 +76,12 @@ const parseTextToBlocks = (text) => {
     return blocks;
 };
 
-const HighTechBlock = ({ block, idx }) => {
+const HighTechBlock = ({ block, idx, enableDiagrams, isMobile }) => {
     switch (block.type) {
         case 'h1':
             return (
-                <motion.div initial={{ opacity: 0, y: 30 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.8 }} key={idx} id={block.id} className="whitepaper-title-block" style={{ marginBottom: 'clamp(1.5rem, 5vw, 3rem)', position: 'relative' }}>
-                    <h1 className="whitepaper-h1" style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--whitepaper-h1)', color: '#fff', letterSpacing: '-0.02em', lineHeight: 1.08, textShadow: '0 0 40px rgba(0,229,199,0.3)', scrollMarginTop: 'var(--whitepaper-scroll-margin)', overflowWrap: 'anywhere', maxWidth: '100%' }}>
+                <motion.div initial={{ opacity: 0, y: 30 }} whileInView={isMobile ? undefined : { opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.8 }} key={idx} id={block.id} className="whitepaper-title-block" style={{ marginBottom: 'clamp(1.5rem, 5vw, 3rem)', position: 'relative', opacity: isMobile ? 1 : undefined, transform: isMobile ? 'none' : undefined }}>
+                    <h1 className="whitepaper-h1" style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--whitepaper-h1)', color: '#fff', letterSpacing: '-0.02em', lineHeight: 1.08, textShadow: '0 0 40px rgba(158, 164, 170, 0.4)', scrollMarginTop: 'var(--whitepaper-scroll-margin)', overflowWrap: 'anywhere', maxWidth: '100%' }}>
                         {block.content}
                     </h1>
                     <div style={{ height: '1px', width: '100%', background: 'linear-gradient(90deg, var(--cyan) 0%, transparent 100%)', marginTop: 'clamp(1rem, 3vw, 2rem)', opacity: 0.5 }} />
@@ -92,24 +90,24 @@ const HighTechBlock = ({ block, idx }) => {
         case 'h2':
             return (
                 <React.Fragment key={idx}>
-                    <motion.div initial={{ opacity: 0, x: -20 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true, margin: '-10%' }} transition={{ duration: 0.5 }} className="whitepaper-h2-wrap" style={{ marginBottom: 'clamp(1.25rem, 4vw, 2.5rem)', position: 'relative', paddingLeft: 'clamp(0.65rem, 2vw, 1.5rem)' }}>
+                    <motion.div initial={{ opacity: 0, x: -20 }} whileInView={isMobile ? undefined : { opacity: 1, x: 0 }} viewport={{ once: true, margin: '-10%' }} transition={{ duration: 0.5 }} className="whitepaper-h2-wrap" style={{ marginBottom: 'clamp(1.25rem, 4vw, 2.5rem)', position: 'relative', paddingLeft: 'clamp(0.65rem, 2vw, 1.5rem)', opacity: isMobile ? 1 : undefined, transform: isMobile ? 'none' : undefined }}>
                         <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '2px', background: 'var(--cyan)', boxShadow: '0 0 10px var(--cyan)' }} />
                         <h2 id={block.id} className="whitepaper-h2" style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--whitepaper-h2)', color: '#fff', display: 'flex', alignItems: 'center', gap: '1rem', scrollMarginTop: 'var(--whitepaper-scroll-margin)', lineHeight: 1.15, wordBreak: 'break-word', minWidth: 0, maxWidth: '100%', flexWrap: 'wrap' }}>
                             {block.content}
                         </h2>
                     </motion.div>
-                    {block.content.includes('Phantom 3.0') && <PhantomBankSystemDiagram />}
+                    {enableDiagrams && block.content.includes('Phantom 3.0') && <PhantomBankSystemDiagram />}
                 </React.Fragment>
             );
         case 'h3':
             return (
                 <React.Fragment key={idx}>
-                    <motion.h3 initial={{ opacity: 0 }} whileInView={{ opacity: 1 }} viewport={{ once: true }} id={block.id} className="whitepaper-h3" style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--whitepaper-h3)', color: 'rgba(255,255,255,0.95)', marginTop: 'clamp(2rem, 6vw, 4rem)', marginBottom: 'clamp(0.85rem, 2vw, 1.5rem)', display: 'flex', alignItems: 'center', gap: '0.75rem', scrollMarginTop: 'var(--whitepaper-scroll-margin)', lineHeight: 1.2, wordBreak: 'break-word', minWidth: 0, maxWidth: '100%', flexWrap: 'wrap' }}>
+                    <motion.h3 initial={{ opacity: 0 }} whileInView={isMobile ? undefined : { opacity: 1 }} viewport={{ once: true }} id={block.id} className="whitepaper-h3" style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--whitepaper-h3)', color: 'rgba(255,255,255,0.95)', marginTop: 'clamp(2rem, 6vw, 4rem)', marginBottom: 'clamp(0.85rem, 2vw, 1.5rem)', display: 'flex', alignItems: 'center', gap: '0.75rem', scrollMarginTop: 'var(--whitepaper-scroll-margin)', lineHeight: 1.2, wordBreak: 'break-word', minWidth: 0, maxWidth: '100%', flexWrap: 'wrap', opacity: isMobile ? 1 : undefined }}>
                         {block.content}
                     </motion.h3>
-                    {block.content.includes('Core Model and Architecture') && <MasterPhantomDiagram />}
-                    {block.content.includes('Key management') && <CommitmentFormulaDiagram />}
-                    {block.content.includes('Operational safeguards') && <NullifierFormulaDiagram />}
+                    {enableDiagrams && block.content.includes('Core Model and Architecture') && <MasterPhantomDiagram />}
+                    {enableDiagrams && block.content.includes('Key management') && <CommitmentFormulaDiagram />}
+                    {enableDiagrams && block.content.includes('Operational safeguards') && <NullifierFormulaDiagram />}
                 </React.Fragment>
             );
         case 'h4':
@@ -122,7 +120,7 @@ const HighTechBlock = ({ block, idx }) => {
             return (
                 <motion.p
                     initial={{ opacity: 0, y: 10 }}
-                    whileInView={{ opacity: 1, y: 0 }}
+                    whileInView={isMobile ? undefined : { opacity: 1, y: 0 }}
                     viewport={{ once: true }}
                     key={idx}
                     className="whitepaper-subtitle"
@@ -133,6 +131,8 @@ const HighTechBlock = ({ block, idx }) => {
                         marginBottom: 'clamp(1.25rem, 4vw, 2rem)',
                         letterSpacing: '0.01em',
                         lineHeight: 1.55,
+                        opacity: isMobile ? 1 : undefined,
+                        transform: isMobile ? 'none' : undefined,
                     }}
                 >
                     {block.content}
@@ -140,7 +140,7 @@ const HighTechBlock = ({ block, idx }) => {
             );
         case 'li':
             return (
-                <motion.div initial={{ opacity: 0, x: 10 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }} key={idx} style={{ marginBottom: 'clamp(0.65rem, 2vw, 1rem)', paddingLeft: 'clamp(0.5rem, 2vw, 1rem)' }}>
+                <motion.div initial={{ opacity: 0, x: 10 }} whileInView={isMobile ? undefined : { opacity: 1, x: 0 }} viewport={{ once: true }} key={idx} style={{ marginBottom: 'clamp(0.65rem, 2vw, 1rem)', paddingLeft: 'clamp(0.5rem, 2vw, 1rem)', opacity: isMobile ? 1 : undefined, transform: isMobile ? 'none' : undefined }}>
                     <li className="whitepaper-li" style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--whitepaper-body)', color: 'rgba(255,255,255,0.75)', lineHeight: 1.65, listStyleType: 'none', wordBreak: 'break-word' }}>{block.content}</li>
                 </motion.div>
             );
@@ -148,13 +148,13 @@ const HighTechBlock = ({ block, idx }) => {
         default:
             if (block.content.trim() === 'Add Diagram') {
                 return (
-                    <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} key={idx}>
-                        <RelayerSystemDiagram />
+                    <motion.div initial={{ opacity: 0, y: 20 }} whileInView={isMobile ? undefined : { opacity: 1, y: 0 }} viewport={{ once: true }} key={idx} style={{ opacity: isMobile ? 1 : undefined, transform: isMobile ? 'none' : undefined }}>
+                        {enableDiagrams ? <RelayerSystemDiagram /> : null}
                     </motion.div>
                 );
             }
             return (
-                <motion.p initial={{ opacity: 0, y: 10 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} key={idx} className="tech-paragraph whitepaper-p" style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--whitepaper-body)', color: 'rgba(255,255,255,0.85)', marginBottom: 'clamp(1rem, 3vw, 1.5rem)', lineHeight: 1.72, wordBreak: 'break-word' }}>
+                <motion.p initial={{ opacity: 0, y: 10 }} whileInView={isMobile ? undefined : { opacity: 1, y: 0 }} viewport={{ once: true }} key={idx} className="tech-paragraph whitepaper-p" style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--whitepaper-body)', color: 'rgba(255,255,255,0.85)', marginBottom: 'clamp(1rem, 3vw, 1.5rem)', lineHeight: 1.72, wordBreak: 'break-word', opacity: isMobile ? 1 : undefined, transform: isMobile ? 'none' : undefined }}>
                     {block.content}
                 </motion.p>
             );
@@ -170,6 +170,17 @@ export default function WhitepaperPage() {
     const location = useLocation();
     const [activeSection, setActiveSection] = useState('');
     const mobileTocRef = useRef(null);
+    const reducedMotion = useReducedMotion();
+    const [isMobile, setIsMobile] = useState(() => {
+        if (typeof window === 'undefined') return false;
+        return window.matchMedia?.('(pointer: coarse)')?.matches || window.innerWidth <= 900;
+    });
+    const [enableDiagrams, setEnableDiagrams] = useState(() => {
+        if (typeof window === 'undefined') return true;
+        const coarse = window.matchMedia?.('(pointer: coarse)')?.matches;
+        const narrow = window.innerWidth <= 900;
+        return !(coarse || narrow);
+    });
 
     const { scrollYProgress } = useScroll();
     const scaleX = useSpring(scrollYProgress, {
@@ -183,20 +194,45 @@ export default function WhitepaperPage() {
     }, [location.pathname]);
 
     useEffect(() => {
-        const handleScroll = () => {
+        if (typeof window === 'undefined') return undefined;
+
+        let headings = Array.from(document.querySelectorAll('h2, h3'));
+        let raf = 0;
+
+        const update = () => {
             const line = Math.min(160, Math.max(110, window.innerWidth * 0.12 + 88));
-            const headings = Array.from(document.querySelectorAll('h2, h3'));
             let current = '';
             for (const heading of headings) {
-                if (heading.getBoundingClientRect().top < line) {
-                    current = heading.id;
-                }
+                if (heading.getBoundingClientRect().top < line) current = heading.id;
             }
-            if (current) setActiveSection(current);
+            if (current) setActiveSection((prev) => (prev === current ? prev : current));
         };
-        window.addEventListener('scroll', handleScroll);
-        handleScroll();
-        return () => window.removeEventListener('scroll', handleScroll);
+
+        const onScroll = () => {
+            if (raf) return;
+            raf = window.requestAnimationFrame(() => {
+                raf = 0;
+                update();
+            });
+        };
+
+        const onResize = () => {
+            headings = Array.from(document.querySelectorAll('h2, h3'));
+            const coarse = window.matchMedia?.('(pointer: coarse)')?.matches;
+            const narrow = window.innerWidth <= 900;
+            const nextIsMobile = coarse || narrow;
+            setIsMobile(nextIsMobile);
+            setEnableDiagrams(!(coarse || narrow));
+        };
+
+        window.addEventListener('scroll', onScroll, { passive: true });
+        window.addEventListener('resize', onResize, { passive: true });
+        update();
+        return () => {
+            if (raf) window.cancelAnimationFrame(raf);
+            window.removeEventListener('scroll', onScroll);
+            window.removeEventListener('resize', onResize);
+        };
     }, []);
 
     const closeMobileToc = () => {
@@ -207,18 +243,43 @@ export default function WhitepaperPage() {
     return (
         <>
             <Navbar />
-            <main className="whitepaper-page" style={{ position: 'relative', width: '100%', maxWidth: '100%', minWidth: 0, minHeight: '100vh', paddingBottom: 'max(4rem, env(safe-area-inset-bottom, 0px) + 3rem)', background: 'linear-gradient(160deg, #1a1a20 0%, #131318 50%, #17171c 100%)' }}>
-                <DataInterceptionBackground />
-                <GhostChainVisualizer />
+            <main className="whitepaper-page" style={{ position: 'relative', width: '100%', maxWidth: '100%', minWidth: 0, minHeight: '100vh', paddingBottom: 'max(4rem, env(safe-area-inset-bottom, 0px) + 3rem)' }}>
                 <SeoHead
                     title="Phantom Protocol E-Paper | Phantom Protocol"
                     description="Phantom Protocol specifies a shielded pool with commitments, nullifiers, Merkle membership, and Groth16-verified join-split transitions."
                     path="/e-paper"
                 />
 
-                <motion.div style={{ position: 'fixed', top: 0, left: 0, right: 0, height: '3px', background: 'var(--cyan)', transformOrigin: '0%', scaleX, zIndex: 199, boxShadow: '0 0 15px var(--cyan)' }} />
+                <motion.div style={{ position: 'fixed', top: 0, left: 0, right: 0, height: '3px', background: 'var(--cyan)', transformOrigin: '0%', scaleX: (reducedMotion || isMobile) ? 1 : scaleX, zIndex: 199, boxShadow: '0 0 15px var(--cyan)' }} />
 
                 <div className="container whitepaper-page-inner">
+                    {(isMobile || reducedMotion) && (
+                        <div style={{ marginBottom: 'clamp(1rem, 3vw, 1.75rem)' }}>
+                            <div
+                                className="card"
+                                style={{
+                                    padding: '0.95rem 1rem',
+                                    background: 'rgba(2, 2, 2, 0.72)',
+                                    borderColor: 'rgba(138, 196, 255, 0.26)',
+                                }}
+                            >
+                                <div className="mono" style={{ color: 'var(--cyan)', marginBottom: '0.35rem' }}>Mobile safe mode</div>
+                                <p style={{ margin: 0, color: 'rgba(214, 234, 255, 0.85)', lineHeight: 1.55, fontSize: 'clamp(0.85rem, 2.7vw, 0.95rem)' }}>
+                                    Heavy animated diagrams are disabled to prevent mobile browser crashes. You can still read the full document.
+                                </p>
+                                {!enableDiagrams && (
+                                    <button
+                                        type="button"
+                                        className="btn-outline btn-outline-cyan"
+                                        style={{ marginTop: '0.75rem' }}
+                                        onClick={() => setEnableDiagrams(true)}
+                                    >
+                                        Load diagrams anyway
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+                    )}
 
                     <div className="whitepaper-spec-badge" style={{ fontFamily: 'var(--font-mono)', fontSize: 'clamp(0.5rem, 1.2vw, 0.6rem)', color: 'rgba(255,255,255,0.3)', textAlign: 'right', letterSpacing: '0.2em', lineHeight: 1.5, pointerEvents: 'none' }}>
                         SPEC-DOC: PHANTOM-PROT-EP-V1<br />
@@ -284,7 +345,7 @@ export default function WhitepaperPage() {
                                                         transition: 'all 0.3s ease',
                                                         lineHeight: 1.4,
                                                         display: 'block',
-                                                        textShadow: isActive ? '0 0 10px rgba(0,229,199,0.3)' : 'none',
+                                                        textShadow: isActive ? '0 0 10px rgba(158, 164, 170, 0.4)' : 'none',
                                                     }}
                                                     onMouseOver={(e) => { e.target.style.color = 'var(--cyan)'; }}
                                                     onMouseOut={(e) => { e.target.style.color = isActive ? 'var(--cyan)' : (item.type === 'h2' ? '#fff' : 'rgba(255,255,255,0.4)'); }}
@@ -299,7 +360,15 @@ export default function WhitepaperPage() {
                         </div>
                     </aside>
                     <article className="whitepaper-content" style={{ flex: 1, minWidth: 0 }}>
-                        {blocks.map((block, idx) => <HighTechBlock key={idx} block={block} idx={idx} />)}
+                        {blocks.map((block, idx) => (
+                            <HighTechBlock
+                                key={idx}
+                                block={block}
+                                idx={idx}
+                                enableDiagrams={enableDiagrams && !reducedMotion}
+                                isMobile={isMobile}
+                            />
+                        ))}
                     </article>
                 </div>
             </div>

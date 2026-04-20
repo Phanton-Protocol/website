@@ -1,4 +1,6 @@
 User-agent: *
 Allow: /
 
+Disallow: /generated-seo/
+
 Sitemap: https://phantomproto.com/sitemap.xml

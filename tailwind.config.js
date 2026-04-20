@@ -12,11 +12,12 @@ export default {
                 mono: ['JetBrains Mono', 'monospace'],
             },
             colors: {
-                'bg-deep': '#030407',
-                'bg-surface': '#0a0c10',
-                'text-primary': 'rgba(255, 255, 255, 0.95)',
-                'text-secondary': 'rgba(255, 255, 255, 0.5)',
-                'accent-cyan': '#00e5ff',
+                'bg-deep': '#0a0b0d',
+                'bg-surface': '#0d0e10',
+                'text-primary': 'rgba(246, 251, 255, 0.95)',
+                'text-secondary': 'rgba(210, 225, 245, 0.82)',
+                'accent-cyan': '#00f3ff',
+                'accent-violet': '#7f7dff',
             },
             animation: {
                 'spin-slow': 'spin 20s linear infinite',

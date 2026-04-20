@@ -203,7 +203,7 @@ const NetworkVisualizer = () => {
                     : `rgba(${C_CYAN},  0.55)`;
                 ctx.fill();
 
-                ctx.font = '7.5px JetBrains Mono';
+                ctx.font = '7.5px Public Sans, sans-serif';
                 ctx.fillStyle = `rgba(${C_CYAN}, ${0.18 + glow * 0.12})`;
                 ctx.fillText(node.label, node.x + 8, node.y + 3);
             });
@@ -249,7 +249,7 @@ const NetworkVisualizer = () => {
             ctx.fill();
 
             ctx.textAlign = 'center';
-            ctx.font = '6.5px JetBrains Mono';
+            ctx.font = '6.5px Public Sans, sans-serif';
             ctx.fillStyle = `rgba(${C_WHITE}, 0.22)`;
             ctx.fillText('PHANTOM', focus.x, focus.y + 32);
             ctx.fillText('PROTOCOL', focus.x, focus.y + 42);

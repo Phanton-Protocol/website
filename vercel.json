@@ -1,8 +1,116 @@
 {
   "redirects": [
-    { "source": "/whitepaper", "destination": "/e-paper", "permanent": true }
+    {
+      "source": "/whitepaper",
+      "destination": "/e-paper",
+      "permanent": true
+    },
+    {
+      "source": "/user",
+      "destination": "/trade",
+      "permanent": true
+    }
   ],
   "rewrites": [
-    { "source": "/(.*)", "destination": "/index.html" }
+    {
+      "source": "/",
+      "destination": "/generated-seo/index.html"
+    },
+    {
+      "source": "/trade",
+      "destination": "/generated-seo/trade.html"
+    },
+    {
+      "source": "/e-paper",
+      "destination": "/generated-seo/e-paper.html"
+    },
+    {
+      "source": "/relayer",
+      "destination": "/generated-seo/relayer.html"
+    },
+    {
+      "source": "/enterprise",
+      "destination": "/generated-seo/enterprise.html"
+    },
+    {
+      "source": "/enterprise/payroll",
+      "destination": "/generated-seo/enterprise__payroll.html"
+    },
+    {
+      "source": "/enterprise/compliance",
+      "destination": "/generated-seo/enterprise__compliance.html"
+    },
+    {
+      "source": "/enterprise/governance",
+      "destination": "/generated-seo/enterprise__governance.html"
+    },
+    {
+      "source": "/enterprise/audit",
+      "destination": "/generated-seo/enterprise__audit.html"
+    },
+    {
+      "source": "/phantom-protocol",
+      "destination": "/generated-seo/phantom-protocol.html"
+    },
+    {
+      "source": "/private-defi",
+      "destination": "/generated-seo/private-defi.html"
+    },
+    {
+      "source": "/shielded-pool-bnb",
+      "destination": "/generated-seo/shielded-pool-bnb.html"
+    },
+    {
+      "source": "/blog",
+      "destination": "/generated-seo/blog.html"
+    },
+    {
+      "source": "/privacy-visibility",
+      "destination": "/generated-seo/privacy-visibility.html"
+    },
+    {
+      "source": "/onepager",
+      "destination": "/generated-seo/onepager.html"
+    },
+    {
+      "source": "/blog/what-is-phantom-protocol",
+      "destination": "/generated-seo/blog__what-is-phantom-protocol.html"
+    },
+    {
+      "source": "/blog/private-defi-for-teams",
+      "destination": "/generated-seo/blog__private-defi-for-teams.html"
+    },
+    {
+      "source": "/blog/relayer-failover-explained",
+      "destination": "/generated-seo/blog__relayer-failover-explained.html"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/sitemap.xml",
+      "headers": [
+        {
+          "key": "Content-Type",
+          "value": "application/xml"
+        },
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=3600"
+        }
+      ]
+    },
+    {
+      "source": "/generated-seo/(.*)",
+      "headers": [
+        {
+          "key": "X-Robots-Tag",
+          "value": "noindex"
+        }
+      ]
+    }
   ]
 }

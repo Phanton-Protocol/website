@@ -46,7 +46,7 @@ class Particle {
 
     draw() {
         const ctx = this.ctx;
-        ctx.font = `${this.size}px JetBrains Mono`;
+        ctx.font = `${this.size}px Public Sans, sans-serif`;
 
         if (this.isBroken) {
             ctx.fillStyle = `rgba(255, 255, 255, ${this.opacity * 0.5})`;
@@ -54,10 +54,10 @@ class Particle {
             const offsetY = (Math.random() - 0.5) * 10;
             ctx.fillText(this.text, this.x + offsetX, this.y + offsetY);
 
-            ctx.fillStyle = `rgba(0, 229, 255, ${this.opacity * 0.2})`;
+            ctx.fillStyle = `rgba(0, 243, 255, ${this.opacity * 0.2})`;
             ctx.fillText(this.text, this.x - offsetX, this.y - offsetY);
         } else {
-            ctx.fillStyle = `rgba(0, 229, 255, ${this.opacity})`;
+            ctx.fillStyle = `rgba(0, 243, 255, ${this.opacity})`;
             ctx.fillText(this.text, this.x, this.y);
         }
     }
@@ -67,6 +67,11 @@ const DataInterceptionBackground = () => {
     const canvasRef = useRef(null);
 
     useEffect(() => {
+        const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+        const coarsePointer = window.matchMedia?.('(pointer: coarse)')?.matches;
+        const narrow = typeof window !== 'undefined' && window.innerWidth <= 900;
+        if (reduceMotion || coarsePointer || narrow) return;
+
         const canvas = canvasRef.current;
         const ctx = canvas.getContext('2d');
         let animationFrameId;
@@ -117,6 +122,11 @@ const DataInterceptionBackground = () => {
         };
     }, []);
 
+    const reduceMotion = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+    const coarsePointer = typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)')?.matches;
+    const narrow = typeof window !== 'undefined' && window.innerWidth <= 900;
+    if (reduceMotion || coarsePointer || narrow) return null;
+
     return (
         <canvas
             ref={canvasRef}
@@ -127,7 +137,7 @@ const DataInterceptionBackground = () => {
                 height: '100%',
                 pointerEvents: 'none',
                 zIndex: 0,
-                opacity: 0.12,
+                opacity: 0.18,
                 mixBlendMode: 'screen',
             }}
         />

@@ -11,7 +11,8 @@ fhe-node
 frontend
 phantom-relayer-dashboard
 relayer-dashboard
-scripts
+!scripts/
+!scripts/generate-seo-html-entries.mjs
 sei-ggc-holders
 validators
 Website

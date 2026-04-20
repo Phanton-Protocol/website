@@ -6,6 +6,7 @@ import WhoCanUseIt from './components/WhoCanUseIt';
 import Benefits from './components/Benefits';
 import ComparisonTable from './components/ComparisonTable';
 import TechCards from './components/TechCards';
+import TokenomicsSection from './components/TokenomicsSection';
 import SDKSection from './components/SDKSection';
 import MetricsVisualizer from './components/MetricsVisualizer';
 import NewsSection from './components/NewsSection';
@@ -17,8 +18,6 @@ import PrivacyExplainer from './components/PrivacyExplainer';
 import FeesSection from './components/FeesSection';
 import Roadmap from './components/Roadmap';
 import FAQ from './components/FAQ';
-import GhostChainVisualizer from './components/GhostChainVisualizer';
-import DataInterceptionBackground from './components/DataInterceptionBackground';
 import InvestorSection from './components/InvestorSection';
 import SeoHead from './components/SeoHead';
 import SeoContentPage from './components/SeoContentPage';
@@ -30,6 +29,9 @@ import PrivacyVisibilityPage from './components/PrivacyVisibilityPage';
 import { blogPosts } from './data/blogPosts';
 import logoUrl from './assets/logo.svg';
 import { SOCIAL_LINKS, RUNBOOK_URL } from './config';
+import { HOME_SCROLL_SECTION_IDS } from './seo/homeScrollSections';
+import GhostChainVisualizer from './components/GhostChainVisualizer';
+import DataInterceptionBackground from './components/DataInterceptionBackground';
 
 const DAppSection = lazy(() => import('./components/DAppSection'));
 const ProtocolUserDapp = lazy(() => import('./components/ProtocolUserDapp'));
@@ -42,7 +44,7 @@ const EnterpriseHomePage = lazy(() => import('./components/enterprise/Enterprise
 const EnterpriseLayout = lazy(() => import('./components/enterprise/EnterpriseLayout'));
 
 function RouteLoader() {
-  return <div className="container section" style={{ paddingTop: '8rem', color: 'rgba(255,255,255,0.7)' }}>Loading...</div>;
+  return <div className="container section" style={{ paddingTop: '8rem', color: 'rgba(202, 225, 250, 0.82)' }}>Loading...</div>;
 }
 
 function UserDappPage() {
@@ -173,7 +175,7 @@ function RelayerStakerPage() {
 
             <div className="card" style={{ padding: '1.1rem 1.25rem' }}>
               <div className="mono" style={{ color: 'var(--cyan)', marginBottom: '0.55rem' }}>How to join node set</div>
-              <p style={{ margin: 0, color: 'rgba(255,255,255,0.8)', lineHeight: 1.65 }}>
+              <p style={{ margin: 0, color: 'rgba(199, 222, 248, 0.85)', lineHeight: 1.65 }}>
                 1) Stake tokens from the relayer onboarding flow. 2) Keep at least 5,000,000 PPT staked to qualify. 3) Run a relayer node locally.
                 4) Use the same wallet for relayer operations so the network recognizes your node participation.
               </p>
@@ -181,7 +183,7 @@ function RelayerStakerPage() {
 
             <div className="card" style={{ padding: '1.1rem 1.25rem' }}>
               <div className="mono" style={{ color: 'var(--cyan)', marginBottom: '0.55rem' }}>Rewards and claiming profits</div>
-              <p style={{ margin: 0, color: 'rgba(255,255,255,0.8)', lineHeight: 1.65 }}>
+              <p style={{ margin: 0, color: 'rgba(199, 222, 248, 0.85)', lineHeight: 1.65 }}>
                 Relayers earn distribution from protocol activity based on participation and volume. Use staking controls in relayer onboarding to
                 review balances and claim available rewards.
               </p>
@@ -189,7 +191,7 @@ function RelayerStakerPage() {
 
             <div className="card" style={{ padding: '1.1rem 1.25rem' }}>
               <div className="mono" style={{ color: 'var(--cyan)', marginBottom: '0.55rem' }}>Local node testing</div>
-              <p style={{ margin: 0, color: 'rgba(255,255,255,0.8)', lineHeight: 1.65 }}>
+              <p style={{ margin: 0, color: 'rgba(199, 222, 248, 0.85)', lineHeight: 1.65 }}>
                 For local verification, run your relayer backend and open the operator dashboard locally. This lets you test staking status and
                 relayer readiness before running broader node operations.
               </p>
@@ -206,7 +208,7 @@ function RelayerStakerPage() {
           </div>
 
           <div style={{ marginTop: '1rem' }}>
-            <label className="mono" style={{ color: 'rgba(255,255,255,0.62)', fontSize: '0.72rem' }}>Relayer API endpoint</label>
+            <label className="mono" style={{ color: 'rgba(176, 203, 235, 0.72)', fontSize: '0.72rem' }}>Relayer API endpoint</label>
             <input
               value={apiBase}
               onChange={(e) => setApiBase(e.target.value)}
@@ -214,9 +216,9 @@ function RelayerStakerPage() {
                 marginTop: '0.35rem',
                 width: '100%',
                 borderRadius: 10,
-                border: '1px solid rgba(255,255,255,0.14)',
-                background: 'rgba(0,0,0,0.35)',
-                color: '#fff',
+                border: '1px solid rgba(138, 196, 255, 0.32)',
+                background: 'rgba(10, 21, 39, 0.62)',
+                color: 'rgba(229, 242, 255, 0.96)',
                 padding: '0.7rem 0.8rem',
               }}
             />
@@ -229,7 +231,14 @@ function RelayerStakerPage() {
 
 function EnterprisePage() {
   return (
-    <EnterpriseShell>
+    <EnterpriseShell
+      seo={{
+        title: 'Phantom Enterprise Suite | Payroll, Compliance, Governance',
+        description:
+          'Enterprise-facing flows for private payroll, compliance-ready reporting, and governance operations in Phantom Protocol.',
+        path: '/enterprise',
+      }}
+    >
       <Suspense fallback={<RouteLoader />}>
         <EnterpriseLayout><EnterpriseHomePage /></EnterpriseLayout>
       </Suspense>
@@ -237,14 +246,10 @@ function EnterprisePage() {
   );
 }
 
-function EnterpriseShell({ children }) {
+function EnterpriseShell({ children, seo }) {
   return (
     <div style={{ minHeight: '100vh' }}>
-      <SeoHead
-        title="Phantom Enterprise Suite | Payroll, Compliance, Governance"
-        description="Enterprise-facing flows for private payroll, compliance-ready reporting, and governance operations in Phantom Protocol."
-        path="/enterprise"
-      />
+      <SeoHead title={seo.title} description={seo.description} path={seo.path} />
       <Navbar />
       <section className="section" style={{ paddingTop: '7rem' }}>
         <div className="container">{children}</div>
@@ -253,7 +258,48 @@ function EnterpriseShell({ children }) {
   );
 }
 
-function LandingPage({ mousePos, handleMouseMove }) {
+function NotFoundPage() {
+  return (
+    <div style={{ minHeight: '100vh' }}>
+      <SeoHead
+        robots="noindex, follow"
+        title="Page not found | Phantom Protocol"
+        description="This URL is not a published page on phantomproto.com."
+        path="/404"
+      />
+      <Navbar />
+      <section className="section" style={{ paddingTop: '7rem' }}>
+        <div className="container" style={{ maxWidth: 640 }}>
+          <h1 className="display-lg" style={{ marginBottom: '0.75rem' }}>
+            Page not found
+          </h1>
+          <p style={{ color: 'rgba(255,255,255,0.78)', lineHeight: 1.65, marginBottom: '1.5rem' }}>
+            If you followed an old link, try the homepage or the product console.
+          </p>
+          <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+            <Link to="/" className="btn-outline btn-outline-cyan">
+              Home
+            </Link>
+            <Link to="/trade" className="btn-outline">
+              Trade
+            </Link>
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function UnknownRoutePage() {
+  const { pathname } = useLocation();
+  const slug = String(pathname || '').replace(/^\/+|\/+$/g, '');
+  if (slug && HOME_SCROLL_SECTION_IDS.has(slug)) {
+    return <LandingPage />;
+  }
+  return <NotFoundPage />;
+}
+
+function LandingPage() {
   const location = useLocation();
 
   useEffect(() => {
@@ -279,20 +325,9 @@ function LandingPage({ mousePos, handleMouseMove }) {
   }, [location.pathname]);
 
   return (
-    <main
-      onMouseMove={handleMouseMove}
-      style={{ position: 'relative', minHeight: '100vh' }}
-    >
-      {/* Custom Cursor */}
-      <div className="cursor-dot" style={{ left: mousePos.x, top: mousePos.y }} />
-      <div className="cursor-ring" style={{ left: mousePos.x, top: mousePos.y }} />
-
-      {/* Encryption / chain data layer (hex particles, interception zone) */}
+    <main style={{ position: 'relative', minHeight: '100vh' }}>
       <DataInterceptionBackground />
-
-      {/* Interactive lines background (nodes, links, mouse breaks links) */}
       <GhostChainVisualizer />
-
       {/* Logo Watermark — fixed, centered, z:0 */}
       <div className="watermark">
         <img src={logoUrl} alt="" aria-hidden="true" draggable="false" />
@@ -313,6 +348,7 @@ function LandingPage({ mousePos, handleMouseMove }) {
         <Benefits />
         <ComparisonTable />
         <TechCards />
+        <TokenomicsSection />
         <SDKSection />
         <MetricsVisualizer />
         <NewsSection />
@@ -338,13 +374,13 @@ function LandingPage({ mousePos, handleMouseMove }) {
               <Link to="/trade" className="hover-underline" style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--label-size)', fontWeight: 500, color: 'var(--cyan)', letterSpacing: '0.1em', textTransform: 'uppercase', textDecoration: 'none' }}>
                 Trade
               </Link>
-              <Link to="/user" className="hover-underline" style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--label-size)', fontWeight: 500, color: '#fff', letterSpacing: '0.1em', textTransform: 'uppercase', textDecoration: 'none' }}>
+              <Link to="/user" className="hover-underline" style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--label-size)', fontWeight: 500, color: 'rgba(225, 240, 255, 0.94)', letterSpacing: '0.1em', textTransform: 'uppercase', textDecoration: 'none' }}>
                 Console
               </Link>
-              <Link to="/phantom-protocol" className="hover-underline" style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--label-size)', fontWeight: 500, color: '#fff', letterSpacing: '0.1em', textTransform: 'uppercase', textDecoration: 'none' }}>
+              <Link to="/phantom-protocol" className="hover-underline" style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--label-size)', fontWeight: 500, color: 'rgba(225, 240, 255, 0.94)', letterSpacing: '0.1em', textTransform: 'uppercase', textDecoration: 'none' }}>
                 Phantom protocol
               </Link>
-              <Link to="/blog" className="hover-underline" style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--label-size)', fontWeight: 500, color: '#fff', letterSpacing: '0.1em', textTransform: 'uppercase', textDecoration: 'none' }}>
+              <Link to="/blog" className="hover-underline" style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--label-size)', fontWeight: 500, color: 'rgba(225, 240, 255, 0.94)', letterSpacing: '0.1em', textTransform: 'uppercase', textDecoration: 'none' }}>
                 Blog
               </Link>
               {SOCIAL_LINKS.map(({ name, href }) => (
@@ -354,7 +390,7 @@ function LandingPage({ mousePos, handleMouseMove }) {
                   target="_blank"
                   rel="noopener noreferrer"
                   className="hover-underline"
-                  style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--label-size)', fontWeight: 500, color: '#fff', letterSpacing: '0.1em', textTransform: 'uppercase', textDecoration: 'none', transition: 'color 0.3s' }}
+                  style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--label-size)', fontWeight: 500, color: 'rgba(225, 240, 255, 0.94)', letterSpacing: '0.1em', textTransform: 'uppercase', textDecoration: 'none', transition: 'color 0.3s' }}
                 >
                   {name}
                 </a>
@@ -367,25 +403,17 @@ function LandingPage({ mousePos, handleMouseMove }) {
   );
 }
 
-function App() {
-  const [mousePos, setMousePos] = useState({ x: -999, y: -999 });
-  const location = useLocation();
-  const isLanding = location.pathname === '/';
-
-  const handleMouseMove = (e) => {
-    setMousePos({ x: e.clientX, y: e.clientY });
-  };
-
+function PitchDeckRedirect() {
   useEffect(() => {
-    document.body.classList.toggle('landing-cursor-hidden', isLanding);
-    return () => {
-      document.body.classList.remove('landing-cursor-hidden');
-    };
-  }, [isLanding]);
+    window.location.href = '/pitchdeck.pdf';
+  }, []);
+  return null;
+}
 
+function App() {
   return (
     <Routes>
-      <Route path="/" element={<LandingPage mousePos={mousePos} handleMouseMove={handleMouseMove} />} />
+      <Route path="/" element={<LandingPage />} />
       <Route path="/user" element={<Navigate to="/trade" replace />} />
       <Route path="/trade" element={<TradePage />} />
       <Route path="/privacy-visibility" element={<PrivacyVisibilityPage />} />
@@ -412,10 +440,74 @@ function App() {
       ))}
       <Route path="/relayer" element={<RelayerStakerPage />} />
       <Route path="/enterprise" element={<EnterprisePage />} />
-      <Route path="/enterprise/payroll" element={<EnterpriseShell><Suspense fallback={<RouteLoader />}><EnterpriseLayout><PayrollPage /></EnterpriseLayout></Suspense></EnterpriseShell>} />
-      <Route path="/enterprise/compliance" element={<EnterpriseShell><Suspense fallback={<RouteLoader />}><EnterpriseLayout><CompliancePage /></EnterpriseLayout></Suspense></EnterpriseShell>} />
-      <Route path="/enterprise/governance" element={<EnterpriseShell><Suspense fallback={<RouteLoader />}><EnterpriseLayout><GovernancePage /></EnterpriseLayout></Suspense></EnterpriseShell>} />
-      <Route path="/enterprise/audit" element={<EnterpriseShell><Suspense fallback={<RouteLoader />}><EnterpriseLayout><AuditPage /></EnterpriseLayout></Suspense></EnterpriseShell>} />
+      <Route
+        path="/enterprise/payroll"
+        element={(
+          <EnterpriseShell
+            seo={{
+              title: 'Phantom Enterprise Payroll | Batch payouts and approvals',
+              description:
+                'Create, approve, and execute payroll runs against the Phantom enterprise API with idempotency and audit-friendly workflows.',
+              path: '/enterprise/payroll',
+            }}
+          >
+            <Suspense fallback={<RouteLoader />}>
+              <EnterpriseLayout><PayrollPage /></EnterpriseLayout>
+            </Suspense>
+          </EnterpriseShell>
+        )}
+      />
+      <Route
+        path="/enterprise/compliance"
+        element={(
+          <EnterpriseShell
+            seo={{
+              title: 'Phantom Enterprise Compliance | Screening and reporting keys',
+              description:
+                'Compliance demos: wallet screening decisions, tax reporting keys, and structured audit exports for enterprise operators.',
+              path: '/enterprise/compliance',
+            }}
+          >
+            <Suspense fallback={<RouteLoader />}>
+              <EnterpriseLayout><CompliancePage /></EnterpriseLayout>
+            </Suspense>
+          </EnterpriseShell>
+        )}
+      />
+      <Route
+        path="/enterprise/governance"
+        element={(
+          <EnterpriseShell
+            seo={{
+              title: 'Phantom Enterprise Governance | Proposals and votes',
+              description:
+                'Governance workspace for proposals, votes, and protocol parameter discussions in the Phantom enterprise suite.',
+              path: '/enterprise/governance',
+            }}
+          >
+            <Suspense fallback={<RouteLoader />}>
+              <EnterpriseLayout><GovernancePage /></EnterpriseLayout>
+            </Suspense>
+          </EnterpriseShell>
+        )}
+      />
+      <Route
+        path="/enterprise/audit"
+        element={(
+          <EnterpriseShell
+            seo={{
+              title: 'Phantom Enterprise Audit | Event stream and controls',
+              description:
+                'Review enterprise audit events and operational controls surfaced by the Phantom relayer dashboard.',
+              path: '/enterprise/audit',
+            }}
+          >
+            <Suspense fallback={<RouteLoader />}>
+              <EnterpriseLayout><AuditPage /></EnterpriseLayout>
+            </Suspense>
+          </EnterpriseShell>
+        )}
+      />
       <Route
         path="/phantom-protocol"
         element={
@@ -470,7 +562,8 @@ function App() {
           />
         }
       />
-      <Route path="*" element={<LandingPage mousePos={mousePos} handleMouseMove={handleMouseMove} />} />
+      <Route path="/pitchdeck" element={<PitchDeckRedirect />} />
+      <Route path="*" element={<UnknownRoutePage />} />
     </Routes>
   );
 }

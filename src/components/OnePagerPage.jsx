@@ -136,7 +136,6 @@ export default function OnePagerPage() {
           minHeight: '100vh',
           paddingTop: '7.5rem',
           paddingBottom: '3rem',
-          background: 'linear-gradient(160deg, #141418 0%, #101016 50%, #14141a 100%)',
         }}
       >
         <div className="container" style={{ maxWidth: '980px' }}>
