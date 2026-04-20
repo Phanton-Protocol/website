@@ -81,7 +81,7 @@ const HighTechBlock = ({ block, idx, enableDiagrams }) => {
         case 'h1':
             return (
                 <motion.div initial={{ opacity: 0, y: 30 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.8 }} key={idx} id={block.id} className="whitepaper-title-block" style={{ marginBottom: 'clamp(1.5rem, 5vw, 3rem)', position: 'relative' }}>
-                    <h1 className="whitepaper-h1" style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--whitepaper-h1)', color: '#fff', letterSpacing: '-0.02em', lineHeight: 1.08, textShadow: '0 0 40px rgba(158, 189, 220, 0.4)', scrollMarginTop: 'var(--whitepaper-scroll-margin)', overflowWrap: 'anywhere', maxWidth: '100%' }}>
+                    <h1 className="whitepaper-h1" style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--whitepaper-h1)', color: '#fff', letterSpacing: '-0.02em', lineHeight: 1.08, textShadow: '0 0 40px rgba(158, 164, 170, 0.4)', scrollMarginTop: 'var(--whitepaper-scroll-margin)', overflowWrap: 'anywhere', maxWidth: '100%' }}>
                         {block.content}
                     </h1>
                     <div style={{ height: '1px', width: '100%', background: 'linear-gradient(90deg, var(--cyan) 0%, transparent 100%)', marginTop: 'clamp(1rem, 3vw, 2rem)', opacity: 0.5 }} />
@@ -216,8 +216,11 @@ export default function WhitepaperPage() {
 
         const onResize = () => {
             headings = Array.from(document.querySelectorAll('h2, h3'));
-            const nextIsMobile = window.matchMedia?.('(pointer: coarse)')?.matches || window.innerWidth <= 900;
+            const coarse = window.matchMedia?.('(pointer: coarse)')?.matches;
+            const narrow = window.innerWidth <= 900;
+            const nextIsMobile = coarse || narrow;
             setIsMobile(nextIsMobile);
+            setEnableDiagrams(!(coarse || narrow));
         };
 
         window.addEventListener('scroll', onScroll, { passive: true });
@@ -254,7 +257,7 @@ export default function WhitepaperPage() {
                                 className="card"
                                 style={{
                                     padding: '0.95rem 1rem',
-                                    background: 'rgba(8, 18, 34, 0.72)',
+                                    background: 'rgba(2, 2, 2, 0.72)',
                                     borderColor: 'rgba(138, 196, 255, 0.26)',
                                 }}
                             >
@@ -340,7 +343,7 @@ export default function WhitepaperPage() {
                                                         transition: 'all 0.3s ease',
                                                         lineHeight: 1.4,
                                                         display: 'block',
-                                                        textShadow: isActive ? '0 0 10px rgba(158, 189, 220, 0.4)' : 'none',
+                                                        textShadow: isActive ? '0 0 10px rgba(158, 164, 170, 0.4)' : 'none',
                                                     }}
                                                     onMouseOver={(e) => { e.target.style.color = 'var(--cyan)'; }}
                                                     onMouseOut={(e) => { e.target.style.color = isActive ? 'var(--cyan)' : (item.type === 'h2' ? '#fff' : 'rgba(255,255,255,0.4)'); }}
