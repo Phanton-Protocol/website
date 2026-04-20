@@ -403,6 +403,13 @@ function LandingPage() {
   );
 }
 
+function PitchDeckRedirect() {
+  useEffect(() => {
+    window.location.href = '/pitchdeck.pdf';
+  }, []);
+  return null;
+}
+
 function App() {
   return (
     <Routes>
@@ -555,6 +562,7 @@ function App() {
           />
         }
       />
+      <Route path="/pitchdeck" element={<PitchDeckRedirect />} />
       <Route path="*" element={<UnknownRoutePage />} />
     </Routes>
   );
