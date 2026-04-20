@@ -37,6 +37,17 @@ async function idbSet(k, v) {
   });
 }
 
+async function idbDel(k) {
+  const db = await openDb();
+  return await new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE, "readwrite");
+    const store = tx.objectStore(STORE);
+    const req = store.delete(k);
+    req.onsuccess = () => resolve(true);
+    req.onerror = () => reject(req.error);
+  });
+}
+
 function bytesToB64(bytes) {
   let bin = "";
   for (let i = 0; i < bytes.length; i += 1) bin += String.fromCharCode(bytes[i]);
@@ -80,8 +91,19 @@ export async function loadVault({ signature }) {
   const key = await deriveKeyFromWalletSignature(signature);
   const encrypted = await idbGet(KEY);
   if (!encrypted) return { key, data: { notes: [], updatedAt: null } };
-  const data = await decryptJson(key, encrypted);
-  return { key, data };
+  try {
+    const data = await decryptJson(key, encrypted);
+    return { key, data };
+  } catch {
+    // Wrong key: e.g. unlock message used to include a timestamp so every signature differed.
+    // Clear unreadable blob so a stable message can succeed; old notes were not decryptable anyway.
+    try {
+      await idbDel(KEY);
+    } catch {
+      /* ignore */
+    }
+    return { key, data: { notes: [], updatedAt: null } };
+  }
 }
 
 export async function saveVault({ key, data }) {

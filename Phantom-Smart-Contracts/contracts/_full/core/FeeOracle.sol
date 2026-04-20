@@ -122,15 +122,9 @@ contract FeeOracle is IFeeOracle {
     ) public view override returns (uint256 tokenAmount) {
         if (usdValue == 0) return 0;
         uint256 tokenDecimals = _getTokenDecimals(token);
-        if (offchainOracle != address(0)) {
-            (uint256 price, uint256 updatedAt) = IOffchainPriceOracle(offchainOracle).getPrice(token);
-            require(price > 0, "FeeOracle: no offchain price");
-            require(block.timestamp - updatedAt <= 10 minutes, "FeeOracle: stale offchain price");
-            return (usdValue * (10 ** tokenDecimals)) / price;
-        }
-        address feed = priceFeeds[token];
-        require(feed != address(0), "FeeOracle: price feed not set");
-        return 0; // Placeholder when Chainlink not enabled
+        (uint256 price, bool hasPrice) = _getTokenPrice(token);
+        require(hasPrice && price > 0, "FeeOracle: price not available");
+        return (usdValue * (10 ** tokenDecimals)) / price;
     }
 
     /**
@@ -156,6 +150,8 @@ contract FeeOracle is IFeeOracle {
         address token,
         uint256 amount
     ) external view override returns (uint256 feeAmount) {
+        if (amount == 0) return 0;
+
         // Get USD value of the transaction
         uint256 usdValue = getUSDValue(token, amount);
         
@@ -164,12 +160,17 @@ contract FeeOracle is IFeeOracle {
         
         // Take the maximum of floor and percentage fee
         uint256 feeUSD = percentageFeeUSD > FEE_FLOOR_USD ? percentageFeeUSD : FEE_FLOOR_USD;
-        
-        // Convert USD fee back to token units
-        // feeAmount = (feeUSD * 10**tokenDecimals) / price
-        // Simplified for now - actual implementation needs token decimals and price conversion
-        uint256 tokenDecimals = _getTokenDecimals(token);
-        feeAmount = (feeUSD * (10 ** tokenDecimals)) / (10 ** PRICE_FEED_DECIMALS);
+
+        // Convert USD fee back to token units using real token price.
+        // If price is unavailable, fall back to percentage fee in token units (no USD floor),
+        // otherwise tiny testnet amounts get overcharged and swaps fail.
+        (uint256 price, bool hasPrice) = _getTokenPrice(token);
+        if (hasPrice && price > 0) {
+            uint256 tokenDecimals = _getTokenDecimals(token);
+            feeAmount = (feeUSD * (10 ** tokenDecimals)) / price;
+        } else {
+            feeAmount = (amount * FEE_PERCENTAGE) / (BASIS_POINTS * 100);
+        }
         
         // Ensure fee doesn't exceed transaction amount
         if (feeAmount > amount) {
@@ -177,6 +178,46 @@ contract FeeOracle is IFeeOracle {
         }
         
         return feeAmount;
+    }
+
+    function _getTokenPrice(address token) internal view returns (uint256 price, bool hasPrice) {
+        if (offchainOracle != address(0)) {
+            try IOffchainPriceOracle(offchainOracle).getPrice(token) returns (uint256 p, uint256 updatedAt) {
+                if (p > 0 && block.timestamp - updatedAt <= 10 minutes) {
+                    return (p, true);
+                }
+                return (0, false);
+            } catch {
+                return (0, false);
+            }
+        }
+
+        address feed = priceFeeds[token];
+        if (feed == address(0) || feed.code.length == 0) {
+            return (0, false);
+        }
+
+        try AggregatorV3Interface(feed).latestRoundData() returns (
+            uint80,
+            int256 answer,
+            uint256,
+            uint256 updatedAt,
+            uint80
+        ) {
+            if (answer <= 0 || block.timestamp - updatedAt > MAX_FEED_AGE_SECONDS) {
+                return (0, false);
+            }
+            uint8 feedDecimals = AggregatorV3Interface(feed).decimals();
+            if (feedDecimals == PRICE_FEED_DECIMALS) {
+                return (uint256(answer), true);
+            }
+            if (feedDecimals > PRICE_FEED_DECIMALS) {
+                return (uint256(answer) / (10 ** (feedDecimals - PRICE_FEED_DECIMALS)), true);
+            }
+            return (uint256(answer) * (10 ** (PRICE_FEED_DECIMALS - feedDecimals)), true);
+        } catch {
+            return (0, false);
+        }
     }
 
     function _getTokenDecimals(address token) internal view returns (uint256) {

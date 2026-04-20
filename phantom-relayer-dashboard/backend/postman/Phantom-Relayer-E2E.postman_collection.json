@@ -1,0 +1,167 @@
+{
+  "info": {
+    "_postman_id": "2f89cf2c-3a95-4bc5-8bd9-1e48d269ad4f",
+    "name": "Phantom Relayer E2E",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Smoke + guided E2E checks for Phantom relayer (run before DApp testing)."
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:5050" },
+    { "key": "chainSlug", "value": "bsc-testnet" },
+    { "key": "tokenIn", "value": "0xae13d989dac2f0debff460ac112a837c89baa7cd" },
+    { "key": "tokenOut", "value": "0x78867BbEeF44f2326bF8DDd1941a4439382EF2A7" },
+    { "key": "inputAssetId", "value": "0" },
+    { "key": "fullNoteWei", "value": "40000000000000000" },
+    { "key": "swapAmountWei", "value": "10000000000000000" },
+    { "key": "slippageBps", "value": "100" },
+    { "key": "commitmentHex", "value": "0x" },
+    { "key": "quoteAmountOut", "value": "" },
+    { "key": "quoteMinAmountOut", "value": "" },
+    { "key": "quoteGasRefundWei", "value": "" },
+    { "key": "feeTotalProtocolWei", "value": "" },
+    { "key": "proofJson", "value": "{}" },
+    { "key": "publicInputsJson", "value": "{}" }
+  ],
+  "item": [
+    {
+      "name": "00 - Health",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": { "raw": "{{baseUrl}}/health", "host": ["{{baseUrl}}"], "path": ["health"] }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('health is 200', function () { pm.response.to.have.status(200); });",
+              "var j = pm.response.json();",
+              "pm.test('backend live mode', function () { pm.expect(j.mode).to.eql('live'); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "01 - Config",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": { "raw": "{{baseUrl}}/config", "host": ["{{baseUrl}}"], "path": ["config"] }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('config is 200', function () { pm.response.to.have.status(200); });",
+              "var j = pm.response.json();",
+              "if (j && j.chainId) pm.collectionVariables.set('chainId', String(j.chainId));",
+              "pm.test('shieldedPool configured', function () { pm.expect(j.addresses && j.addresses.shieldedPool).to.be.ok; });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "02 - Swap Fee (full note)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/portfolio/swap-fee?inputAssetId={{inputAssetId}}&amount={{fullNoteWei}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["portfolio", "swap-fee"],
+          "query": [
+            { "key": "inputAssetId", "value": "{{inputAssetId}}" },
+            { "key": "amount", "value": "{{fullNoteWei}}" }
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('swap-fee is 200', function () { pm.response.to.have.status(200); });",
+              "var j = pm.response.json();",
+              "pm.collectionVariables.set('feeTotalProtocolWei', String(j.totalProtocolFee || '0'));",
+              "function decLt(a, b) { a = String(a).replace(/^0+/, '') || '0'; b = String(b).replace(/^0+/, '') || '0'; if (a.length !== b.length) return a.length < b.length; return a < b; }",
+              "var note = pm.collectionVariables.get('fullNoteWei');",
+              "var fee = pm.collectionVariables.get('feeTotalProtocolWei');",
+              "pm.test('fee less than note for viable swap', function () { pm.expect(decLt(fee, note), 'Fee >= full note; swap impossible').to.eql(true); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "03 - Quote",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"tokenIn\": \"{{tokenIn}}\",\n  \"tokenOut\": \"{{tokenOut}}\",\n  \"amountIn\": \"{{swapAmountWei}}\",\n  \"tokenInDecimals\": 18,\n  \"tokenOutDecimals\": 18,\n  \"slippageBps\": {{slippageBps}},\n  \"chainSlug\": \"{{chainSlug}}\"\n}"
+        },
+        "url": { "raw": "{{baseUrl}}/quote", "host": ["{{baseUrl}}"], "path": ["quote"] }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('quote is 200', function () { pm.response.to.have.status(200); });",
+              "var j = pm.response.json();",
+              "pm.collectionVariables.set('quoteAmountOut', String(j.amountOut || '0'));",
+              "pm.collectionVariables.set('quoteMinAmountOut', String(j.minAmountOut || '0'));",
+              "pm.collectionVariables.set('quoteGasRefundWei', String(j.suggestedGasRefundWei || '0'));",
+              "pm.test('quote has output', function () { pm.expect(String(j.amountOut || '0')).to.not.eql('0'); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "04 - Merkle Path (optional)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/merkle/{{commitmentHex}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["merkle", "{{commitmentHex}}"]
+        }
+      }
+    },
+    {
+      "name": "05 - Generate Swap Proof (template)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"inputNote\": {\n    \"assetID\": 0,\n    \"amount\": \"{{fullNoteWei}}\",\n    \"blindingFactor\": \"<from-vault-note>\",\n    \"ownerPublicKey\": \"<from-vault-note>\",\n    \"nullifier\": \"<computed-nullifier>\",\n    \"commitment\": \"<commitment-decimal>\"\n  },\n  \"outputNoteSwap\": {\n    \"assetID\": 1,\n    \"amount\": \"{{quoteAmountOut}}\",\n    \"blindingFactor\": \"<random-field-element>\",\n    \"commitment\": \"0\"\n  },\n  \"outputNoteChange\": {\n    \"assetID\": 0,\n    \"amount\": \"0\",\n    \"blindingFactor\": \"<random-field-element>\",\n    \"commitment\": \"0\"\n  },\n  \"merkleRoot\": \"<from-/merkle>\",\n  \"merklePath\": [\"<from-/merkle>\"],\n  \"merklePathIndices\": [\"<from-/merkle>\"],\n  \"swapAmount\": \"{{swapAmountWei}}\",\n  \"minOutputAmount\": \"{{quoteMinAmountOut}}\",\n  \"protocolFee\": \"{{feeTotalProtocolWei}}\",\n  \"gasRefund\": \"{{quoteGasRefundWei}}\"\n}"
+        },
+        "url": { "raw": "{{baseUrl}}/swap/generate-proof", "host": ["{{baseUrl}}"], "path": ["swap", "generate-proof"] }
+      }
+    },
+    {
+      "name": "06 - Submit Encrypted Swap (template)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"userAddress\": \"<wallet-address>\",\n  \"inputAssetID\": 0,\n  \"outputAssetIDSwap\": 1,\n  \"outputAssetIDChange\": 0,\n  \"inputAmount\": \"{{fullNoteWei}}\",\n  \"swapAmount\": \"{{swapAmountWei}}\",\n  \"minOutputAmountSwap\": \"{{quoteMinAmountOut}}\",\n  \"protocolFee\": \"{{feeTotalProtocolWei}}\",\n  \"gasRefund\": \"{{quoteGasRefundWei}}\",\n  \"deadline\": 1893456000,\n  \"nonce\": 1,\n  \"proof\": {{proofJson}},\n  \"publicInputs\": {{publicInputsJson}},\n  \"swapParams\": {\n    \"tokenIn\": \"{{tokenIn}}\",\n    \"tokenOut\": \"{{tokenOut}}\",\n    \"amountIn\": \"{{swapAmountWei}}\",\n    \"minAmountOut\": \"{{quoteMinAmountOut}}\",\n    \"fee\": 2500,\n    \"sqrtPriceLimitX96\": \"0\",\n    \"path\": \"0x\"\n  },\n  \"encryptedPayload\": \"0x\"\n}"
+        },
+        "url": { "raw": "{{baseUrl}}/swap/encrypted", "host": ["{{baseUrl}}"], "path": ["swap", "encrypted"] }
+      }
+    }
+  ]
+}

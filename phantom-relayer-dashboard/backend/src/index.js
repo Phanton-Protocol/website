@@ -29,7 +29,7 @@ const {
   saveDepositTxReceipt
 } = require("./db");
 const { mimc7 } = require("./mimc7");
-const { canonicalizeNote, noteIdFromCanonical } = require("./noteModel");
+const { canonicalizeNote, noteIdFromCanonical, normalizeHex32 } = require("./noteModel");
 const { encryptJsonAtRest, decryptJsonAtRest, getNotesEncryptionKey } = require("./noteCipher");
 const { buildMerklePath: buildMerklePath10, verifyMerklePath: verifyMerklePath10 } = require("./merkle10");
 const { toBigInt, toBigIntString } = require("./utils/bigint");
@@ -51,6 +51,18 @@ const {
   logModule4
 } = require("./module4Deposit");
 const { assertIntentNullifierMatchesSwapPublicInputs } = require("./swapIntentBinding");
+
+/** EIP-55 checksum; accepts any casing (fixes mixed-case typos from UIs / APIs). */
+function normalizeEvmAddress(addr) {
+  if (addr == null || addr === "") return addr;
+  const s = String(addr).trim();
+  if (s.toLowerCase() === ethers.ZeroAddress.toLowerCase()) return ethers.ZeroAddress;
+  try {
+    return ethers.getAddress(s);
+  } catch {
+    return ethers.getAddress(s.toLowerCase());
+  }
+}
 
 const app = express();
 app.use(express.json({ limit: "2mb" }));
@@ -96,6 +108,11 @@ const SHADOW_SWEEP_GAS_BUFFER_WEI = (() => {
 const CHAINALYSIS_ENABLED = process.env.CHAINALYSIS_ENABLED === "true";
 const CHAINALYSIS_API_KEY = String(process.env.CHAINALYSIS_API_KEY || "").trim();
 const CHAINALYSIS_API_URL = String(process.env.CHAINALYSIS_API_URL || "").trim();
+/** Free sanctions API: GET https://public.chainalysis.com/api/v1/address/{addr} + header X-API-Key */
+const CHAINALYSIS_USE_PUBLIC_SANCTIONS_API =
+  process.env.CHAINALYSIS_USE_PUBLIC_API === "true" ||
+  CHAINALYSIS_API_URL.includes("public.chainalysis.com") ||
+  (CHAINALYSIS_API_KEY && !CHAINALYSIS_API_URL);
 const rlBuckets = new Map();
 function rateLimit(req, res, next) {
   const key = req.ip || req.headers["x-forwarded-for"] || "unknown";
@@ -901,11 +918,12 @@ async function tryQuotePancakeV2Router(provider, tokenIn, tokenOut, amountInBn, 
   let tin;
   let tout;
   try {
-    tin = (tokenIn || "").toLowerCase() === zero ? wbnb : ethers.getAddress(tokenIn);
-    tout = (tokenOut || "").toLowerCase() === zero ? wbnb : ethers.getAddress(tokenOut);
+    tin = (tokenIn || "").toLowerCase() === zero ? wbnb : normalizeEvmAddress(tokenIn);
+    tout = (tokenOut || "").toLowerCase() === zero ? wbnb : normalizeEvmAddress(tokenOut);
   } catch {
     return null;
   }
+  if (tin.toLowerCase() === tout.toLowerCase()) return null;
   let hopPath = [tin, tout];
   if (pathHex && typeof pathHex === "string" && pathHex.length > 2) {
     try {
@@ -926,8 +944,8 @@ async function tryQuotePancakeV2Router(provider, tokenIn, tokenOut, amountInBn, 
 }
 
 function encodeV3Path(tokenIn, tokenOut, feeTier) {
-  const inHex = ethers.getAddress(tokenIn).toLowerCase().slice(2);
-  const outHex = ethers.getAddress(tokenOut).toLowerCase().slice(2);
+  const inHex = normalizeEvmAddress(tokenIn).toLowerCase().slice(2);
+  const outHex = normalizeEvmAddress(tokenOut).toLowerCase().slice(2);
   const feeHex = Number(feeTier).toString(16).padStart(6, "0");
   return `0x${inHex}${feeHex}${outHex}`;
 }
@@ -937,51 +955,62 @@ async function tryQuotePancakeV3Quoter(provider, tokenIn, tokenOut, amountInBn, 
   if (!quoterAddr) return null;
   const wbnb = getWbnbForChain();
   const zero = ethers.ZeroAddress.toLowerCase();
-  const inToken = String(tokenIn || "").toLowerCase() === zero ? wbnb : tokenIn;
-  const outToken = String(tokenOut || "").toLowerCase() === zero ? wbnb : tokenOut;
+  const inToken = String(tokenIn || "").toLowerCase() === zero ? wbnb : normalizeEvmAddress(tokenIn);
+  const outToken = String(tokenOut || "").toLowerCase() === zero ? wbnb : normalizeEvmAddress(tokenOut);
+  if (inToken.toLowerCase() === outToken.toLowerCase()) {
+    return null;
+  }
   const fee = Number(feeTier || 2500);
   const sqrtLimit = toBigInt(sqrtPriceLimitX96 || 0);
 
-  const params = {
-    tokenIn: ethers.getAddress(inToken),
-    tokenOut: ethers.getAddress(outToken),
+  const paramsV1 = {
+    tokenIn: inToken,
+    tokenOut: outToken,
     amountIn: amountInBn,
     fee,
     sqrtPriceLimitX96: sqrtLimit,
   };
-  const quoterAbi = [
-    "function quoteExactInputSingle((address tokenIn,address tokenOut,uint256 amountIn,uint24 fee,uint160 sqrtPriceLimitX96) params) external returns (uint256 amountOut,uint160,uint32,uint256)",
-    "function quoteExactInputSingle((address tokenIn,address tokenOut,uint24 fee,uint256 amountIn,uint160 sqrtPriceLimitX96) params) external returns (uint256 amountOut)",
-  ];
-  const quoter = new ethers.Contract(quoterAddr, quoterAbi, provider);
+  const paramsV2 = {
+    tokenIn: inToken,
+    tokenOut: outToken,
+    fee,
+    amountIn: amountInBn,
+    sqrtPriceLimitX96: sqrtLimit,
+  };
+  const quoterV1 = new ethers.Contract(
+    quoterAddr,
+    [
+      "function quoteExactInputSingle((address tokenIn,address tokenOut,uint256 amountIn,uint24 fee,uint160 sqrtPriceLimitX96) params) external view returns (uint256 amountOut,uint160,uint32,uint256)",
+    ],
+    provider
+  );
+  const quoterV2 = new ethers.Contract(
+    quoterAddr,
+    [
+      "function quoteExactInputSingle((address tokenIn,address tokenOut,uint24 fee,uint256 amountIn,uint160 sqrtPriceLimitX96) params) external view returns (uint256 amountOut)",
+    ],
+    provider
+  );
 
   let outAmount;
   try {
-    const result = await quoter.quoteExactInputSingle(params);
+    const result = await quoterV1.quoteExactInputSingle.staticCall(paramsV1);
     if (Array.isArray(result)) outAmount = toBigInt(result[0]);
     else outAmount = toBigInt(result);
   } catch (errPrimary) {
-    // Fallback tuple ordering (some periphery builds use fee before amountIn)
-    const fallbackParams = {
-      tokenIn: ethers.getAddress(inToken),
-      tokenOut: ethers.getAddress(outToken),
-      fee,
-      amountIn: amountInBn,
-      sqrtPriceLimitX96: sqrtLimit,
-    };
     try {
-      const result = await quoter.quoteExactInputSingle(fallbackParams);
+      const result = await quoterV2.quoteExactInputSingle.staticCall(paramsV2);
       if (Array.isArray(result)) outAmount = toBigInt(result[0]);
       else outAmount = toBigInt(result);
-    } catch (_) {
+    } catch {
       throw errPrimary;
     }
   }
 
   return {
     outAmount,
-    tokenIn: ethers.getAddress(inToken),
-    tokenOut: ethers.getAddress(outToken),
+    tokenIn: normalizeEvmAddress(inToken),
+    tokenOut: normalizeEvmAddress(outToken),
     feeTier: fee,
     sqrtPriceLimitX96: sqrtLimit.toString(),
     path: encodeV3Path(inToken, outToken, fee),
@@ -1393,8 +1422,8 @@ async function persistSwapOutputNotes({ txHash, ownerAddress, noteHints, publicI
 
   const swapCanonical = canonicalizeNote(noteHints.swap);
   const changeCanonical = canonicalizeNote(noteHints.change);
-  const expectedSwap = String(publicInputs?.outputCommitmentSwap || "").toLowerCase();
-  const expectedChange = String(publicInputs?.outputCommitmentChange || "").toLowerCase();
+  const expectedSwap = normalizeHex32(publicInputs?.outputCommitmentSwap ?? 0).toLowerCase();
+  const expectedChange = normalizeHex32(publicInputs?.outputCommitmentChange ?? 0).toLowerCase();
   if (swapCanonical.commitment.toLowerCase() !== expectedSwap) {
     throw new Error("Swap note hint commitment mismatch with proof public input");
   }
@@ -1435,76 +1464,66 @@ async function persistSwapOutputNotes({ txHash, ownerAddress, noteHints, publicI
   };
 }
 
-async function screenWithdrawRecipient(addr) {
+async function chainalysisScreenAddress(addr, opts = {}) {
+  const { notAllowedMessage = "chainalysis_address_not_allowed", label = "module6" } = opts;
   if (!CHAINALYSIS_ENABLED) return { ok: true, skipped: true };
-  if (!CHAINALYSIS_API_URL || !CHAINALYSIS_API_KEY) {
-    console.warn("[module6] CHAINALYSIS_ENABLED but API URL/KEY missing; skipping recipient screen");
+  if (!CHAINALYSIS_API_KEY) {
+    console.warn(`[${label}] CHAINALYSIS_ENABLED but CHAINALYSIS_API_KEY missing; skipping screen`);
     return { ok: true, skipped: true };
   }
+  if (!CHAINALYSIS_USE_PUBLIC_SANCTIONS_API && !CHAINALYSIS_API_URL) {
+    console.warn(`[${label}] CHAINALYSIS_ENABLED but CHAINALYSIS_API_URL missing; skipping screen`);
+    return { ok: true, skipped: true };
+  }
+  const checksum = ethers.getAddress(addr);
   try {
-    const r = await axios.post(
-      CHAINALYSIS_API_URL,
-      { address: ethers.getAddress(addr) },
-      {
+    let r;
+    if (CHAINALYSIS_USE_PUBLIC_SANCTIONS_API) {
+      const url = `https://public.chainalysis.com/api/v1/address/${checksum}`;
+      r = await axios.get(url, {
         timeout: 12_000,
         validateStatus: () => true,
-        headers: {
-          Authorization: `Bearer ${CHAINALYSIS_API_KEY}`,
-        },
-      }
-    );
+        headers: { "X-API-Key": CHAINALYSIS_API_KEY },
+      });
+    } else {
+      r = await axios.post(
+        CHAINALYSIS_API_URL,
+        { address: checksum },
+        {
+          timeout: 12_000,
+          validateStatus: () => true,
+          headers: { Authorization: `Bearer ${CHAINALYSIS_API_KEY}` },
+        }
+      );
+    }
     if (r.status >= 400) {
       const e = new Error(`chainalysis_http_${r.status}`);
       e.status = 403;
       throw e;
     }
-    if (r.data?.blocked === true || String(r.data?.risk || "").toLowerCase() === "severe") {
-      const e = new Error("chainalysis_recipient_not_allowed");
+    const idents = r.data?.identifications;
+    const sanctionsHit =
+      Array.isArray(idents) &&
+      idents.some((x) => String(x?.category || "").toLowerCase() === "sanctions");
+    if (sanctionsHit || r.data?.blocked === true || String(r.data?.risk || "").toLowerCase() === "severe") {
+      const e = new Error(notAllowedMessage);
       e.status = 403;
       throw e;
     }
     return { ok: true };
   } catch (e) {
     if (e.status) throw e;
-    console.warn("[module6] Chainalysis request failed (non-fatal):", e.message || e);
+    console.warn(`[${label}] Chainalysis request failed (non-fatal):`, e.message || e);
     return { ok: true, warn: String(e.message || e) };
   }
 }
 
+async function screenWithdrawRecipient(addr) {
+  return chainalysisScreenAddress(addr, { notAllowedMessage: "chainalysis_recipient_not_allowed", label: "module6" });
+}
+
 async function screenDepositDepositor(addr, source = "deposit") {
-  if (!CHAINALYSIS_ENABLED) return { ok: true, skipped: true };
-  if (!CHAINALYSIS_API_URL || !CHAINALYSIS_API_KEY) {
-    console.warn(`[${source}] CHAINALYSIS_ENABLED but API URL/KEY missing; skipping depositor screen`);
-    return { ok: true, skipped: true };
-  }
-  try {
-    const r = await axios.post(
-      CHAINALYSIS_API_URL,
-      { address: ethers.getAddress(addr) },
-      {
-        timeout: 12_000,
-        validateStatus: () => true,
-        headers: {
-          Authorization: `Bearer ${CHAINALYSIS_API_KEY}`,
-        },
-      }
-    );
-    if (r.status >= 400) {
-      const e = new Error(`chainalysis_http_${r.status}`);
-      e.status = 403;
-      throw e;
-    }
-    if (r.data?.blocked === true || String(r.data?.risk || "").toLowerCase() === "severe") {
-      const e = new Error("chainalysis_depositor_not_allowed");
-      e.status = 403;
-      throw e;
-    }
-    return { ok: true };
-  } catch (e) {
-    if (e.status) throw e;
-    console.warn(`[${source}] Chainalysis request failed (non-fatal):`, e.message || e);
-    return { ok: true, warn: String(e.message || e) };
-  }
+  return chainalysisScreenAddress(addr, { notAllowedMessage: "chainalysis_depositor_not_allowed", label: source });
 }
 
 async function persistWithdrawChangeNote({ txHash, ownerAddress, noteHints, publicInputs }) {
@@ -1524,7 +1543,7 @@ async function persistWithdrawChangeNote({ txHash, ownerAddress, noteHints, publ
     } catch (_) {}
   }
   const changeCanonical = canonicalizeNote(noteHints.change);
-  const expectedChange = String(publicInputs?.outputCommitmentChange || "").toLowerCase();
+  const expectedChange = normalizeHex32(publicInputs?.outputCommitmentChange ?? 0).toLowerCase();
   if (changeCanonical.commitment.toLowerCase() !== expectedChange) {
     throw new Error("Withdraw change note hint commitment mismatch with proof public input");
   }
@@ -2225,7 +2244,20 @@ app.post("/quote", async (req, res) => {
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.flatten() });
   }
-  const { tokenIn, tokenOut, amountIn, tokenInDecimals, tokenOutDecimals, slippageBps, chainSlug, feeTier, sqrtPriceLimitX96, deadlineSec } = parsed.data;
+  let { tokenIn, tokenOut, amountIn, tokenInDecimals, tokenOutDecimals, slippageBps, chainSlug, feeTier, sqrtPriceLimitX96, deadlineSec } = parsed.data;
+  try {
+    tokenIn = normalizeEvmAddress(tokenIn);
+    tokenOut = normalizeEvmAddress(tokenOut);
+  } catch (e) {
+    return res.status(400).json({ error: "invalid_token_address", message: e?.message || String(e) });
+  }
+
+  if (tokenIn.toLowerCase() === tokenOut.toLowerCase()) {
+    return res.status(400).json({
+      error: "identical_token_in_out",
+      message: "tokenIn and tokenOut resolve to the same address (e.g. both native/tBNB). Pick two different assets for a swap quote.",
+    });
+  }
 
   if (RPC_URL) {
     try {
@@ -2282,8 +2314,8 @@ app.post("/quote", async (req, res) => {
       const amountInBn = parseAmount(amountIn);
 
       const swapParams = {
-        tokenIn,
-        tokenOut,
+        tokenIn: normalizeEvmAddress(tokenIn),
+        tokenOut: normalizeEvmAddress(tokenOut),
         amountIn: amountInBn,
         minAmountOut: 0,
         fee: 0,
@@ -4145,8 +4177,14 @@ function decodeSwapError(err) {
       const codes = {
         5: "PoolErr(5): Protocol fee mismatch — backend fee ≠ contract. Check /portfolio/swap-fee and FeeOracle.",
         6: "PoolErr(6): Invalid proof — verify proof inputs and circuit match.",
+        7: "PoolErr(7): gasRefund exceeds input amount.",
         11: "PoolErr(11): Invalid asset — assetRegistry not set for this assetId.",
         15: "PoolErr(15): Slippage exceeded — swap output < minOutputAmount. Increase slippage or retry.",
+        19: "PoolErr(19): Change note is zero. Lower swap amount or gasRefund so a positive change remains.",
+        40: "PoolErr(40): Threshold verifier rejected the proof bundle.",
+        41: "PoolErr(41): Merkle root mismatch. Refresh Merkle data and regenerate proof.",
+        42: "PoolErr(42): Merkle path invalid for the selected note commitment.",
+        43: "PoolErr(43): Conservation mismatch. inputAmount must equal swap + change + protocolFee + gasRefund.",
         24: "PoolErr(24): Portfolio state mismatch — commitment/nonce changed. Refresh and rebuild proof.",
         25: "PoolErr(25): Invalid nonce — newNonce must equal oldNonce + 1."
       };
