@@ -7,6 +7,7 @@
  * Env (optional — only set what you need):
  * - ASSET_1_SYMBOL, ASSET_1_ADDRESS — e.g. USDT testnet token → registered as assetId 1
  * - ASSET_2_SYMBOL, ASSET_2_ADDRESS — assetId 2
+ * - OFFCHAIN_ORACLE_ADDRESS — optional signed-price oracle (preferred when Chainlink feed unavailable)
  * - BNB_USD_FEED — Chainlink BNB/USD for address(0) (BSC testnet feed address)
  * - ASSET_1_USD_FEED — USD feed for ASSET_1 (token/USD aggregator)
  * - ASSET_2_USD_FEED
@@ -29,6 +30,11 @@ async function main() {
 
   const pool = await ethers.getContractAt("ShieldedPool", poolAddr);
   const feeOracle = await ethers.getContractAt("FeeOracle", feeOracleAddr);
+  const offchainOracle = process.env.OFFCHAIN_ORACLE_ADDRESS?.trim();
+  if (offchainOracle) {
+    await (await feeOracle.connect(deployer).setOffchainOracle(offchainOracle)).wait();
+    console.log("FeeOracle: set offchain oracle ->", offchainOracle);
+  }
 
   const bnbFeed = process.env.BNB_USD_FEED?.trim();
   if (bnbFeed) {

@@ -23,6 +23,7 @@ async function main() {
   const stakeAmountHuman = String(process.env.STAKE_AMOUNT_SHDW || "1000").trim();
   const transferAmountHuman = String(process.env.TRANSFER_AMOUNT_SHDW || "10000").trim();
   const existingOffchainOracle = String(process.env.EXISTING_OFFCHAIN_ORACLE || "").trim();
+  const bnbUsdFeed = String(process.env.BNB_USD_FEED || "").trim();
 
   if (!walletBPrivateKey) {
     throw new Error("WALLET_B_PRIVATE_KEY is required");
@@ -56,6 +57,11 @@ async function main() {
     const tx = await feeOracle.setOffchainOracle(existingOffchainOracle);
     await tx.wait();
     console.log("[path-b] FeeOracle.offchainOracle set:", existingOffchainOracle);
+  }
+  if (bnbUsdFeed) {
+    const tx = await feeOracle.setPriceFeed(ethers.ZeroAddress, bnbUsdFeed);
+    await tx.wait();
+    console.log("[path-b] FeeOracle BNB/USD feed set:", bnbUsdFeed);
   }
 
   const ReducedPool = await ethers.getContractFactory("ShieldedPoolUpgradeableReduced");

@@ -39,6 +39,16 @@ async function main() {
   const feeOracle = await FeeOracle.deploy();
   await feeOracle.waitForDeployment();
   const feeOracleAddr = await feeOracle.getAddress();
+  const offchainOracle = String(process.env.OFFCHAIN_ORACLE_ADDRESS || "").trim();
+  if (offchainOracle) {
+    await (await feeOracle.setOffchainOracle(offchainOracle)).wait();
+    console.log("FeeOracle.offchainOracle:", offchainOracle);
+  }
+  const bnbUsdFeed = String(process.env.BNB_USD_FEED || "").trim();
+  if (bnbUsdFeed) {
+    await (await feeOracle.setPriceFeed(ethers.ZeroAddress, bnbUsdFeed)).wait();
+    console.log("FeeOracle BNB/USD feed:", bnbUsdFeed);
+  }
 
   const RelayerRegistry = await ethers.getContractFactory("RelayerRegistry");
   const relayerRegistry = await RelayerRegistry.deploy();
