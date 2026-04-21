@@ -39,7 +39,7 @@ npm run build
 
 **Config:** At build time the app uses:
 
-- `VITE_API_URL` — backend API base (e.g. `http://localhost:5050` for local, or your Render URL).
+- `VITE_API_URL` — backend API base (e.g. `https://relayers-backend.onrender.com` or `http://localhost:5050` for local).
 - At runtime it also loads `/config.json` (from `frontend/public/config.json`) for contract addresses.
 
 Keep **frontend/public/config.json** in sync with your backend/chain:
@@ -49,7 +49,7 @@ Keep **frontend/public/config.json** in sync with your backend/chain:
 Dev server:
 
 ```bash
-VITE_API_URL=http://localhost:5050 npm run dev
+VITE_API_URL=https://relayers-backend.onrender.com npm run dev
 ```
 
 Production: set `VITE_API_URL` in your host (e.g. Vercel/Render env) and serve the `frontend/dist` output.

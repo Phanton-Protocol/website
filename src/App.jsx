@@ -102,7 +102,7 @@ function TradePage() {
 }
 
 function RelayerStakerPage() {
-  const [apiBase, setApiBase] = useState(() => localStorage.getItem('phantom_api') || 'http://localhost:5050');
+  const [apiBase, setApiBase] = useState(() => localStorage.getItem('phantom_api') || 'https://relayers-backend.onrender.com');
   const [health, setHealth] = useState(null);
   const [stakingStats, setStakingStats] = useState(null);
   const [relayerStatus, setRelayerStatus] = useState(null);

@@ -243,7 +243,7 @@ function getExplorerTxBase(chainId) {
 }
 
 export default function ProtocolUserDapp({ uiVariant = "default" }) {
-  const [apiBase, setApiBase] = useState(() => localStorage.getItem("phantom_api") || "http://localhost:5050");
+  const [apiBase, setApiBase] = useState(() => localStorage.getItem("phantom_api") || "https://relayers-backend.onrender.com");
   const base = useMemo(() => (apiBase || "").replace(/\/$/, "").trim(), [apiBase]);
   const [cfg, setCfg] = useState(null);
   const [health, setHealth] = useState(null);

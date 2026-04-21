@@ -9,7 +9,7 @@ export const RUNBOOK_URL = `${GITHUB_URL}/core/blob/main/RUNBOOK.md`;
 
 export const API_URL = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_URL)
   ? import.meta.env.VITE_API_URL
-  : 'https://phantom-protocol.onrender.com';
+  : 'https://relayers-backend.onrender.com';
 
 export const API_URLS = (() => {
   const fromMany = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_URLS)
