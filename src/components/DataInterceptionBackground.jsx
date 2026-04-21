@@ -54,10 +54,10 @@ class Particle {
             const offsetY = (Math.random() - 0.5) * 10;
             ctx.fillText(this.text, this.x + offsetX, this.y + offsetY);
 
-            ctx.fillStyle = `rgba(0, 243, 255, ${this.opacity * 0.2})`;
+            ctx.fillStyle = `rgba(158, 164, 170, ${this.opacity * 0.2})`;
             ctx.fillText(this.text, this.x - offsetX, this.y - offsetY);
         } else {
-            ctx.fillStyle = `rgba(0, 243, 255, ${this.opacity})`;
+            ctx.fillStyle = `rgba(158, 164, 170, ${this.opacity})`;
             ctx.fillText(this.text, this.x, this.y);
         }
     }

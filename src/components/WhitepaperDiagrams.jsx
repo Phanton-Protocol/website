@@ -41,10 +41,6 @@ const ShadowAddress = ({ x: px, y: py, label = "SHADOW", color = "var(--cyan)", 
     const animated = canAnimateDiagrams();
     return (
         <motion.g variants={itemVariants} style={{ transformOrigin: `${x}px ${y}px` }}>
-            <circle cx={x} cy={y} r="35" fill="rgba(0,0,0,0.8)" stroke={color} strokeWidth="2" strokeDasharray="4 4" style={{ filter: animated ? `drop-shadow(0 0 10px ${color})` : 'none' }}>
-                {animated && <animateTransform attributeName="transform" type="rotate" from={`0 ${x} ${y}`} to={`360 ${x} ${y}`} dur={dur} repeatCount="indefinite" />}
-            </circle>
-            <circle cx={x} cy={y} r="25" fill={`${color.replace('1)', '0.1)')}`} />
             <text x={x} y={y - 5} fill="#fff" fontFamily="var(--font-mono)" fontSize="10" textAnchor="middle" style={{ letterSpacing: '0.05em' }}>{label}</text>
             <text x={x} y={y + 8} fill={color} fontFamily="var(--font-mono)" fontSize="10" textAnchor="middle" style={{ letterSpacing: '0.05em' }}>ADDRESS</text>
         </motion.g>
@@ -56,7 +52,7 @@ const TechBox = ({ x: px, y: py, w: pw, h: ph, title, subtitle, isDashed = false
     return (
         <motion.g variants={itemVariants}>
             <rect x={x} y={y} width={w} height={h} fill="rgba(0,0,0,0.6)" stroke={isDashed ? color : `rgba(255,255,255,0.15)`} strokeWidth="1.5" strokeDasharray={isDashed ? "4 4" : "none"} rx="4" />
-            <rect x={x} y={y} width="4" height={h} fill={color} rx="2" style={{ filter: `drop-shadow(0 0 5px ${color})` }} />
+            <rect x={x} y={y} width="4" height={h} fill={color} rx="2" style={{ filter: 'none' }} />
             <text x={x + w / 2} y={subtitle ? y + h / 2 - 4 : y + h / 2 + 4} fill="#fff" fontFamily="var(--font-mono)" fontSize="12" textAnchor="middle">{title}</text>
             {subtitle && <text x={x + w / 2} y={y + h / 2 + 12} fill={color} fontFamily="var(--font-system)" fontSize="10" textAnchor="middle">{subtitle}</text>}
         </motion.g>
@@ -67,7 +63,6 @@ const UserIcon = ({ x: px, y: py, label, label2, color = "var(--cyan)" }) => {
     const x = Number(px), y = Number(py);
     return (
         <motion.g variants={itemVariants}>
-            <circle cx={x} cy={y} r="30" fill="rgba(20,20,20,1)" stroke={color} strokeWidth="2" style={{ filter: `drop-shadow(0 0 8px ${color})` }} />
             <text x={x} y={y + 4} fill="#fff" fontFamily="var(--font-mono)" fontSize="11" fontWeight="bold" textAnchor="middle">USER</text>
             <text x={x} y={y + 48} fill="rgba(255,255,255,0.8)" fontFamily="var(--font-mono)" fontSize="11" textAnchor="middle">{label}</text>
             {label2 && <text x={x} y={y + 65} fill={color} fontFamily="var(--font-mono)" fontSize="10" textAnchor="middle">{label2}</text>}
@@ -79,7 +74,7 @@ const CloudAPI = ({ x: px, y: py, label, subtitle, color = "var(--cyan)" }) => {
     const x = Number(px), y = Number(py);
     return (
         <motion.g variants={itemVariants}>
-            <path d={`M ${x} ${y + 10} C ${x - 20} ${y + 10}, ${x - 20} ${y - 20}, ${x} ${y - 20} C ${x + 10} ${y - 40}, ${x + 50} ${y - 40}, ${x + 60} ${y - 20} C ${x + 80} ${y - 20}, ${x + 80} ${y + 10}, ${x + 60} ${y + 10} Z`} fill={`${color.replace('1)', '0.1)')}`} stroke={color} strokeWidth="1.5" style={{ filter: `drop-shadow(0 0 5px ${color})` }} />
+            <path d={`M ${x} ${y + 10} C ${x - 20} ${y + 10}, ${x - 20} ${y - 20}, ${x} ${y - 20} C ${x + 10} ${y - 40}, ${x + 50} ${y - 40}, ${x + 60} ${y - 20} C ${x + 80} ${y - 20}, ${x + 80} ${y + 10}, ${x + 60} ${y + 10} Z`} fill={`${color.replace('1)', '0.1)')}`} stroke={color} strokeWidth="1.5" style={{ filter: 'none' }} />
             <text x={x + 30} y={y - 12} fill="#fff" fontFamily="var(--font-mono)" fontSize="12" fontWeight="bold" textAnchor="middle">{label}</text>
             {subtitle && <text x={x + 30} y={y + 2} fill={color} fontFamily="var(--font-system)" fontSize="10" textAnchor="middle">{subtitle}</text>}
         </motion.g>
@@ -93,7 +88,7 @@ const Connection = ({ start, points, end, label, labelYOffset = -8, labelX, labe
         <motion.g variants={itemVariants}>
             <motion.path d={d} fill="none" stroke={color} strokeWidth={style === "dashed" ? "1.5" : "1.5"} strokeDasharray={style === "dashed" ? "4,4" : "0"} initial={{ pathLength: 0, opacity: 0 }} whileInView={{ pathLength: 1, opacity: 0.6 }} viewport={{ once: true }} transition={{ duration: 1.5, delay }} />
             {animated && style === "solid" && (
-                <motion.circle r="3" fill="#fff" style={{ filter: `drop-shadow(0 0 5px ${color})` }}>
+                <motion.circle r="3" fill="#fff" style={{ filter: 'none' }}>
                     <animateMotion dur={dur} repeatCount="indefinite" path={d} begin={`${delay}s`} />
                 </motion.circle>
             )}
@@ -126,7 +121,7 @@ const NoteNode = ({ x: px, y: py, color = "var(--cyan)" }) => {
                 fill={`${color.replace('1)', '0.08)')}`}
                 stroke={color} strokeWidth="1.5"
                 strokeDasharray="3 3"
-                style={{ filter: `drop-shadow(0 0 8px ${color})` }} />
+                style={{ filter: 'none' }} />
             <text x={x} y={y - 3} fill="#fff" fontFamily="var(--font-mono)" fontSize="10" fontWeight="bold" textAnchor="middle">NOTE</text>
             <text x={x} y={y + 11} fill={color} fontFamily="var(--font-system)" fontSize="9" textAnchor="middle">Encrypted</text>
         </motion.g>
@@ -136,7 +131,7 @@ const NoteNode = ({ x: px, y: py, color = "var(--cyan)" }) => {
 
 export const MasterPhantomDiagram = () => {
     const colors = {
-        cyan: "rgba(158, 189, 220, 1)",
+        cyan: "rgba(158, 164, 170, 1)",
         rose: "rgba(244, 63, 94, 1)",
         purple: "rgba(168, 85, 247, 1)",
         yellow: "rgba(234, 179, 8, 1)",
@@ -167,7 +162,7 @@ export const MasterPhantomDiagram = () => {
                     <path d="M 35 75 L 65 75" stroke={colors.rose} strokeWidth="1.5" />
                     <text x="75" y="78" fill="rgba(255,255,255,0.7)" fontFamily="var(--font-system)" fontSize="11">External / Unshielded</text>
 
-                    <circle cx="50" cy="98" r="8" fill="rgba(0,0,0,0.8)" stroke="rgba(158, 189, 220,0.8)" strokeDasharray="2 2" />
+                    <circle cx="50" cy="98" r="8" fill="rgba(0,0,0,0.8)" stroke="rgba(158, 164, 170,0.8)" strokeDasharray="2 2" />
                     <text x="75" y="101" fill="rgba(255,255,255,0.7)" fontFamily="var(--font-system)" fontSize="11">Temporary Note</text>
                 </motion.g>
 
@@ -187,9 +182,9 @@ export const MasterPhantomDiagram = () => {
                 {/* PHANTOM POOL SHIELD */}
                 <motion.g variants={itemVariants}>
                     {/* Inner glowing dash line */}
-                    <path d={shieldBasePath} transform={shieldInnerTransform} fill="none" stroke="rgba(158, 189, 220, 0.4)" strokeWidth="1" strokeDasharray="6 4" />
+                    <path d={shieldBasePath} transform={shieldInnerTransform} fill="none" stroke="rgba(158, 164, 170, 0.4)" strokeWidth="1" strokeDasharray="6 4" />
                     {/* Outer solid panel */}
-                    <path d={shieldBasePath} transform={shieldOuterTransform} fill="rgba(158, 189, 220,0.03)" stroke={colors.cyan} strokeWidth="2" style={{ filter: `drop-shadow(0 0 20px rgba(158, 189, 220, 0.15))` }} />
+                    <path d={shieldBasePath} transform={shieldOuterTransform} fill="rgba(158, 164, 170,0.03)" stroke={colors.cyan} strokeWidth="2" style={{ filter: 'none' }} />
                     <text x="820" y="170" fill={colors.cyan} fontFamily="var(--font-editorial)" fontSize="26" textAnchor="middle" letterSpacing="0.1em">PHANTOM POOL</text>
                 </motion.g>
 
@@ -208,7 +203,7 @@ export const MasterPhantomDiagram = () => {
                 <Connection start={{ x: 118, y: 390 }} points={[]} end={{ x: 180, y: 390 }} style="dashed" label="Encrypted Data" labelX={145} labelY={372} color={colors.cyan} />
 
                 <motion.rect variants={itemVariants} x="40" y="555" width="100" height="60" fill="rgba(0,0,0,0.6)" stroke={colors.yellow} strokeWidth="1.5" rx="4" />
-                <motion.rect variants={itemVariants} x="40" y="555" width="4" height="60" fill={colors.yellow} rx="2" style={{ filter: `drop-shadow(0 0 5px ${colors.yellow})` }} />
+                <motion.rect variants={itemVariants} x="40" y="555" width="4" height="60" fill={colors.yellow} rx="2" style={{ filter: 'none' }} />
                 <motion.g variants={itemVariants}>
                     <text x="90" y="580" fill="#fff" fontFamily="var(--font-mono)" fontSize="12" textAnchor="middle">Company</text>
                     <text x="90" y="598" fill={colors.yellow} fontFamily="var(--font-system)" fontSize="10" textAnchor="middle">(Payroll / B2B)</text>
@@ -258,7 +253,7 @@ export const MasterPhantomDiagram = () => {
                 {/* Admin Approval Gate — Company Vendor only */}
                 <Connection start={{ x: 1080, y: 437 }} points={[]} end={{ x: 1090, y: 437 }} style="dashed" color={colors.yellow} />
                 <motion.g variants={itemVariants}>
-                    <polygon points="1090,411 1126,411 1140,425 1140,455 1126,469 1090,469 1076,455 1076,425" fill="rgba(234,179,8,0.1)" stroke={colors.yellow} strokeWidth="1.5" style={{ filter: `drop-shadow(0 0 8px ${colors.yellow})` }} />
+                    <polygon points="1090,411 1126,411 1140,425 1140,455 1126,469 1090,469 1076,455 1076,425" fill="rgba(234,179,8,0.1)" stroke={colors.yellow} strokeWidth="1.5" style={{ filter: 'none' }} />
                     <text x="1108" y="437" fill="#fff" fontFamily="var(--font-mono)" fontSize="10" textAnchor="middle" fontWeight="bold">ADMIN</text>
                     <text x="1108" y="453" fill={colors.yellow} fontFamily="var(--font-system)" fontSize="9" textAnchor="middle">APPROVAL</text>
                 </motion.g>
@@ -376,7 +371,7 @@ const BankNode = ({ x: px, y: py, label, color = "var(--cyan)", active = false }
                     {animated && <animateTransform attributeName="transform" type="rotate" from={`0 ${x} ${y}`} to={`360 ${x} ${y}`} dur="5s" repeatCount="indefinite" />}
                 </circle>
             )}
-            <polygon points={`${x},${y-s} ${x+s-4},${y-s/2} ${x+s-4},${y+s/2} ${x},${y+s} ${x-s+4},${y+s/2} ${x-s+4},${y-s/2}`} fill={`${color.replace('1)', '0.05)')}`} stroke={color} strokeWidth="1.5" style={{ filter: animated ? `drop-shadow(0 0 8px ${color})` : 'none' }} />
+            <polygon points={`${x},${y-s} ${x+s-4},${y-s/2} ${x+s-4},${y+s/2} ${x},${y+s} ${x-s+4},${y+s/2} ${x-s+4},${y-s/2}`} fill={`${color.replace('1)', '0.05)')}`} stroke={color} strokeWidth="1.5" style={{ filter: 'none' }} />
             <circle cx={x} cy={y} r={s - 8} fill="none" stroke={color} strokeWidth="1" strokeDasharray="3 3" opacity="0.4">
                 {animated && <animateTransform attributeName="transform" type="rotate" from={`360 ${x} ${y}`} to={`0 ${x} ${y}`} dur="10s" repeatCount="indefinite" />}
             </circle>
@@ -388,7 +383,7 @@ const BankNode = ({ x: px, y: py, label, color = "var(--cyan)", active = false }
 export const PhantomBankSystemDiagram = () => {
     const animated = canAnimateDiagrams();
     const colors = {
-        cyan: "rgba(158, 189, 220, 1)",
+        cyan: "rgba(158, 164, 170, 1)",
         rose: "rgba(244, 63, 94, 1)",
         purple: "rgba(168, 85, 247, 1)",
         yellow: "rgba(234, 179, 8, 1)",
@@ -403,7 +398,7 @@ export const PhantomBankSystemDiagram = () => {
                 <SvgBackgroundGrid />
 
                 <motion.g variants={itemVariants}>
-                    <rect x="50" y="30" width="200" height="50" fill="rgba(158, 189, 220, 0.05)" stroke={colors.cyan} strokeWidth="1" strokeDasharray="4 4" rx="8" />
+                    <rect x="50" y="30" width="200" height="50" fill="rgba(158, 164, 170, 0.05)" stroke={colors.cyan} strokeWidth="1" strokeDasharray="4 4" rx="8" />
                     <text x="150" y="60" fill={colors.cyan} fontFamily="var(--font-mono)" fontSize="18" textAnchor="middle" letterSpacing="0.1em">★ ON-CHAIN ★</text>
                 </motion.g>
 
@@ -425,14 +420,14 @@ export const PhantomBankSystemDiagram = () => {
                 <Connection start={{ x: 250, y: 420 }} points={[]} end={{ x: 250, y: 520 }} color={colors.green} label="✓ Clean" labelX={286} labelY={468} />
 
                 <motion.g variants={itemVariants}>
-                    <rect x="100" y="520" width="400" height="280" fill="rgba(59, 130, 246, 0.03)" stroke={colors.blue} strokeWidth="2" strokeDasharray="10 5" rx="12" style={{ filter: `drop-shadow(0 0 15px rgba(59, 130, 246, 0.1))` }} />
+                    <rect x="100" y="520" width="400" height="280" fill="rgba(59, 130, 246, 0.03)" stroke={colors.blue} strokeWidth="2" strokeDasharray="10 5" rx="12" style={{ filter: 'none' }} />
                     <rect x="104" y="524" width="392" height="272" fill="none" stroke="rgba(59, 130, 246, 0.1)" strokeWidth="1" rx="8" />
                     <text x="300" y="555" fill={colors.blue} fontFamily="var(--font-editorial)" fontSize="24" textAnchor="middle" letterSpacing="0.1em">BANK 1 POOL</text>
                     <text x="300" y="578" fill="rgba(255,255,255,0.6)" fontFamily="var(--font-system)" fontSize="12" textAnchor="middle">Every user has their different encrypted node</text>
                     <circle cx="300" cy="680" r="30" fill="rgba(59, 130, 246, 0.1)" stroke={colors.blue} strokeWidth="1" strokeDasharray="3 3">
                         {animated && <animateTransform attributeName="transform" type="rotate" from="0 300 680" to="360 300 680" dur="20s" repeatCount="indefinite" />}
                     </circle>
-                    <circle cx="300" cy="680" r="15" fill={colors.blue} style={{ filter: `drop-shadow(0 0 10px ${colors.blue})` }} />
+                    <circle cx="300" cy="680" r="15" fill={colors.blue} style={{ filter: 'none' }} />
                     <text x="300" y="684" fill="#fff" fontFamily="var(--font-mono)" fontSize="10" textAnchor="middle">ROOT</text>
                     <path d="M300 680 L180 620 M300 680 L300 595 M300 680 L420 620 M300 680 L180 740 M300 680 L300 765 M300 680 L420 740" fill="none" stroke="rgba(59, 130, 246, 0.3)" strokeWidth="1.5" strokeDasharray="4 4" />
                 </motion.g>
@@ -445,7 +440,7 @@ export const PhantomBankSystemDiagram = () => {
                 <BankNode x="420" y="740" label="6" color={colors.cyan} active={true} />
 
                 <motion.g variants={itemVariants}>
-                    <rect x="650" y="520" width="300" height="280" fill="rgba(34, 197, 94, 0.03)" stroke={colors.green} strokeWidth="2" strokeDasharray="10 5" rx="12" style={{ filter: `drop-shadow(0 0 15px rgba(34, 197, 94, 0.1))` }} />
+                    <rect x="650" y="520" width="300" height="280" fill="rgba(34, 197, 94, 0.03)" stroke={colors.green} strokeWidth="2" strokeDasharray="10 5" rx="12" style={{ filter: 'none' }} />
                     <rect x="654" y="524" width="292" height="272" fill="none" stroke="rgba(34, 197, 94, 0.1)" strokeWidth="1" rx="8" />
                     <text x="800" y="555" fill={colors.green} fontFamily="var(--font-editorial)" fontSize="24" textAnchor="middle" letterSpacing="0.1em">BANK 2</text>
                     <path d="M800 620 L730 730 L870 730 Z" fill="rgba(34, 197, 94, 0.05)" stroke="rgba(34, 197, 94, 0.3)" strokeWidth="1.5" strokeDasharray="4 4" />
@@ -458,7 +453,7 @@ export const PhantomBankSystemDiagram = () => {
                 <Connection start={{ x: 500, y: 680 }} points={[]} end={{ x: 650, y: 680 }} style="dashed" label="Inter-bank transfer" labelX={575} labelY={710} color={colors.white} />
 
                 <motion.g variants={itemVariants}>
-                    <rect x="750" y="100" width="350" height="150" fill="rgba(168, 85, 247, 0.05)" stroke={colors.purple} strokeWidth="2" rx="12" style={{ filter: `drop-shadow(0 0 15px rgba(168, 85, 247, 0.2))` }} />
+                    <rect x="750" y="100" width="350" height="150" fill="rgba(168, 85, 247, 0.05)" stroke={colors.purple} strokeWidth="2" rx="12" style={{ filter: 'none' }} />
                     <text x="925" y="160" fill={colors.purple} fontFamily="var(--font-editorial)" fontSize="28" textAnchor="middle" letterSpacing="0.1em">STATE BANK</text>
                     <text x="925" y="190" fill="rgba(255,255,255,0.7)" fontFamily="var(--font-system)" fontSize="14" textAnchor="middle">Global Auditing & Regulations</text>
                     <rect x="865" y="210" width="120" height="20" fill="rgba(255,255,255,0.1)" rx="10" />
@@ -494,7 +489,7 @@ export const PhantomBankSystemDiagram = () => {
 
 export const RelayerSystemDiagram = () => {
     const colors = {
-        cyan: "rgba(158, 189, 220, 1)",
+        cyan: "rgba(158, 164, 170, 1)",
         rose: "rgba(244, 63, 94, 1)",
         purple: "rgba(168, 85, 247, 1)",
         yellow: "rgba(234, 179, 8, 1)",
@@ -535,7 +530,7 @@ export const RelayerSystemDiagram = () => {
                 <Connection start={{ x: 250, y: 430 }} points={[]} end={{ x: 350, y: 430 }} color={colors.cyan} style="dashed" dur="3s" />
 
                 <motion.g variants={itemVariants}>
-                    <rect x="350" y="350" width="250" height="160" fill="rgba(59, 130, 246, 0.05)" stroke={colors.blue} strokeWidth="2" rx="12" style={{ filter: `drop-shadow(0 0 15px rgba(59, 130, 246, 0.1))` }} />
+                    <rect x="350" y="350" width="250" height="160" fill="rgba(59, 130, 246, 0.05)" stroke={colors.blue} strokeWidth="2" rx="12" style={{ filter: 'none' }} />
                     <text x="475" y="420" fill={colors.blue} fontFamily="var(--font-editorial)" fontSize="24" textAnchor="middle" letterSpacing="0.1em">PHANTOM POOL</text>
                 </motion.g>
 
@@ -543,7 +538,7 @@ export const RelayerSystemDiagram = () => {
                 <Connection start={{ x: 600, y: 470 }} points={[]} end={{ x: 800, y: 470 }} color={colors.yellow} style="dashed" label="Verify ZK Proofs" labelYOffset={-10} dur="4s" />
 
                 <motion.g variants={itemVariants}>
-                    <rect x="800" y="250" width="400" height="350" fill="rgba(234, 179, 8, 0.05)" stroke={colors.yellow} strokeWidth="2" strokeDasharray="10 5" rx="12" style={{ filter: `drop-shadow(0 0 15px rgba(234, 179, 8, 0.1))` }} />
+                    <rect x="800" y="250" width="400" height="350" fill="rgba(234, 179, 8, 0.05)" stroke={colors.yellow} strokeWidth="2" strokeDasharray="10 5" rx="12" style={{ filter: 'none' }} />
                     <text x="1000" y="300" fill={colors.yellow} fontFamily="var(--font-editorial)" fontSize="28" textAnchor="middle" letterSpacing="0.1em">RELAYER NETWORK</text>
                     <text x="1000" y="325" fill="rgba(255,255,255,0.7)" fontFamily="var(--font-system)" fontSize="14" textAnchor="middle">Validation & Gas Abstraction</text>
 
@@ -554,16 +549,16 @@ export const RelayerSystemDiagram = () => {
                     <path d="M800 390 L820 390 L820 410 L990 410" fill="none" stroke={colors.yellow} strokeWidth="1.5" strokeDasharray="3 3" opacity="0.7" />
                     <path d="M800 390 L820 390 L820 410 L1080 410" fill="none" stroke={colors.yellow} strokeWidth="1.5" strokeDasharray="3 3" opacity="0.7" />
 
-                    <rect x="840" y="395" width="70" height="30" fill="rgba(0,0,0,0.5)" stroke="rgba(158, 189, 220,0.4)" rx="4" />
+                    <rect x="840" y="395" width="70" height="30" fill="rgba(0,0,0,0.5)" stroke="rgba(158, 164, 170,0.4)" rx="4" />
                     <text x="875" y="414" fill="#fff" fontFamily="var(--font-mono)" fontSize="11" textAnchor="middle">Deposit</text>
 
-                    <rect x="920" y="395" width="60" height="30" fill="rgba(0,0,0,0.5)" stroke="rgba(158, 189, 220,0.4)" rx="4" />
+                    <rect x="920" y="395" width="60" height="30" fill="rgba(0,0,0,0.5)" stroke="rgba(158, 164, 170,0.4)" rx="4" />
                     <text x="950" y="414" fill="#fff" fontFamily="var(--font-mono)" fontSize="11" textAnchor="middle">Swap</text>
 
-                    <rect x="990" y="395" width="80" height="30" fill="rgba(0,0,0,0.5)" stroke="rgba(158, 189, 220,0.4)" rx="4" />
+                    <rect x="990" y="395" width="80" height="30" fill="rgba(0,0,0,0.5)" stroke="rgba(158, 164, 170,0.4)" rx="4" />
                     <text x="1030" y="414" fill="#fff" fontFamily="var(--font-mono)" fontSize="11" textAnchor="middle">Int. Match</text>
 
-                    <rect x="1080" y="395" width="70" height="30" fill="rgba(0,0,0,0.5)" stroke="rgba(158, 189, 220,0.4)" rx="4" />
+                    <rect x="1080" y="395" width="70" height="30" fill="rgba(0,0,0,0.5)" stroke="rgba(158, 164, 170,0.4)" rx="4" />
                     <text x="1115" y="414" fill="#fff" fontFamily="var(--font-mono)" fontSize="11" textAnchor="middle">Withdraw</text>
                     
                     <rect x="850" y="470" width="300" height="40" fill="rgba(0,0,0,0.5)" stroke="rgba(255,255,255,0.1)" rx="8" />

@@ -1,44 +1,44 @@
 @import url('https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
 
 :root {
-  --bg: #0a0b0d;
-  --bg-card: rgba(13, 14, 16, 0.96);
-  --bg-card-hover: rgba(15, 16, 18, 0.98);
-  --border: rgba(0, 243, 255, 0.12);
-  --border-accent: rgba(0, 243, 255, 0.3);
+  --bg: #020202;
+  --bg-card: rgba(255, 255, 255, 0.02);
+  --bg-card-hover: rgba(255, 255, 255, 0.04);
+  --border: rgba(255, 255, 255, 0.06);
+  --border-accent: rgba(255, 255, 255, 0.16);
 
-  --text-primary: #f8fbff;
-  --text-secondary: rgba(210, 225, 245, 0.82);
-  --text-tertiary: rgba(160, 180, 210, 0.65);
+  --text-primary: #ffffff;
+  --text-secondary: #a1a1aa;
+  --text-tertiary: #52525b;
 
-  --cyan: #00f3ff;
-  --cyan-dim: rgba(0, 243, 255, 0.15);
-  --violet: #8d74ff;
+  --cyan: #9ea4aa;
+  --cyan-dim: rgba(158, 164, 170, 0.15);
+  --violet: #8f9296;
 
   /* Backgrounds */
-  --color-bg-primary: #0a0b0d;
-  --color-bg-secondary: #0d0e10;
-  --color-bg-card: #111214;
-  --color-bg-overlay: #0b0c0e;
+  --color-bg-primary: #020202;
+  --color-bg-secondary: #070708;
+  --color-bg-card: rgba(255, 255, 255, 0.04);
+  --color-bg-overlay: rgba(255, 255, 255, 0.03);
 
   /* Accent / Brand */
-  --color-accent-primary: #00f3ff;
-  --color-accent-secondary: #00d4ff;
-  --color-accent-glow: rgba(0, 243, 255, 0.12);
+  --color-accent-primary: #9ea4aa;
+  --color-accent-secondary: #8f9296;
+  --color-accent-glow: transparent;
 
   /* Text */
   --color-text-primary: #ffffff;
-  --color-text-secondary: #a8bdd0;
-  --color-text-muted: #5a7a94;
+  --color-text-secondary: #a1a1aa;
+  --color-text-muted: #52525b;
 
   /* Borders & Lines */
-  --color-border: rgba(0, 243, 255, 0.18);
-  --color-border-card: rgba(255,255,255,0.06);
+  --color-border: rgba(255, 255, 255, 0.06);
+  --color-border-card: rgba(255, 255, 255, 0.06);
 
   /* Gradients */
-  --gradient-hero: linear-gradient(135deg, #0a0b0d 0%, #0d121a 50%, #090a0c 100%);
-  --gradient-card: linear-gradient(145deg, #111214 0%, #151618 100%);
-  --gradient-accent: linear-gradient(90deg, #00f3ff, #0088ff);
+  --gradient-hero: linear-gradient(135deg, #020202 0%, #111214 50%, #090a0c 100%);
+  --gradient-card: linear-gradient(180deg, rgba(255, 255, 255, 0.04) 0%, transparent 100%);
+  --gradient-accent: linear-gradient(90deg, #9ea4aa, #8f9296);
 
   --font-display: 'Public Sans', sans-serif;
   --font-body: 'Public Sans', sans-serif;
@@ -129,15 +129,7 @@ html {
 
 body {
   background-color: var(--color-bg-primary);
-  background-image:
-    linear-gradient(rgba(0, 243, 255, 0.03) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(0, 243, 255, 0.03) 1px, transparent 1px),
-    radial-gradient(circle at 18% 18%, rgba(0, 243, 255, 0.08), transparent 25%),
-    radial-gradient(circle at 82% 14%, rgba(132, 92, 255, 0.06), transparent 20%),
-    radial-gradient(circle at 50% 80%, rgba(0, 243, 255, 0.06), transparent 40%);
-  background-size: 80px 80px, 80px 80px, 100% 100%, 100% 100%, 100% 100%;
-  background-repeat: repeat, repeat, no-repeat, no-repeat, no-repeat;
-  background-attachment: fixed;
+  background-image: none;
   color: var(--color-text-primary);
   font-family: var(--font-body);
   font-size: var(--body-size);
@@ -167,9 +159,7 @@ body {
   content: '';
   position: absolute;
   inset: 0;
-  background: radial-gradient(circle at 18% 22%, rgba(42, 194, 255, 0.22), transparent 20%),
-              radial-gradient(circle at 82% 18%, rgba(143, 98, 255, 0.16), transparent 18%),
-              radial-gradient(circle at 50% 72%, rgba(91, 194, 255, 0.12), transparent 26%);
+  background: transparent;
   pointer-events: none;
   z-index: 0;
 }
@@ -212,7 +202,7 @@ body {
 
 @keyframes pulse-glow {
   0%, 100% { opacity: 0.5; filter: blur(0px); }
-  50% { opacity: 1; filter: blur(2px); }
+  50% { opacity: 0.5; filter: blur(0px); }
 }
 
 .section-label::after {
@@ -284,9 +274,9 @@ body {
 
 .btn-outline:hover {
   border-color: var(--cyan);
-  background: rgba(0, 243, 255, 0.08);
+  background: rgba(158, 164, 170, 0.08);
   color: var(--cyan);
-  box-shadow: 0 0 15px rgba(0, 243, 255, 0.15);
+  box-shadow: none;
 }
 
 .btn-outline::before {
@@ -307,12 +297,12 @@ body {
 .btn-outline-cyan {
   border-color: var(--cyan);
   color: var(--cyan);
-  background: rgba(0, 243, 255, 0.04);
+  background: rgba(158, 164, 170, 0.04);
 }
 
 .btn-outline-cyan:hover {
-  background: rgba(0, 243, 255, 0.12);
-  box-shadow: 0 0 20px rgba(0, 243, 255, 0.25);
+  background: rgba(158, 164, 170, 0.12);
+  box-shadow: none;
 }
 
 /* ── CARD ──────────────────────────────────────────────────────── */
@@ -330,17 +320,17 @@ body {
   content: '';
   position: absolute;
   inset: 0;
-  background: radial-gradient(circle at var(--mouse-x, 50%) var(--mouse-y, 50%), rgba(0, 243, 255, 0.06), transparent 50%);
+  background: transparent;
   opacity: 0;
   transition: opacity 0.4s;
   pointer-events: none;
 }
 
 .card:hover {
-  border-color: rgba(0, 243, 255, 0.35);
+  border-color: rgba(158, 164, 170, 0.35);
   background: var(--bg-card-hover);
   transform: translateY(-2px);
-  box-shadow: 0 0 20px rgba(0, 243, 255, 0.08);
+  box-shadow: none;
 }
 
 .card:hover::before {
@@ -496,7 +486,7 @@ body {
   font-size: clamp(1.625rem, 2.8vw + 0.75rem, 4.25rem);
   line-height: 1;
   color: var(--color-text-primary);
-  text-shadow: 0 0 10px var(--color-accent-glow);
+  text-shadow: none;
 }
 
 .stat-label {
@@ -513,8 +503,7 @@ body {
 .app-page {
   min-height: 100vh;
   background-color: var(--bg);
-  background-image:
-    radial-gradient(ellipse 120% 90% at 50% -18%, rgba(121, 187, 255, 0.16), transparent 58%);
+  background-image: transparent;
 }
 
 .app-page__inner {

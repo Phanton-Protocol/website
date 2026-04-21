@@ -34,9 +34,9 @@ const NetworkVisualizer = () => {
         const PARTICLE_COUNT = 12;
         const HEX = '0123456789ABCDEF';
 
-        const C_CYAN = '0, 229, 255';
+        const C_CYAN = '158, 164, 170';
         const C_WHITE = '255, 255, 255';
-        const C_FOCUS = '120, 210, 255';
+        const C_FOCUS = '168, 173, 179';
 
         const nodes = [];
 
@@ -185,14 +185,14 @@ const NetworkVisualizer = () => {
 
             nodes.forEach((node) => {
                 node.phase += 0.018;
-                const glow = (Math.sin(node.phase) + 1) / 2;
+
                 const near = Math.hypot(node.x - focus.x, node.y - focus.y) < CURSOR_BREAK_RADIUS;
 
                 ctx.beginPath();
-                ctx.arc(node.x, node.y, 5.5 + glow * 2, 0, Math.PI * 2);
+                ctx.arc(node.x, node.y, 5.5, 0, Math.PI * 2);
                 ctx.strokeStyle = near
-                    ? `rgba(${C_WHITE}, ${0.18 + glow * 0.25})`
-                    : `rgba(${C_CYAN},  ${0.08 + glow * 0.12})`;
+                    ? `rgba(${C_WHITE}, 0.18)`
+                    : `rgba(${C_CYAN}, 0.08)`;
                 ctx.lineWidth = 0.7;
                 ctx.stroke();
 
@@ -200,11 +200,11 @@ const NetworkVisualizer = () => {
                 ctx.arc(node.x, node.y, 2.5, 0, Math.PI * 2);
                 ctx.fillStyle = near
                     ? `rgba(${C_WHITE}, 0.9)`
-                    : `rgba(${C_CYAN},  0.55)`;
+                    : `rgba(${C_CYAN}, 0.55)`;
                 ctx.fill();
 
                 ctx.font = '7.5px Public Sans, sans-serif';
-                ctx.fillStyle = `rgba(${C_CYAN}, ${0.18 + glow * 0.12})`;
+                ctx.fillStyle = `rgba(${C_CYAN}, 0.18)`;
                 ctx.fillText(node.label, node.x + 8, node.y + 3);
             });
 

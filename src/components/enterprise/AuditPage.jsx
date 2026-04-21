@@ -20,8 +20,8 @@ export default function AuditPage() {
     <div>
       <h2 style={{ color: "#fff" }}>Audit & Ledger Ops</h2>
       <div style={{ display: "grid", gap: 8, maxWidth: 720 }}>
-        <input style={{ borderRadius: 10, padding: "10px 12px", border: "1px solid rgba(255,255,255,0.16)", background: "#151a23", color: "#fff" }} value={tenantId} onChange={(e) => setTenantId(e.target.value)} placeholder="tenant id" />
-        <input style={{ borderRadius: 10, padding: "10px 12px", border: "1px solid rgba(255,255,255,0.16)", background: "#151a23", color: "#fff" }} value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="amount in wei" />
+        <input style={{ borderRadius: 10, padding: "10px 12px", border: "1px solid rgba(255,255,255,0.16)", background: "#070708", color: "#fff" }} value={tenantId} onChange={(e) => setTenantId(e.target.value)} placeholder="tenant id" />
+        <input style={{ borderRadius: 10, padding: "10px 12px", border: "1px solid rgba(255,255,255,0.16)", background: "#070708", color: "#fff" }} value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="amount in wei" />
       </div>
       <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
         <button onClick={() => run(() => createLedgerAccount({ tenantId, code: "1010", name: "Cash", type: "asset" }))}>Create account</button>

@@ -80,7 +80,7 @@ function DAppSection({ embedded = false }) {
         style={{
           padding: 'clamp(1.5rem, 4vw, 2.25rem)',
           borderColor: 'rgba(0, 229, 199, 0.2)',
-          background: 'linear-gradient(165deg, rgba(18, 18, 18, 0.95) 0%, rgba(12, 14, 18, 0.98) 100%)',
+          background: 'linear-gradient(165deg, rgba(2, 2, 2, 0.95) 0%, rgba(7, 7, 8, 0.98) 100%)',
         }}
       >
         {intro}

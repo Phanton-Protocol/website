@@ -26,6 +26,7 @@ import BlogArticlePage from './components/BlogArticlePage';
 import WhitepaperPage from './components/WhitepaperPage';
 import OnePagerPage from './components/OnePagerPage';
 import PrivacyVisibilityPage from './components/PrivacyVisibilityPage';
+import PitchDeckPage from './components/PitchDeckPage';
 import { blogPosts } from './data/blogPosts';
 import logoUrl from './assets/logo.svg';
 import { SOCIAL_LINKS, RUNBOOK_URL } from './config';
@@ -562,7 +563,7 @@ function App() {
           />
         }
       />
-      <Route path="/pitchdeck" element={<PitchDeckRedirect />} />
+      <Route path="/pitchdeck" element={<PitchDeckPage />} />
       <Route path="*" element={<UnknownRoutePage />} />
     </Routes>
   );

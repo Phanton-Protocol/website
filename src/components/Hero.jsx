@@ -79,7 +79,7 @@ const Hero = () => {
                   border: '1px solid var(--color-accent-primary)',
                 }}
                 className="btn-cyan"
-                onMouseEnter={e => { e.target.style.opacity = '0.93'; e.target.style.boxShadow = '0 10px 28px var(--color-accent-glow)'; e.target.style.transform = 'translateY(-1px)'; }}
+                onMouseEnter={e => { e.target.style.opacity = '0.93'; e.target.style.boxShadow = 'none'; e.target.style.transform = 'translateY(-1px)'; }}
                 onMouseLeave={e => { e.target.style.opacity = '1'; e.target.style.boxShadow = 'none'; e.target.style.transform = 'none'; }}
               >
                 InternalMatching
@@ -137,7 +137,7 @@ const Hero = () => {
         left: 0,
         right: 0,
         height: '120px',
-        background: 'linear-gradient(to bottom, transparent, rgba(8, 13, 20, 0.82))',
+        background: 'linear-gradient(to bottom, transparent, rgba(2, 2, 2, 0.82))',
         pointerEvents: 'none',
       }} />
 

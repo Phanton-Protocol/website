@@ -11,7 +11,7 @@ const Mechanics = () => {
                     </h2>
                 </div>
 
-                <div className="card" style={{ padding: '4rem', background: '#0a0a0a' }}>
+                <div className="card" style={{ padding: '4rem', background: 'var(--color-bg-primary)' }}>
                     <motion.div
                         className="mono"
                         initial={{ opacity: 0 }}

@@ -47,9 +47,9 @@ export default function CompliancePage() {
     <div>
       <h2 style={{ color: "#fff" }}>Compliance & Reporting</h2>
       <div style={{ display: "grid", gap: 8, maxWidth: 720 }}>
-        <input style={{ borderRadius: 10, padding: "10px 12px", border: "1px solid rgba(255,255,255,0.16)", background: "#151a23", color: "#fff" }} value={wallet} onChange={(e) => setWallet(e.target.value)} placeholder="wallet 0x..." />
-        <input style={{ borderRadius: 10, padding: "10px 12px", border: "1px solid rgba(255,255,255,0.16)", background: "#151a23", color: "#fff" }} value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="amount in wei" />
-        <input style={{ borderRadius: 10, padding: "10px 12px", border: "1px solid rgba(255,255,255,0.16)", background: "#151a23", color: "#fff" }} value={reportingKey} onChange={(e) => setReportingKey(e.target.value)} placeholder="reporting key for export" />
+        <input style={{ borderRadius: 10, padding: "10px 12px", border: "1px solid rgba(255,255,255,0.16)", background: "#070708", color: "#fff" }} value={wallet} onChange={(e) => setWallet(e.target.value)} placeholder="wallet 0x..." />
+        <input style={{ borderRadius: 10, padding: "10px 12px", border: "1px solid rgba(255,255,255,0.16)", background: "#070708", color: "#fff" }} value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="amount in wei" />
+        <input style={{ borderRadius: 10, padding: "10px 12px", border: "1px solid rgba(255,255,255,0.16)", background: "#070708", color: "#fff" }} value={reportingKey} onChange={(e) => setReportingKey(e.target.value)} placeholder="reporting key for export" />
       </div>
       <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
         <button onClick={() => run(() => screenCompliance({ wallet, amount, token: "0x0000000000000000000000000000000000000000", source: "enterprise_ui" }))}>Screen wallet</button>

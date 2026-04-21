@@ -16,8 +16,8 @@ export default {
                 'bg-surface': '#0d0e10',
                 'text-primary': 'rgba(246, 251, 255, 0.95)',
                 'text-secondary': 'rgba(210, 225, 245, 0.82)',
-                'accent-cyan': '#00f3ff',
-                'accent-violet': '#7f7dff',
+                'accent-cyan': '#8ba3b0',
+                'accent-violet': '#7b7f8b',
             },
             animation: {
                 'spin-slow': 'spin 20s linear infinite',

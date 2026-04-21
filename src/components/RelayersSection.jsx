@@ -52,7 +52,7 @@ const RelayersSection = () => (
               display: 'inline-block',
               transition: 'opacity 0.3s, box-shadow 0.3s',
             }}
-            onMouseEnter={e => { e.target.style.opacity = '0.9'; e.target.style.boxShadow = '0 0 28px rgba(158,189,220,0.35)'; }}
+            onMouseEnter={e => { e.target.style.opacity = '0.9'; e.target.style.boxShadow = 'none'; }}
             onMouseLeave={e => { e.target.style.opacity = '1'; e.target.style.boxShadow = 'none'; }}
           >
             Open relayer onboarding
@@ -128,7 +128,7 @@ const RelayersSection = () => (
             display: 'inline-block',
             transition: 'opacity 0.3s, box-shadow 0.3s',
           }}
-          onMouseEnter={e => { e.target.style.opacity = '0.9'; e.target.style.boxShadow = '0 0 28px rgba(158,189,220,0.35)'; }}
+          onMouseEnter={e => { e.target.style.opacity = '0.9'; e.target.style.boxShadow = 'none'; }}
           onMouseLeave={e => { e.target.style.opacity = '1'; e.target.style.boxShadow = 'none'; }}
         >
           Open relayer page

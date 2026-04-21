@@ -85,10 +85,6 @@
       "destination": "/generated-seo/blog__relayer-failover-explained.html"
     },
     {
-      "source": "/pitchdeck",
-      "destination": "/pitchdeck.pdf"
-    },
-    {
       "source": "/(.*)",
       "destination": "/index.html"
     }
