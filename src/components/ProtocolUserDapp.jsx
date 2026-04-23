@@ -444,11 +444,14 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
 
   useEffect(() => {
     let cancelled = false;
-    let timer = null;
+    let debounceTimer = null;
+    let refreshTimer = null;
     async function run() {
+      if (swapProofBusy) {
+        setSwapQuoteLoading(false);
+        return;
+      }
       setSwapQuoteErr(null);
-      setSwapExpectedLabel("");
-      setSwapMinLabel("");
       const customJson = String(intentForm.swapDataJson || "").trim();
       let amt = String(intentForm.inputAmount || "").trim();
       if (cfg?.mode === "live" && !customJson && spendable.length > 0) {
@@ -473,7 +476,8 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
         ? intentForm.outputToken
         : wbnbQ;
       const chainSlug = Number(cfg.chainId) === 97 ? "bsc-testnet" : "bsc";
-      setSwapQuoteLoading(true);
+      const isBackgroundRefresh = !!swapLastQuote;
+      if (!isBackgroundRefresh) setSwapQuoteLoading(true);
       try {
         const amountWei = ethers.parseUnits(amt, 18).toString();
         const q = await fetchJson(`${base}/quote`, {
@@ -507,17 +511,26 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
         setSwapExpectedLabel(`${ethers.formatUnits(q.amountOut || "0", 18)}`);
         setSwapMinLabel(`${ethers.formatUnits(q.minAmountOut || "0", 18)}`);
       } catch (e) {
-        if (!cancelled) setSwapQuoteErr(stringifyErr(e?.message ?? e));
+        if (!cancelled && !swapLastQuote) setSwapQuoteErr(stringifyErr(e?.message ?? e));
       } finally {
-        if (!cancelled) setSwapQuoteLoading(false);
+        if (!cancelled && !isBackgroundRefresh) setSwapQuoteLoading(false);
       }
     }
-    timer = setTimeout(run, 450);
+    debounceTimer = setTimeout(async () => {
+      await run();
+      if (!cancelled) {
+        // Keep quote fresh, but avoid noisy continuous polling.
+        refreshTimer = setInterval(() => {
+          if (!cancelled) run();
+        }, 6000);
+      }
+    }, 450);
     return () => {
       cancelled = true;
-      clearTimeout(timer);
+      clearTimeout(debounceTimer);
+      clearInterval(refreshTimer);
     };
-  }, [base, cfg?.chainId, cfg?.mode, intentForm.inputToken, intentForm.outputToken, intentForm.inputAmount, intentForm.swapDataJson, swapSlippageBps, spendable, spendPick]);
+  }, [base, cfg?.chainId, cfg?.mode, intentForm.inputToken, intentForm.outputToken, intentForm.inputAmount, intentForm.swapDataJson, swapSlippageBps, spendable, spendPick, swapProofBusy, swapLastQuote]);
 
   async function connect() {
     setConnectError(null);
