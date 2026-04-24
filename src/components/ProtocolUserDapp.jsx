@@ -6,7 +6,6 @@ import { relayerFetchJson, setRuntimeRelayerBases } from "../lib/relayerHttp";
 import { canUseClientProver, generateSwapProofClient } from "../lib/clientProver";
 import { encryptForRelayer } from "../lib/relayEnvelope";
 import { CLIENT_PROVER_WASM_URL, CLIENT_PROVER_ZKEY_URL } from "../config";
-import { nullifierToBytes32Hex, SHADOW_SWEEP_GAS_BUFFER_WEI_DEFAULT } from "../lib/relayerDefaults.js";
 import {
   addressToOwnerPublicKey,
   commitmentToBytes32,
@@ -60,19 +59,6 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-const INTENT_TYPES = {
-  SwapIntent: [
-    { name: "user", type: "address" },
-    { name: "inputAssetID", type: "uint256" },
-    { name: "outputAssetID", type: "uint256" },
-    { name: "amountIn", type: "uint256" },
-    { name: "minAmountOut", type: "uint256" },
-    { name: "deadline", type: "uint256" },
-    { name: "nonce", type: "uint256" },
-    { name: "nullifier", type: "bytes32" },
-  ],
-};
-
 const WBNB_BSC_TESTNET = "0xae13d989dac2f0debff460ac112a837c89baa7cd";
 const WBNB_BSC_MAINNET = "0xbb4CdB9Cbd36B01bD1cBaEBF2De08d9173bc095c";
 const DEFAULT_SWAP_SLIPPAGE_BPS = 100;
@@ -82,7 +68,7 @@ const PC = {
   bg: "#14141c",
   card: "#18181f",
   border: "rgba(255,255,255,0.12)",
-  teal: "#9ea4aa",
+  teal: "#00e5c7",
   text: "#ffffff",
   muted: "rgba(255,255,255,0.68)",
 };
@@ -124,29 +110,18 @@ const TOKEN_OPTIONS = [
   { label: "USDT (test)", value: "0x7EF95A0Fe8A5F4f9C1824fBf6656e2f95fA6Bf13" },
   { label: "Custom address", value: "__custom__" },
 ];
+const SHADOW_SWEEP_GAS_BUFFER_WEI = ethers.parseEther("0.001");
 
-/** Resolve asset ID from relayer `/config` `assets` (on-chain registry via deploy config). Never guess (no silent BUSD). */
-function getAssetIdForToken(tokenAddress, relayerConfig) {
+function getAssetIdForToken(tokenAddress) {
   const normalized = String(tokenAddress || "").toLowerCase();
   if (normalized === ethers.ZeroAddress.toLowerCase()) return 0;
-  const assets = Array.isArray(relayerConfig?.assets) ? relayerConfig.assets : [];
-  if (assets.length === 0) {
-    throw new Error(
-      "Relayer /config has no assets[] — cannot map token to asset ID. Ensure the relayer loads chain config (e.g. config/bscTestnet.json)."
-    );
-  }
-  const hit = assets.find((a) => a?.address && String(a.address).toLowerCase() === normalized);
-  if (hit != null && hit.assetId != null && !Number.isNaN(Number(hit.assetId))) {
-    return Number(hit.assetId);
-  }
-  throw new Error(
-    `Unknown token for asset ID (not listed in relayer /config assets): ${tokenAddress}. Use a configured asset or add this token to the pool config.`
-  );
+  if (normalized === "0x78867bbeeef44f2326bf8ddd1941a4439382ef2a7") return 1;
+  if (normalized === "0x7ef95a0fe8a5f4f9c1824fbf6656e2f95fa6bf13") return 2;
+  return 1;
 }
 
-function spendableNoteEntries(vaultData, inputToken, relayerConfig) {
-  if (!relayerConfig?.assets?.length) return [];
-  const aid = getAssetIdForToken(inputToken, relayerConfig);
+function spendableNoteEntries(vaultData, inputToken) {
+  const aid = getAssetIdForToken(inputToken);
   const notes = vaultData?.notes || [];
   const out = [];
   notes.forEach((n, vaultIdx) => {
@@ -175,7 +150,7 @@ function mergeSwapData(base, overlay) {
   return out;
 }
 
-function buildDefaultSwapData(intentForm, chainId, relayerConfig) {
+function buildDefaultSwapData(intentForm, chainId) {
   const zb = ethers.ZeroHash;
   const wbnb = canonicalWbnb(chainId);
   const tokenIn =
@@ -210,8 +185,8 @@ function buildDefaultSwapData(intentForm, chainId, relayerConfig) {
       outputCommitmentSwap: zb,
       outputCommitmentChange: zb,
       merkleRoot: zb,
-      inputAssetID: getAssetIdForToken(intentForm.inputToken, relayerConfig),
-      outputAssetIDSwap: getAssetIdForToken(intentForm.outputToken, relayerConfig),
+      inputAssetID: getAssetIdForToken(intentForm.inputToken),
+      outputAssetIDSwap: getAssetIdForToken(intentForm.outputToken),
       outputAssetIDChange: 0,
       inputAmount: amountInWei,
       swapAmount: amountInWei,
@@ -243,7 +218,7 @@ function getExplorerTxBase(chainId) {
 }
 
 export default function ProtocolUserDapp({ uiVariant = "default" }) {
-  const [apiBase, setApiBase] = useState(() => localStorage.getItem("phantom_api") || "https://relayers-backend.onrender.com");
+  const [apiBase, setApiBase] = useState(() => localStorage.getItem("phantom_api") || "http://localhost:5050");
   const base = useMemo(() => (apiBase || "").replace(/\/$/, "").trim(), [apiBase]);
   const [cfg, setCfg] = useState(null);
   const [health, setHealth] = useState(null);
@@ -289,13 +264,14 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
   const [swapSlippageBps, setSwapSlippageBps] = useState(DEFAULT_SWAP_SLIPPAGE_BPS);
   const [swapLastQuote, setSwapLastQuote] = useState(null);
   const [swapProofBusy, setSwapProofBusy] = useState(false);
+  const [swapSubmitBusy, setSwapSubmitBusy] = useState(false);
   const [withdrawProofBusy, setWithdrawProofBusy] = useState(false);
   const [clientProverReady, setClientProverReady] = useState(false);
   const [spendPick, setSpendPick] = useState(0);
 
   const spendable = useMemo(
-    () => spendableNoteEntries(vault.data, intentForm.inputToken, cfg),
-    [vault.data, intentForm.inputToken, cfg]
+    () => spendableNoteEntries(vault.data, intentForm.inputToken),
+    [vault.data, intentForm.inputToken]
   );
   useEffect(() => {
     setSpendPick(0);
@@ -309,6 +285,22 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
     gasRefund: ethers.parseEther("0.002").toString(),
     withdrawDataJson: "",
   });
+  const withdrawSpendable = useMemo(
+    () => spendableNoteEntries(vault.data, withdrawForm.token),
+    [vault.data, withdrawForm.token]
+  );
+  const withdrawMaxPayoutWei = useMemo(() => {
+    if (!withdrawSpendable.length) return null;
+    try {
+      const inputWei = BigInt(withdrawSpendable[0].note.amount);
+      const feeWei = BigInt(String(withdrawForm.protocolFee || "0"));
+      const gasWei = BigInt(String(withdrawForm.gasRefund || "0"));
+      const max = inputWei - feeWei - gasWei - 1n;
+      return max > 0n ? max : 0n;
+    } catch {
+      return null;
+    }
+  }, [withdrawSpendable, withdrawForm.protocolFee, withdrawForm.gasRefund]);
   const [depositTokenChoice, setDepositTokenChoice] = useState(ethers.ZeroAddress);
   const [swapInputTokenChoice, setSwapInputTokenChoice] = useState(ethers.ZeroAddress);
   const [swapOutputTokenChoice, setSwapOutputTokenChoice] = useState("0x78867BbEeF44f2326bF8DDd1941a4439382EF2A7");
@@ -391,14 +383,8 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
   }, [withdrawForm.token]);
 
   useEffect(() => {
-    if (!cfg?.assets?.length) return;
-    try {
-      const id = getAssetIdForToken(depositForm.token, cfg);
-      setDepositForm((prev) => (prev.assetID === id ? prev : { ...prev, assetID: id }));
-    } catch {
-      /* unknown token vs /config assets — submitDeposit will error with a clear message */
-    }
-  }, [depositForm.token, cfg]);
+    setDepositForm((prev) => ({ ...prev, assetID: getAssetIdForToken(prev.token) }));
+  }, [depositForm.token]);
 
   useEffect(() => {
     if (!wallet?.address) return;
@@ -411,13 +397,12 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
       return;
     }
     if (amountWei <= 0n) return;
-    if (!cfg?.assets?.length) return;
-    const assetID = getAssetIdForToken(depositForm.token, cfg);
+    const assetID = getAssetIdForToken(depositForm.token);
     const ownerPk = addressToOwnerPublicKey(wallet.address);
     const c = noteCommitment(assetID, amountWei.toString(), depositBlinding, ownerPk);
     const hex = commitmentToBytes32(c);
     setDepositForm((prev) => (prev.commitment === hex ? prev : { ...prev, commitment: hex }));
-  }, [wallet?.address, depositForm.token, depositForm.amount, depositBlinding, cfg]);
+  }, [wallet?.address, depositForm.token, depositForm.amount, depositBlinding]);
 
   useEffect(() => {
     let cancelled = false;
@@ -447,7 +432,7 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
     let debounceTimer = null;
     let refreshTimer = null;
     async function run() {
-      if (swapProofBusy) {
+      if (swapProofBusy || swapSubmitBusy) {
         setSwapQuoteLoading(false);
         return;
       }
@@ -530,7 +515,7 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
       clearTimeout(debounceTimer);
       clearInterval(refreshTimer);
     };
-  }, [base, cfg?.chainId, cfg?.mode, intentForm.inputToken, intentForm.outputToken, intentForm.inputAmount, intentForm.swapDataJson, swapSlippageBps, spendable, spendPick, swapProofBusy, swapLastQuote]);
+  }, [base, cfg?.chainId, cfg?.mode, intentForm.inputToken, intentForm.outputToken, intentForm.inputAmount, intentForm.swapDataJson, swapSlippageBps, spendable, spendPick, swapProofBusy, swapSubmitBusy, swapLastQuote]);
 
   async function connect() {
     setConnectError(null);
@@ -662,7 +647,7 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
       }
 
       const amountWei = ethers.parseUnits(String(depositForm.amount || "0"), 18);
-      const assetID = Number(getAssetIdForToken(depositForm.token, cfg));
+      const assetID = Number(getAssetIdForToken(depositForm.token));
       const deadline = Math.floor(Date.now() / 1000) + Number(depositForm.deadlineSec || 900);
       const domain = {
         name: "ShadowDeFiRelayer",
@@ -686,10 +671,7 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
           body: JSON.stringify({ ...message, signature }),
         });
         const feeWei = BigInt(shadow?.feeWei || "0");
-        const shadowSweepBufferWei = BigInt(
-          cfg?.module4RelayerDeposit?.shadowSweepGasBufferWei ?? String(SHADOW_SWEEP_GAS_BUFFER_WEI_DEFAULT)
-        );
-        const totalFunding = amountWei + feeWei + shadowSweepBufferWei;
+        const totalFunding = amountWei + feeWei + SHADOW_SWEEP_GAS_BUFFER_WEI;
         const fundTx = await wallet.signer.sendTransaction({
           to: shadow.shadowAddress,
           value: totalFunding,
@@ -743,7 +725,7 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
           shadowAddress: shadow.shadowAddress,
           fundingTxHash: fundTx.hash,
           fundingWei: totalFunding.toString(),
-          gasBufferWei: shadowSweepBufferWei.toString(),
+          gasBufferWei: SHADOW_SWEEP_GAS_BUFFER_WEI.toString(),
           feeWei: feeWei.toString(),
           serverNote,
           ...sweep,
@@ -789,6 +771,7 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
   async function submitSwap() {
     setActionError(null);
     setLastResult(null);
+    setSwapSubmitBusy(true);
     try {
       if (!wallet.signer) throw new Error("Connect wallet first.");
       if (!cfg?.chainId || !cfg?.addresses?.shieldedPool) throw new Error("Backend config not loaded.");
@@ -801,7 +784,6 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
 
       const deadline = Math.floor(Date.now() / 1000) + Number(intentForm.deadlineSec || 900);
       const noteNonce = Number(intentForm.nonce || Date.now());
-
       let minOutBI = 0n;
       try {
         minOutBI = BigInt(String(intentForm.minOutputAmount || "0"));
@@ -830,7 +812,7 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
         try {
           const custom = JSON.parse(customRaw);
           if (custom && typeof custom === "object") {
-            swapData = mergeSwapData(buildDefaultSwapData(intentForm, cfg.chainId, cfg), custom);
+            swapData = mergeSwapData(buildDefaultSwapData(intentForm, cfg.chainId), custom);
           } else {
             throw new Error("Invalid swap JSON");
           }
@@ -877,7 +859,7 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
             commitment: note.commitmentDecimal,
           },
           outputNoteSwap: {
-            assetID: getAssetIdForToken(intentForm.outputToken, cfg),
+            assetID: getAssetIdForToken(intentForm.outputToken),
             amount: outAmt,
             blindingFactor: randomFieldElementString(),
             commitment: "0",
@@ -930,7 +912,7 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
           },
           noteHints: {
             swap: {
-              assetId: getAssetIdForToken(intentForm.outputToken, cfg),
+              assetId: getAssetIdForToken(intentForm.outputToken),
               amount: outAmt,
               blindingFactor: proofBody.outputNoteSwap.blindingFactor,
               ownerPublicKey: note.ownerPublicKey,
@@ -952,40 +934,23 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
         );
       }
       const nullifierHex = nullifierToBytes32Hex(swapData.publicInputs.nullifier);
-
-      const intentReq = {
-        userAddress: wallet.address,
-        inputAssetID: Number(swapData.publicInputs.inputAssetID),
-        outputAssetID: Number(swapData.publicInputs.outputAssetIDSwap),
-        amountIn: String(swapData.publicInputs.swapAmount ?? "0"),
-        minAmountOut: String(swapData.publicInputs.minOutputAmountSwap ?? intentForm.minOutputAmount ?? "0"),
-        nonce: String(noteNonce),
-        nullifier: nullifierHex,
-        deadline,
-      };
-
-      const intentRes = await fetchJson(`${base}/intent`, {
-        method: "POST",
-        body: JSON.stringify(intentReq),
-      });
-
-      const { intentId, intent, domain, types } = intentRes;
-      const typed = types || INTENT_TYPES;
-      const signPayload = {
-        user: intent.userAddress,
-        inputAssetID: intent.inputAssetID,
-        outputAssetID: intent.outputAssetID,
-        amountIn: intent.amountIn,
-        minAmountOut: intent.minAmountOut,
-        deadline: intent.deadline,
-        nonce: intent.nonce,
-        nullifier: intent.nullifier,
-      };
-      const intentSig = await wallet.signer.signTypedData(domain, typed, signPayload);
-
+      const minOutForAuth = String(
+        swapData.publicInputs.minOutputAmountSwap ??
+          swapData.swapParams?.minAmountOut ??
+          intentForm.minOutputAmount ??
+          "0"
+      );
       const keyInfo = await fetchJson(`${base}/relayer/encryption-key`);
       const envelope = await encryptForRelayer(
-        { intentId, intent, intentSig, swapData },
+        {
+          swapData,
+          zkAuthorization: {
+            nullifier: nullifierHex,
+            deadline,
+            nonce: String(noteNonce),
+            minAmountOut: minOutForAuth,
+          },
+        },
         keyInfo?.publicKeyPem
       );
       const out = await fetchJson(`${base}/swap/encrypted`, {
@@ -995,6 +960,8 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
       setLastResult(out);
     } catch (e) {
       setActionError(stringifyErr(e?.message ?? e));
+    } finally {
+      setSwapSubmitBusy(false);
     }
   }
 
@@ -1025,7 +992,7 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
           throw new Error("Withdraw JSON must include proof, publicInputs, and recipient or finalRecipient.");
         }
       } else {
-        const spend = spendableNoteEntries(vault.data, withdrawForm.token, cfg);
+        const spend = spendableNoteEntries(vault.data, withdrawForm.token);
         if (!spend.length) {
           throw new Error("No spendable note for this token. Unlock the vault, deposit first, or paste full withdraw JSON under Advanced.");
         }
@@ -1165,7 +1132,7 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
         margin: "0 auto",
         borderRadius: uiVariant === "trade" ? 24 : 18,
         border: uiVariant === "trade" ? `1px solid ${PC.border}` : "1px solid rgba(255,255,255,0.14)",
-        background: uiVariant === "trade" ? PC.bg : "#020202",
+        background: uiVariant === "trade" ? PC.bg : "#11141b",
         padding: uiVariant === "trade" ? 16 : 20,
       }}
     >
@@ -1193,10 +1160,10 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
                     letterSpacing: "0.08em",
                     textTransform: "uppercase",
                     color: PC.teal,
-                    border: `1px solid rgba(158, 164, 170, 0.35)`,
+                    border: `1px solid rgba(0, 229, 199, 0.35)`,
                     borderRadius: 999,
                     padding: "4px 10px",
-                    background: "rgba(158, 164, 170, 0.06)",
+                    background: "rgba(0, 229, 199, 0.06)",
                   }}
                 >
                   {label}
@@ -1212,14 +1179,14 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
               onClick={connect}
               style={{
                 borderRadius: 12,
-                background: "linear-gradient(135deg, #9ea4aa 0%, #8f9296 100%)",
+                background: "linear-gradient(135deg, #00e5c7 0%, #00b89c 100%)",
                 color: "#0a0a0a",
                 padding: "10px 16px",
                 fontSize: 13,
                 fontWeight: 700,
                 border: "none",
                 cursor: "pointer",
-                boxShadow: "0 4px 20px rgba(158, 164, 170, 0.25)",
+                boxShadow: "0 4px 20px rgba(0, 229, 199, 0.25)",
               }}
             >
               Connect wallet
@@ -1362,7 +1329,7 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
                 <input value={orderForm.amount} onChange={(e) => setOrderForm((prev) => ({ ...prev, amount: e.target.value }))} placeholder="Amount to sell" style={{ borderRadius: 10, border: `1px solid ${PC.border}`, background: "#2c2f36", color: "#fff", padding: "10px 12px", fontSize: 13 }} />
                 <input value={orderForm.price} onChange={(e) => setOrderForm((prev) => ({ ...prev, price: e.target.value }))} placeholder="Limit price" style={{ borderRadius: 10, border: `1px solid ${PC.border}`, background: "#2c2f36", color: "#fff", padding: "10px 12px", fontSize: 13 }} />
               </div>
-              <button type="button" onClick={placeInternalOrder} style={{ marginTop: 10, width: "100%", borderRadius: 12, border: "none", background: `linear-gradient(90deg, ${PC.teal}, #8f9296)`, color: "#191326", padding: "12px 14px", fontSize: 14, fontWeight: 800, cursor: "pointer" }}>
+              <button type="button" onClick={placeInternalOrder} style={{ marginTop: 10, width: "100%", borderRadius: 12, border: "none", background: `linear-gradient(90deg, ${PC.teal}, #7645d9)`, color: "#191326", padding: "12px 14px", fontSize: 14, fontWeight: 800, cursor: "pointer" }}>
                 Place order
               </button>
             </div>
@@ -1444,7 +1411,7 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
                   setDepositTokenChoice(next);
                   if (next !== "__custom__") setDepositForm({ ...depositForm, token: next });
                 }}
-                style={{ marginTop: 4, width: "100%", borderRadius: 10, border: "1px solid rgba(255,255,255,0.16)", background: "#070708", color: "#fff", padding: "10px 12px", fontSize: 14 }}
+                style={{ marginTop: 4, width: "100%", borderRadius: 10, border: "1px solid rgba(255,255,255,0.16)", background: "#151a23", color: "#fff", padding: "10px 12px", fontSize: 14 }}
               >
                 {tokenList.map((t) => <option key={t.address} value={t.address}>{t.symbol}</option>)}
                 <option value="__custom__">Custom address</option>
@@ -1454,13 +1421,13 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
                   value={depositForm.token}
                   onChange={(e) => setDepositForm({ ...depositForm, token: e.target.value })}
                   placeholder="0x... custom token address"
-                  style={{ marginTop: 6, width: "100%", borderRadius: 10, border: "1px solid rgba(255,255,255,0.16)", background: "#070708", color: "#fff", padding: "10px 12px", fontSize: 14 }}
+                  style={{ marginTop: 6, width: "100%", borderRadius: 10, border: "1px solid rgba(255,255,255,0.16)", background: "#151a23", color: "#fff", padding: "10px 12px", fontSize: 14 }}
                 />
               )}
             </div>
             <div>
               <div style={{ fontSize: 12, color: "rgba(255,255,255,0.65)" }}>Amount</div>
-              <input value={depositForm.amount} onChange={(e) => setDepositForm({ ...depositForm, amount: e.target.value })} style={{ marginTop: 4, width: "100%", borderRadius: 10, border: "1px solid rgba(255,255,255,0.16)", background: "#070708", color: "#fff", padding: "10px 12px", fontSize: 14 }} />
+              <input value={depositForm.amount} onChange={(e) => setDepositForm({ ...depositForm, amount: e.target.value })} style={{ marginTop: 4, width: "100%", borderRadius: 10, border: "1px solid rgba(255,255,255,0.16)", background: "#151a23", color: "#fff", padding: "10px 12px", fontSize: 14 }} />
             </div>
           </div>
           <div style={{ marginTop: 10, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
@@ -1477,7 +1444,7 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
             <div style={{ marginTop: 6, fontSize: 11, color: "rgba(248,180,100,0.95)" }}>Connect wallet to derive commitment.</div>
           ) : null}
           <div style={{ marginTop: 4 }}>
-            <input value={depositForm.commitment} readOnly style={{ width: "100%", borderRadius: 10, border: "1px solid rgba(255,255,255,0.16)", background: "#070708", color: "#fff", padding: "10px 12px", fontSize: 14 }} />
+            <input value={depositForm.commitment} readOnly style={{ width: "100%", borderRadius: 10, border: "1px solid rgba(255,255,255,0.16)", background: "#151a23", color: "#fff", padding: "10px 12px", fontSize: 14 }} />
           </div>
           <div style={{ marginTop: 8, fontSize: 11, color: "rgba(255,255,255,0.55)", lineHeight: 1.45 }}>
             Unlock the note vault before deposit to save this note automatically for swaps.
@@ -1698,7 +1665,7 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
             <button
               type="button"
               onClick={connect}
-              style={{ marginTop: 14, borderRadius: 16, background: `linear-gradient(90deg, ${PC.teal}, #8f9296)`, color: "#191326", padding: "16px 18px", fontSize: 16, fontWeight: 800, border: "none", cursor: "pointer", width: "100%" }}
+              style={{ marginTop: 14, borderRadius: 16, background: `linear-gradient(90deg, ${PC.teal}, #7645d9)`, color: "#191326", padding: "16px 18px", fontSize: 16, fontWeight: 800, border: "none", cursor: "pointer", width: "100%" }}
             >
               Connect wallet
             </button>
@@ -1706,21 +1673,21 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
             <button
               type="button"
               onClick={submitSwap}
-              disabled={!canTransact || swapQuoteLoading || swapProofBusy || !!swapQuoteErr || !swapGasRefundOk}
+              disabled={!canTransact || swapQuoteLoading || swapProofBusy || swapSubmitBusy || !!swapQuoteErr || !swapGasRefundOk}
               style={{
                 marginTop: 14,
                 borderRadius: 16,
-                background: canTransact && !swapQuoteLoading && !swapProofBusy && !swapQuoteErr && swapGasRefundOk ? `linear-gradient(90deg, ${PC.teal}, #8f9296)` : "#3a3842",
-                color: canTransact && !swapQuoteLoading && !swapProofBusy && !swapQuoteErr && swapGasRefundOk ? "#191326" : PC.muted,
+                background: canTransact && !swapQuoteLoading && !swapProofBusy && !swapSubmitBusy && !swapQuoteErr && swapGasRefundOk ? `linear-gradient(90deg, ${PC.teal}, #7645d9)` : "#3a3842",
+                color: canTransact && !swapQuoteLoading && !swapProofBusy && !swapSubmitBusy && !swapQuoteErr && swapGasRefundOk ? "#191326" : PC.muted,
                 padding: "16px 18px",
                 fontSize: 16,
                 fontWeight: 800,
                 border: "none",
-                cursor: canTransact && !swapQuoteLoading && !swapProofBusy && !swapQuoteErr && swapGasRefundOk ? "pointer" : "not-allowed",
+                cursor: canTransact && !swapQuoteLoading && !swapProofBusy && !swapSubmitBusy && !swapQuoteErr && swapGasRefundOk ? "pointer" : "not-allowed",
                 width: "100%",
               }}
             >
-              {swapProofBusy ? "Generating proof…" : "Submit swap via relayer"}
+              {swapProofBusy ? "Generating proof…" : swapSubmitBusy ? "Submitting swap…" : "Submit swap via relayer"}
             </button>
           )}
         </div>
@@ -1741,7 +1708,7 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
                 setWithdrawTokenChoice(next);
                 if (next !== "__custom__") setWithdrawForm({ ...withdrawForm, token: next });
               }}
-              style={{ marginTop: 4, width: "100%", borderRadius: 10, border: "1px solid rgba(255,255,255,0.16)", background: "#070708", color: "#fff", padding: "10px 12px", fontSize: 14 }}
+              style={{ marginTop: 4, width: "100%", borderRadius: 10, border: "1px solid rgba(255,255,255,0.16)", background: "#151a23", color: "#fff", padding: "10px 12px", fontSize: 14 }}
             >
               {tokenList.map((t) => <option key={`w-${t.address}`} value={t.address}>{t.symbol}</option>)}
               <option value="__custom__">Custom address</option>
@@ -1751,17 +1718,56 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
                 value={withdrawForm.token}
                 onChange={(e) => setWithdrawForm({ ...withdrawForm, token: e.target.value })}
                 placeholder="0x... custom token"
-                style={{ marginTop: 6, width: "100%", borderRadius: 10, border: "1px solid rgba(255,255,255,0.16)", background: "#070708", color: "#fff", padding: "10px 12px", fontSize: 14 }}
+                style={{ marginTop: 6, width: "100%", borderRadius: 10, border: "1px solid rgba(255,255,255,0.16)", background: "#151a23", color: "#fff", padding: "10px 12px", fontSize: 14 }}
               />
             )}
           </div>
           <div style={{ marginTop: 10 }}>
-            <div style={{ fontSize: 12, color: "rgba(255,255,255,0.65)" }}>Amount</div>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+              <div style={{ fontSize: 12, color: "rgba(255,255,255,0.65)" }}>Amount (payout to recipient)</div>
+              <button
+                type="button"
+                disabled={withdrawMaxPayoutWei == null || withdrawMaxPayoutWei <= 0n || !wallet?.signer}
+                onClick={() => {
+                  if (withdrawMaxPayoutWei == null || withdrawMaxPayoutWei <= 0n) return;
+                  setWithdrawForm((f) => ({ ...f, amount: ethers.formatUnits(withdrawMaxPayoutWei, 18) }));
+                }}
+                style={{
+                  borderRadius: 8,
+                  background: withdrawMaxPayoutWei != null && withdrawMaxPayoutWei > 0n ? "rgba(24,185,128,0.25)" : "rgba(255,255,255,0.06)",
+                  color: "#fff",
+                  padding: "6px 10px",
+                  fontSize: 11,
+                  fontWeight: 700,
+                  border: "1px solid rgba(255,255,255,0.14)",
+                  cursor: withdrawMaxPayoutWei != null && withdrawMaxPayoutWei > 0n ? "pointer" : "not-allowed",
+                }}
+              >
+                Use max payout
+              </button>
+            </div>
             <input
               value={withdrawForm.amount}
               onChange={(e) => setWithdrawForm({ ...withdrawForm, amount: e.target.value })}
-              style={{ marginTop: 4, width: "100%", borderRadius: 10, border: "1px solid rgba(255,255,255,0.16)", background: "#070708", color: "#fff", padding: "10px 12px", fontSize: 14 }}
+              style={{ marginTop: 4, width: "100%", borderRadius: 10, border: "1px solid rgba(255,255,255,0.16)", background: "#151a23", color: "#fff", padding: "10px 12px", fontSize: 14 }}
             />
+            {withdrawSpendable.length > 0 && (
+              <div style={{ marginTop: 6, fontSize: 11, color: "rgba(255,255,255,0.55)", lineHeight: 1.45 }}>
+                First spendable note:{" "}
+                <span style={{ color: PC.text }}>{ethers.formatEther(withdrawSpendable[0].note.amount)}</span> (18 decimals)
+                {" "}· Max payout after fee &amp; gas:{" "}
+                <span style={{ color: PC.text }}>
+                  {withdrawMaxPayoutWei != null && withdrawMaxPayoutWei > 0n
+                    ? ethers.formatUnits(withdrawMaxPayoutWei, 18)
+                    : "— (raise note balance or lower gas / fee)"}
+                </span>
+              </div>
+            )}
+            {!withdrawSpendable.length && (
+              <div style={{ marginTop: 6, fontSize: 11, color: "rgba(255,255,255,0.45)" }}>
+                No vault note for this token — deposit or swap here first, or paste withdraw JSON under Advanced.
+              </div>
+            )}
           </div>
           <div style={{ marginTop: 10 }}>
             <div style={{ fontSize: 12, color: "rgba(255,255,255,0.65)" }}>Recipient (optional)</div>
@@ -1769,7 +1775,7 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
               value={withdrawForm.recipient}
               onChange={(e) => setWithdrawForm({ ...withdrawForm, recipient: e.target.value })}
               placeholder={wallet.address || "0x..."}
-              style={{ marginTop: 4, width: "100%", borderRadius: 10, border: "1px solid rgba(255,255,255,0.16)", background: "#070708", color: "#fff", padding: "10px 12px", fontSize: 14 }}
+              style={{ marginTop: 4, width: "100%", borderRadius: 10, border: "1px solid rgba(255,255,255,0.16)", background: "#151a23", color: "#fff", padding: "10px 12px", fontSize: 14 }}
             />
           </div>
           <div style={{ marginTop: 10, display: "grid", gap: 10, gridTemplateColumns: "repeat(2, minmax(0,1fr))" }}>
@@ -1778,7 +1784,7 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
               <input
                 value={withdrawForm.protocolFee}
                 onChange={(e) => setWithdrawForm({ ...withdrawForm, protocolFee: e.target.value })}
-                style={{ marginTop: 4, width: "100%", borderRadius: 10, border: "1px solid rgba(255,255,255,0.16)", background: "#070708", color: "#fff", padding: "10px 12px", fontSize: 14 }}
+                style={{ marginTop: 4, width: "100%", borderRadius: 10, border: "1px solid rgba(255,255,255,0.16)", background: "#151a23", color: "#fff", padding: "10px 12px", fontSize: 14 }}
               />
             </div>
             <div>
@@ -1786,7 +1792,7 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
               <input
                 value={withdrawForm.gasRefund}
                 onChange={(e) => setWithdrawForm({ ...withdrawForm, gasRefund: e.target.value })}
-                style={{ marginTop: 4, width: "100%", borderRadius: 10, border: "1px solid rgba(255,255,255,0.16)", background: "#070708", color: "#fff", padding: "10px 12px", fontSize: 14 }}
+                style={{ marginTop: 4, width: "100%", borderRadius: 10, border: "1px solid rgba(255,255,255,0.16)", background: "#151a23", color: "#fff", padding: "10px 12px", fontSize: 14 }}
               />
             </div>
           </div>
@@ -1808,13 +1814,13 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
               value={importTokenSymbol}
               onChange={(e) => setImportTokenSymbol(e.target.value)}
               placeholder="Token symbol (e.g. CAKE)"
-              style={{ borderRadius: 10, border: "1px solid rgba(255,255,255,0.16)", background: "#070708", color: "#fff", padding: "10px 12px", fontSize: 14 }}
+              style={{ borderRadius: 10, border: "1px solid rgba(255,255,255,0.16)", background: "#151a23", color: "#fff", padding: "10px 12px", fontSize: 14 }}
             />
             <input
               value={importTokenAddress}
               onChange={(e) => setImportTokenAddress(e.target.value)}
               placeholder="Token address (0x...)"
-              style={{ borderRadius: 10, border: "1px solid rgba(255,255,255,0.16)", background: "#070708", color: "#fff", padding: "10px 12px", fontSize: 14 }}
+              style={{ borderRadius: 10, border: "1px solid rgba(255,255,255,0.16)", background: "#151a23", color: "#fff", padding: "10px 12px", fontSize: 14 }}
             />
             <button
               onClick={importToken}
@@ -1830,7 +1836,7 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
                 value={apiBase}
                 onChange={(e) => setApiBase(e.target.value)}
                 placeholder="https://relayer-1.example, https://relayer-2.example"
-                style={{ marginTop: 4, width: "100%", borderRadius: 10, border: "1px solid rgba(255,255,255,0.16)", background: "#070708", color: "#fff", padding: "10px 12px", fontSize: 14 }}
+                style={{ marginTop: 4, width: "100%", borderRadius: 10, border: "1px solid rgba(255,255,255,0.16)", background: "#151a23", color: "#fff", padding: "10px 12px", fontSize: 14 }}
               />
             </div>
             <div>
@@ -1847,7 +1853,7 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
               <textarea
                 value={noteDraft}
                 onChange={(e) => setNoteDraft(e.target.value)}
-                style={{ marginTop: 4, height: 96, width: "100%", borderRadius: 10, border: "1px solid rgba(255,255,255,0.16)", background: "#070708", color: "#fff", padding: "10px 12px", fontSize: 12 }}
+                style={{ marginTop: 4, height: 96, width: "100%", borderRadius: 10, border: "1px solid rgba(255,255,255,0.16)", background: "#151a23", color: "#fff", padding: "10px 12px", fontSize: 12 }}
                 placeholder="Paste note / proof JSON"
               />
               <button
@@ -1860,9 +1866,9 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
             </div>
           </div>
           <div style={{ marginTop: 10, fontSize: 12, color: "rgba(255,255,255,0.65)" }}>Swap JSON</div>
-          <textarea value={intentForm.swapDataJson} onChange={(e) => setIntentForm({ ...intentForm, swapDataJson: e.target.value })} style={{ marginTop: 4, height: 112, width: "100%", borderRadius: 10, border: "1px solid rgba(255,255,255,0.16)", background: "#070708", color: "#fff", padding: "10px 12px", fontSize: 12, fontFamily: "var(--font-mono)" }} placeholder='{"proof":{...},"publicInputs":{...},"swapParams":{...}}' />
+          <textarea value={intentForm.swapDataJson} onChange={(e) => setIntentForm({ ...intentForm, swapDataJson: e.target.value })} style={{ marginTop: 4, height: 112, width: "100%", borderRadius: 10, border: "1px solid rgba(255,255,255,0.16)", background: "#151a23", color: "#fff", padding: "10px 12px", fontSize: 12, fontFamily: "var(--font-mono)" }} placeholder='{"proof":{...},"publicInputs":{...},"swapParams":{...}}' />
           <div style={{ marginTop: 10, fontSize: 12, color: "rgba(255,255,255,0.65)" }}>Withdraw JSON</div>
-          <textarea value={withdrawForm.withdrawDataJson} onChange={(e) => setWithdrawForm({ withdrawDataJson: e.target.value })} style={{ marginTop: 4, height: 96, width: "100%", borderRadius: 10, border: "1px solid rgba(255,255,255,0.16)", background: "#070708", color: "#fff", padding: "10px 12px", fontSize: 12, fontFamily: "var(--font-mono)" }} placeholder='{"proof":{...},"publicInputs":{...},"recipient":"0x..."}' />
+          <textarea value={withdrawForm.withdrawDataJson} onChange={(e) => setWithdrawForm({ withdrawDataJson: e.target.value })} style={{ marginTop: 4, height: 96, width: "100%", borderRadius: 10, border: "1px solid rgba(255,255,255,0.16)", background: "#151a23", color: "#fff", padding: "10px 12px", fontSize: 12, fontFamily: "var(--font-mono)" }} placeholder='{"proof":{...},"publicInputs":{...},"recipient":"0x..."}' />
         </div>
       )}
 
