@@ -137,15 +137,72 @@ function getAssetIdForToken(tokenAddress) {
   return 1;
 }
 
-function spendableNoteEntries(vaultData, inputToken) {
+function spendableNoteEntries(vaultData, inputToken, currentPoolAddress) {
   const aid = getAssetIdForToken(inputToken);
   const notes = vaultData?.notes || [];
   const out = [];
+  const poolLower = String(currentPoolAddress || "").toLowerCase();
   notes.forEach((n, vaultIdx) => {
     const raw = n.payload ?? n;
-    if (raw?.version === 1 && Number(raw.assetID) === aid) out.push({ vaultIdx, note: raw });
+    if (raw?.version !== 1) return;
+    if (Number(raw.assetID) !== aid) return;
+    if (poolLower) {
+      const notePool = String(raw.poolAddress || "").toLowerCase();
+      if (!notePool || notePool !== poolLower) return;
+    }
+    out.push({ vaultIdx, note: raw });
+  });
+  out.sort((a, b) => {
+    try {
+      const aa = BigInt(String(a?.note?.amount || "0"));
+      const bb = BigInt(String(b?.note?.amount || "0"));
+      if (aa === bb) return 0;
+      return aa > bb ? -1 : 1; // Prefer largest note for "best available"
+    } catch {
+      return 0;
+    }
   });
   return out;
+}
+
+async function fetchMerkleForNote(base, note, currentPoolAddress) {
+  try {
+    return await fetchJson(`${base}/merkle/${encodeURIComponent(note.commitmentHex)}`);
+  } catch (e) {
+    const msg = String(e?.message || "");
+    if (/commitment not found after sync/i.test(msg)) {
+      const poolHint = currentPoolAddress ? `${currentPoolAddress.slice(0, 10)}...` : "active pool";
+      throw new Error(
+        `Selected note is not available on the ${poolHint}. This usually means the note belongs to an older pool deployment. Re-unlock notes and use a note from this pool, or make a fresh deposit first.`
+      );
+    }
+    throw e;
+  }
+}
+
+async function resolveSpendNoteWithMerkle(base, entries, preferredIndex, currentPoolAddress) {
+  if (!Array.isArray(entries) || entries.length === 0) {
+    throw new Error("No spendable note available for this token on the current pool.");
+  }
+  const bounded = Math.min(Math.max(0, Number(preferredIndex || 0)), entries.length - 1);
+  const order = [bounded, ...entries.map((_, i) => i).filter((i) => i !== bounded)];
+  let lastErr = null;
+  for (const idx of order) {
+    const entry = entries[idx];
+    if (!entry?.note?.commitmentHex) continue;
+    try {
+      const merkle = await fetchMerkleForNote(base, entry.note, currentPoolAddress);
+      return { entry, index: idx, merkle };
+    } catch (e) {
+      lastErr = e;
+      const msg = String(e?.message || "");
+      // Keep trying alternate notes only for stale-note class errors.
+      if (!/not available on|commitment not found after sync/i.test(msg)) {
+        throw e;
+      }
+    }
+  }
+  throw lastErr || new Error("Could not find a spendable note available on the current pool.");
 }
 
 function canonicalWbnb(chainId) {
@@ -286,9 +343,14 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
   const [clientProverReady, setClientProverReady] = useState(false);
   const [spendPick, setSpendPick] = useState(0);
 
+  const currentPoolAddress = useMemo(
+    () => String(cfg?.addresses?.shieldedPool || "").toLowerCase(),
+    [cfg?.addresses?.shieldedPool]
+  );
+
   const spendable = useMemo(
-    () => spendableNoteEntries(vault.data, intentForm.inputToken),
-    [vault.data, intentForm.inputToken]
+    () => spendableNoteEntries(vault.data, intentForm.inputToken, currentPoolAddress),
+    [vault.data, intentForm.inputToken, currentPoolAddress]
   );
   useEffect(() => {
     setSpendPick(0);
@@ -303,8 +365,8 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
     withdrawDataJson: "",
   });
   const withdrawSpendable = useMemo(
-    () => spendableNoteEntries(vault.data, withdrawForm.token),
-    [vault.data, withdrawForm.token]
+    () => spendableNoteEntries(vault.data, withdrawForm.token, currentPoolAddress),
+    [vault.data, withdrawForm.token, currentPoolAddress]
   );
   const withdrawMaxPayoutWei = useMemo(() => {
     if (!withdrawSpendable.length) return null;
@@ -566,7 +628,7 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
       return;
     }
     try {
-      const msg = `Unlock Phantom Note Vault\n\nDomain: ${window.location.host}\nTime: ${new Date().toISOString()}`;
+      const msg = `Unlock Phantom Note Vault\n\nDomain: ${window.location.host}\nWallet: ${wallet.address || "unknown"}\nVersion: 2`;
       const signature = await wallet.signer.signMessage(msg);
       const loaded = await loadVault({ signature });
       setVault({ unlocked: true, key: loaded.key, data: loaded.data });
@@ -651,6 +713,24 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
     }
   }
 
+  async function submitEncryptedPayloadWithRetry(endpointPath, payload) {
+    const sendOnce = async () => {
+      const keyInfo = await fetchJson(`${base}/relayer/encryption-key`);
+      const envelope = await encryptForRelayer(payload, keyInfo?.publicKeyPem);
+      return fetchJson(`${base}${endpointPath}`, {
+        method: "POST",
+        body: JSON.stringify({ envelope }),
+      });
+    };
+    try {
+      return await sendOnce();
+    } catch (e) {
+      const msg = String(e?.message || e);
+      if (!/oaep decoding error/i.test(msg)) throw e;
+      return await sendOnce();
+    }
+  }
+
   async function submitDeposit() {
     setActionError(null);
     setLastResult(null);
@@ -703,6 +783,7 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
               body: JSON.stringify({
                 shadowAddress: shadow.shadowAddress,
                 commitment: depositForm.commitment,
+                deposit: { ...message, signature },
               }),
             });
             sweepErr = null;
@@ -755,15 +836,7 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
           cfg.addresses.shieldedPool,
           amountWei
         );
-        const keyInfo = await fetchJson(`${base}/relayer/encryption-key`);
-        const envelope = await encryptForRelayer(
-          { ...message, signature },
-          keyInfo?.publicKeyPem
-        );
-        const out = await fetchJson(`${base}/deposit/encrypted`, {
-          method: "POST",
-          body: JSON.stringify({ envelope }),
-        });
+        const out = await submitEncryptedPayloadWithRetry("/deposit/encrypted", { ...message, signature });
         setLastResult({ via: "relayer-submit", ...out });
       }
 
@@ -778,6 +851,8 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
           ownerPublicKey: ownerPk,
           commitmentDecimal: c.toString(),
           commitmentHex: depositForm.commitment,
+          poolAddress: currentPoolAddress,
+          chainId: Number(cfg?.chainId || 0),
         };
         const next = {
           notes: [{ t: Date.now(), payload: notePayload }, ...(vault.data?.notes || [])].slice(0, 200),
@@ -844,14 +919,17 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
           throw new Error(e.message === "Invalid swap JSON" ? e.message : "Invalid swap JSON in Advanced.");
         }
       } else {
-        const pick = Math.min(spendPick, Math.max(0, spendable.length - 1));
-        const entry = spendable[pick];
-        if (!entry?.note) {
-          throw new Error(
-            "No spendable note for this input token. Unlock the vault, deposit (commitment is now circuit-derived), then swap—or paste full swap JSON under Advanced."
-          );
-        }
+        const { entry, index: resolvedSpendPick, merkle } = await resolveSpendNoteWithMerkle(
+          base,
+          spendable,
+          spendPick,
+          currentPoolAddress
+        );
+        if (resolvedSpendPick !== spendPick) setSpendPick(resolvedSpendPick);
         const note = entry.note;
+        if (currentPoolAddress && String(note.poolAddress || "").toLowerCase() !== currentPoolAddress) {
+          throw new Error("Selected note belongs to an older pool deployment. Make a fresh deposit on the current pool.");
+        }
         const outAmt = String(swapLastQuote?.amountOut || "0");
         if (!outAmt || BigInt(outAmt) <= 0n) {
           throw new Error("Refresh the quote so expected output amount is available before proving.");
@@ -863,7 +941,6 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
         if (swapAmountBn <= 0n) {
           throw new Error("Note balance must be greater than protocol fee plus gas refund.");
         }
-        const merkle = await fetchJson(`${base}/merkle/${encodeURIComponent(note.commitmentHex)}`);
         const wbnb = canonicalWbnb(cfg.chainId);
         const tokenIn =
           String(intentForm.inputToken).toLowerCase() === ethers.ZeroAddress.toLowerCase()
@@ -964,22 +1041,14 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
           intentForm.minOutputAmount ??
           "0"
       );
-      const keyInfo = await fetchJson(`${base}/relayer/encryption-key`);
-      const envelope = await encryptForRelayer(
-        {
-          swapData,
-          zkAuthorization: {
-            nullifier: nullifierHex,
-            deadline,
-            nonce: String(noteNonce),
-            minAmountOut: minOutForAuth,
-          },
+      const out = await submitEncryptedPayloadWithRetry("/swap/encrypted", {
+        swapData,
+        zkAuthorization: {
+          nullifier: nullifierHex,
+          deadline,
+          nonce: String(noteNonce),
+          minAmountOut: minOutForAuth,
         },
-        keyInfo?.publicKeyPem
-      );
-      const out = await fetchJson(`${base}/swap/encrypted`, {
-        method: "POST",
-        body: JSON.stringify({ envelope }),
       });
       setLastResult(out);
     } catch (e) {
@@ -1016,11 +1085,15 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
           throw new Error("Withdraw JSON must include proof, publicInputs, and recipient or finalRecipient.");
         }
       } else {
-        const spend = spendableNoteEntries(vault.data, withdrawForm.token);
+        const spend = spendableNoteEntries(vault.data, withdrawForm.token, currentPoolAddress);
         if (!spend.length) {
-          throw new Error("No spendable note for this token. Unlock the vault, deposit first, or paste full withdraw JSON under Advanced.");
+          throw new Error("No spendable note for this token on the current pool. Your vault may contain notes from an older deployment.");
         }
-        const note = spend[0].note;
+        const { entry, merkle } = await resolveSpendNoteWithMerkle(base, spend, 0, currentPoolAddress);
+        const note = entry.note;
+        if (currentPoolAddress && String(note.poolAddress || "").toLowerCase() !== currentPoolAddress) {
+          throw new Error("Selected withdraw note belongs to an older pool deployment. Make a fresh deposit on the current pool.");
+        }
         const amt = String(withdrawForm.amount || "").trim();
         if (!amt) throw new Error("Enter withdraw amount (payout to recipient, same decimals as note).");
         const amountWei = ethers.parseUnits(amt, 18);
@@ -1031,7 +1104,6 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
         if (changeWei <= 0n) {
           throw new Error("After withdraw + protocol fee + gas refund, change must stay positive in the pool (see ShieldedPool conservation).");
         }
-        const merkle = await fetchJson(`${base}/merkle/${encodeURIComponent(note.commitmentHex)}`);
         const proofBody = {
           inputNote: {
             assetID: note.assetID,
@@ -1086,12 +1158,7 @@ export default function ProtocolUserDapp({ uiVariant = "default" }) {
         };
       }
 
-      const keyInfo = await fetchJson(`${base}/relayer/encryption-key`);
-      const envelope = await encryptForRelayer({ withdrawData }, keyInfo?.publicKeyPem);
-      const out = await fetchJson(`${base}/withdraw/encrypted`, {
-        method: "POST",
-        body: JSON.stringify({ envelope }),
-      });
+      const out = await submitEncryptedPayloadWithRetry("/withdraw/encrypted", { withdrawData });
       setLastResult(out);
     } catch (e) {
       setActionError(stringifyErr(e?.message ?? e));
